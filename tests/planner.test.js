@@ -43,6 +43,15 @@ test("aggressive naturalisation overrides KEEP even for technically clean prose"
   assert.ok(plan.items.some((i) => i.level === LEVELS.SENTENCE_RESTRUCTURE));
 });
 
+test("aggressive naturalisation alone does not authorise paragraph reordering", () => {
+  const plan = buildInterventionPlan(diagnose(cleanTechnicalText), {
+    rewriteIntensity: "deep",
+    lengthPreference: "maintain",
+    naturalisation: "aggressive",
+  });
+  assert.equal(plan.paragraphReorderSuggested, false);
+});
+
 test("an overloaded sentence is planned for SPLIT_OR_MERGE regardless of intensity", () => {
   const overloaded =
     "The study examines the relationship between corporate governance mechanisms, including board independence, audit committee expertise, ownership concentration, and CEO duality, and firm-level disclosure quality across a large sample of UK-listed companies over a ten-year period from 2010 to 2019 using panel regression techniques.";
