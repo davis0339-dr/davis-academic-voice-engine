@@ -91,6 +91,10 @@ export async function rewrite({
   rewriteIntensity,
   grammarIntensity,
   lengthPreference,
+  // User-facing control: how hard to naturalise toward the human corpus
+  // cadence, and how much wording latitude to take. "off" | "faithful"
+  // (default) | "aggressive". See NATURALISATION_FIDELITY in promptContract.js.
+  naturalisation,
   // Optional, used only by the long-document job pipeline (Phase 3,
   // server/lib/jobStore.js) so a chunk's revision flows naturally from the
   // chunk before it and stays terminology-consistent with the rest of the
@@ -118,6 +122,7 @@ export async function rewrite({
     precedingContext,
     documentGlossary,
     humanCadence,
+    naturalisation,
   });
 
   const llmResult = await llmProvider.callAnthropic({

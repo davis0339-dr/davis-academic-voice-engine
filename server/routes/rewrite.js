@@ -14,7 +14,7 @@ function sleep(ms) {
 
 rewriteRouter.post("/rewrite", async (req, res) => {
   const requestId = randomUUID();
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference } = req.body || {};
+  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation } = req.body || {};
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string.", requestId });
@@ -38,6 +38,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         rewriteIntensity,
         grammarIntensity,
         lengthPreference,
+        naturalisation,
       });
       return res.json({ ...result, requestId });
     } catch (err) {

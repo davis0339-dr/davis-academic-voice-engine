@@ -50,6 +50,7 @@ async function processChunk(job, chunk) {
       rewriteIntensity: job.options.rewriteIntensity,
       grammarIntensity: job.options.grammarIntensity,
       lengthPreference: job.options.lengthPreference,
+      naturalisation: job.options.naturalisation,
       precedingContext: chunk.precedingContextTail,
       documentGlossary: job.documentMap.glossary,
     });
@@ -78,7 +79,7 @@ async function processJob(jobId) {
   finalizeIfComplete(job);
 }
 
-export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference }) {
+export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation }) {
   const documentMap = buildDocumentMap(text);
   const { method, chunks } = chunkDocument(text, documentMap);
 
@@ -89,7 +90,7 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
     sourceText: text,
     documentMap,
     chunkMethod: method,
-    options: { styleFilters, rewriteIntensity, grammarIntensity, lengthPreference },
+    options: { styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation },
     chunks: chunks.map((c) => ({
       ...c,
       status: "queued",

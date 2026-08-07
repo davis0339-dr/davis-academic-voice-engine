@@ -56,16 +56,42 @@ function buildCadenceTargetBlock(humanCadence) {
     .join("\n");
 }
 
-export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, precedingContext, documentGlossary, humanCadence }) {
+// How hard the rewrite pushes toward the human-cadence distribution, and
+// how much wording latitude it takes to get there. A user-facing control
+// (Section 3.1's spirit: the user decides how much may change), not a
+// hidden default. "off" = clarity only, no naturalisation. "faithful" =
+// naturalise but preserve the author's wording and vocabulary as much as
+// possible, achieving cadence variation mainly through splitting/merging
+// and light reordering. "aggressive" = free to recast sentences wholesale
+// to hit the human distribution, provided all protected facts survive.
+const NATURALISATION_FIDELITY = {
+  off: null,
+  faithful:
+    "NATURALISATION FIDELITY: faithful. Achieve the cadence variation above mainly by splitting overloaded sentences, merging choppy ones, and light clause reordering. Preserve the author's own vocabulary, register, and most of their phrasing -- do not substitute their word choices wholesale. When in doubt, keep the author's words and change the rhythm.",
+  aggressive:
+    "NATURALISATION FIDELITY: aggressive. You may recast sentences substantially, rephrase, and resequence to hit the human-cadence distribution as closely as possible, INCLUDING replacing generic wording with more varied phrasing. Every claim, citation, number, quotation, and technical term must still be preserved exactly, and you must not introduce any new fact or reference. Within that hard boundary, prioritise landing inside the human sentence-length mean and standard-deviation bands over staying close to the original wording.",
+};
+
+export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, precedingContext, documentGlossary, humanCadence, naturalisation }) {
+  const level = NATURALISATION_FIDELITY[naturalisation] !== undefined ? naturalisation : "faithful";
+  const naturalisationOn = level !== "off";
+  const fidelityClause = NATURALISATION_FIDELITY[level];
+
   return [
     BASE_SYSTEM_PROMPT,
     "",
     "--- STRUCTURED CONSTRAINTS (server-supplied, not user text) ---",
     "",
-    buildCadenceTargetBlock(humanCadence),
+    naturalisationOn ? buildCadenceTargetBlock(humanCadence) : "NATURALISATION: off. Revise for clarity and correctness only; do not restructure sentence rhythm toward the corpus distribution.",
     "",
-    "SURFACE TELLS TO SUPPRESS (these are habits over-represented in machine-generated academic prose; reducing them makes the writing read more like the human corpus):",
-    AI_SURFACE_TELLS.map((t) => `- ${t}`).join("\n"),
+    fidelityClause || "",
+    fidelityClause ? "" : null,
+    naturalisationOn
+      ? [
+          "SURFACE TELLS TO SUPPRESS (these are habits over-represented in machine-generated academic prose; reducing them makes the writing read more like the human corpus):",
+          AI_SURFACE_TELLS.map((t) => `- ${t}`).join("\n"),
+        ].join("\n")
+      : "",
     "",
     `Grammar intensity: ${grammarIntensity}. Light = correct only errors that obstruct meaning. Standard = correct clear grammar problems while preserving personal cadence. Strict = apply formal academic grammar consistently. Never manufacture grammatical mistakes to look "more human".`,
     "",

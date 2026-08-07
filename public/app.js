@@ -221,6 +221,7 @@ async function runAnalyseOnly() {
         rewriteIntensity: $("rewriteIntensity").value,
         grammarIntensity: $("grammarIntensity").value,
         lengthPreference: $("lengthPreference").value,
+        naturalisation: $("naturalisation").value,
       }),
     });
     const data = await res.json();
@@ -249,6 +250,7 @@ async function runAnalyseAndRevise() {
         rewriteIntensity: $("rewriteIntensity").value,
         grammarIntensity: $("grammarIntensity").value,
         lengthPreference: $("lengthPreference").value,
+        naturalisation: $("naturalisation").value,
       }),
     });
     const data = await res.json();
@@ -438,6 +440,7 @@ async function startLongDocJob() {
         rewriteIntensity: $("rewriteIntensity").value,
         grammarIntensity: $("grammarIntensity").value,
         lengthPreference: $("lengthPreference").value,
+        naturalisation: $("naturalisation").value,
       }),
     });
     const job = await res.json();

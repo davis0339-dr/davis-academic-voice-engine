@@ -5,7 +5,7 @@ import { llmProvider } from "../lib/llmProvider.js";
 export const jobsRouter = Router();
 
 jobsRouter.post("/jobs", (req, res) => {
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference } = req.body || {};
+  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation } = req.body || {};
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string." });
@@ -17,7 +17,7 @@ jobsRouter.post("/jobs", (req, res) => {
     });
   }
 
-  const job = createJob({ text, styleFilters: styleFilters || {}, rewriteIntensity, grammarIntensity, lengthPreference });
+  const job = createJob({ text, styleFilters: styleFilters || {}, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation });
   res.status(202).json(summarizeJob(job));
 });
 
