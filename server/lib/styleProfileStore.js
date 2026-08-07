@@ -1,17 +1,11 @@
-// Section 7 (evidence-backed multidimensional style engine). Phase 2:
-// this is now a thin adapter over server/lib/corpusEngine.js, which does
-// the real per-cell counting and hierarchical fallback over the 52-document
-// evidence base (server/data/corpusDocuments.js) -- see Section 7.2's
-// mandate that a narrow style claim must never be invented from
-// convenience, and Section 10.2's warning against pretending an
-// uncalibrated threshold is validated.
-//
-// Downstream code (server/lib/pipeline.js) only depends on the shape
-// { requested, effective, fallback_applied, evidence_strength, message },
-// which is preserved from the Phase 1 interface so this swap doesn't
-// ripple through the rest of the pipeline.
+// Evidence-backed multidimensional style engine.
+// Phase 2 provides coverage/fallback over the 52-document corpus.
+// Phase 4 adds a measured language-behaviour layer derived from substantive
+// prose samples in a clean-text pilot subset, so style profiles carry real
+// distributions rather than cadence plus generic prose advice alone.
 
 import { compileFamily, listCoverageTable as coverageTable } from "./corpusEngine.js";
+import { compileMeasuredLanguageFamily } from "./languageFamilyEngine.js";
 
 const SELECTABLE_DIMENSIONS = {
   document_type: ["thesis", "journal_article", "conference_paper", "other"],
@@ -19,23 +13,23 @@ const SELECTABLE_DIMENSIONS = {
   degree: ["PhD", "DBA", "MPhil", "MSc/MCom/MA", "Other"],
   discipline: ["Accounting", "Finance", "Economics", "Management", "Psychology", "Information Technology", "Sport Science", "Other"],
   research_mode: ["quantitative_archival", "survey", "qualitative_interview_case_study", "mixed_methods", "archival_history", "experimental", "conceptual", "software_design", "other"],
-  section: ["abstract", "introduction", "literature_review", "theory", "methodology", "results", "discussion", "limitations", "conclusion", "preface_reflexive"],
+  section: ["abstract", "introduction", "background", "statement_of_problem", "literature_review", "theory", "methodology", "results", "discussion", "limitations", "conclusion", "preface_reflexive"],
 };
 
 function cadenceDescription(cadence) {
   if (!cadence || cadence.measuredSources === 0) {
-    return "No sentence-length measurements available for this exact family; corpus-wide finding still applies: there is no single human sentence-length template (Section 9.1) -- do not enforce a fixed threshold.";
+    return "No sentence-length measurements are available for this exact family. Do not impose a universal sentence-length target; use the measured language family and the author's passage-level needs instead.";
   }
-  return `Across ${cadence.measuredSources} independently measured sources in this family, mean sentence length ranges from ${cadence.meanSentenceLengthMin.toFixed(1)} to ${cadence.meanSentenceLengthMax.toFixed(1)} words. Treat this as a descriptive range, not a target -- both ends are legitimate academic prose.`;
+  return `Across ${cadence.measuredSources} independently measured sources in this family, mean sentence length ranges from ${cadence.meanSentenceLengthMin.toFixed(1)} to ${cadence.meanSentenceLengthMax.toFixed(1)} words. Treat this as descriptive evidence, not a fixed target.`;
 }
 
 const STATIC_FEATURES = {
-  cohesion: "Explicit transition frequency is author-dependent, not a family-level rule. Detect mechanical stacking of the same connective; do not enforce or ban transitions generally.",
-  researcher_presence: "First-person singular, first-person plural, and impersonal/study-centred voice are all attested across this corpus, including within single multi-chapter dissertations. Do not mechanically normalise pronoun choice.",
-  epistemic_stance: "Credible sources in this corpus hedge through modal verbs, interpretive verbs, and explicit comparison with prior findings -- and state disagreement with prior literature directly rather than smoothing it away.",
-  citation_integration: "Numeric results are frequently interpreted in ordinary prose immediately after being reported; both narrative and parenthetical citation forms occur. Not every sentence needs a citation.",
-  lexical_register: "Technical/discipline terminology is repeated for precision across this corpus rather than varied for its own sake. Resist gratuitous synonym substitution of domain terms.",
-  grammar_tolerance: "High polish and ordinary grammatical/collocational unevenness both occur in credible sources in this corpus. Never inject errors to simulate humanity; never treat flawless grammar as suspicious.",
+  cohesion: "Explicit transition frequency is author-dependent. Diagnose mechanical repetition and weak logical progression rather than enforcing or banning transition words generally.",
+  researcher_presence: "First-person singular, first-person plural, and impersonal/study-centred voice are all attested. Preserve legitimate document/section voice unless the user asks to change it.",
+  epistemic_stance: "Qualification should follow the underlying claim, evidence and inferential limits. Do not manufacture hedging merely to match a frequency profile.",
+  citation_integration: "Narrative and parenthetical citation forms both occur. Preserve citation-content relationships and allow author reasoning between cited statements.",
+  lexical_register: "Technical terminology is repeated for precision. Vary sentence construction and ordinary phrasing before substituting discipline-specific terms.",
+  grammar_tolerance: "The corpus contains both polished and uneven prose. Never inject errors; apply the user's grammar intensity while retaining plausible personal cadence.",
 };
 
 export function listSelectableDimensions() {
@@ -43,11 +37,15 @@ export function listSelectableDimensions() {
 }
 
 export function listCoverageTable() {
-  return coverageTable();
+  return {
+    metadata_corpus: coverageTable(),
+    measured_language_pilot: compileMeasuredLanguageFamily({}),
+  };
 }
 
 export function resolveProfile(requestedFilters) {
   const compiled = compileFamily(requestedFilters);
+  const measuredLanguage = compileMeasuredLanguageFamily(compiled.effective);
 
   const label = Object.keys(compiled.effective).length === 0 ? "Auto / Evidence-backed default" : compiled.effectiveLabel;
 
@@ -62,23 +60,28 @@ export function resolveProfile(requestedFilters) {
         quality_mix: compiled.quality_mix,
         strength: compiled.evidence_strength,
       },
+      language_evidence: {
+        measured_document_count: measuredLanguage.measured_document_count,
+        strength: measuredLanguage.evidence_strength,
+        fallback_applied: measuredLanguage.fallback_applied,
+        effective_filters: measuredLanguage.effective,
+        dropped: measuredLanguage.dropped,
+        measurement_version: measuredLanguage.measurement_version,
+      },
       features: {
         cadence: cadenceDescription(compiled.cadence),
+        measured_language: measuredLanguage,
         ...STATIC_FEATURES,
       },
     },
-    fallback_applied: compiled.fallback_applied,
+    measured_language_family: measuredLanguage,
+    fallback_applied: compiled.fallback_applied || measuredLanguage.fallback_applied,
     evidence_strength: compiled.evidence_strength,
-    message: compiled.message,
-    dropped: compiled.dropped,
+    message: `${compiled.message} Measured language layer: ${measuredLanguage.measured_document_count} pilot documents (${measuredLanguage.evidence_strength}) using ${measuredLanguage.effective_label}.`,
+    dropped: [...compiled.dropped, ...measuredLanguage.dropped.map((d) => ({ ...d, layer: "measured_language" }))],
   };
 }
 
-// Kept for any caller that still wants the old flat listing (e.g. a future
-// admin view); Phase 2's real answer to "what profiles exist" is the
-// coverage table, not a fixed list -- any filter combination is valid to
-// request, the engine just tells you honestly how well-evidenced it is.
 export function listProfiles() {
-  const table = coverageTable();
-  return table;
+  return listCoverageTable();
 }
