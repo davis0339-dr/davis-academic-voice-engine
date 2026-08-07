@@ -37,8 +37,9 @@ export function listSelectableDimensions() {
 }
 
 export function listCoverageTable() {
+  const metadata = coverageTable();
   return {
-    metadata_corpus: coverageTable(),
+    ...metadata,
     measured_language_pilot: compileMeasuredLanguageFamily({}),
   };
 }
