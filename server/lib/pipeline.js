@@ -57,20 +57,14 @@ export function sanitiseProse(text) {
 
 function validateShape(parsed) {
   const errors = [];
-  if (typeof parsed.revised_text !== "string" || parsed.revised_text.length === 0) {
-    errors.push("revised_text missing or empty");
-  }
+  if (typeof parsed.revised_text !== "string" || parsed.revised_text.length === 0) errors.push("revised_text missing or empty");
   if (!parsed.edit_summary || typeof parsed.edit_summary !== "object") {
     errors.push("edit_summary missing");
   } else {
     for (const key of ["kept", "micro_edits", "sentence_restructures", "split_or_merge", "paragraph_reorders"]) {
-      if (typeof parsed.edit_summary[key] !== "number") {
-        errors.push(`edit_summary.${key} missing or not a number`);
-      }
+      if (typeof parsed.edit_summary[key] !== "number") errors.push(`edit_summary.${key} missing or not a number`);
     }
-    if (!Array.isArray(parsed.edit_summary.flags_for_author)) {
-      errors.push("edit_summary.flags_for_author missing or not an array");
-    }
+    if (!Array.isArray(parsed.edit_summary.flags_for_author)) errors.push("edit_summary.flags_for_author missing or not an array");
   }
   return errors;
 }
@@ -105,21 +99,27 @@ async function runModelPass({ systemPrompt, sourceText }) {
 }
 
 function qualityCorrectionBlock(quality) {
+  const issueLines = (quality.reasons || []).map((reason) => `- ${reason}`).join("\n");
   return [
     "",
     "--- AGGRESSIVE REWRITE QUALITY CORRECTION ---",
-    "The prior attempt was still too close to the source to satisfy the user's selected aggressive rewrite mode.",
-    `Measured five-word phrase overlap: ${(quality.five_gram_overlap * 100).toFixed(1)}%.`,
-    `Measured verbatim-source-sentence retention: ${(quality.unchanged_sentence_ratio * 100).toFixed(1)}%.`,
+    "The previous attempt failed the product's rewrite-depth and academic-register quality gate.",
+    issueLines || "- The previous attempt did not meet the required quality profile.",
     "Rewrite again from the ORIGINAL source below, not from the previous attempt.",
-    "Reconstruct the syntax of every non-protected sentence. Change clause order, grammatical subject, sentence boundaries, and paragraph flow where useful. Do not merely substitute synonyms or split one long sentence into two while retaining the same wording.",
-    "No complete source sentence should survive verbatim unless it is itself a protected quotation or cannot be safely changed without altering a protected claim. Preserve every citation, number, quotation, technical term and factual relationship exactly.",
-    "Keep the prose academically defensible and natural. Do not invent information and do not manufacture errors.",
+    "Keep the substantive transformation, but repair any overcorrection. Do not solve structural similarity by chopping the prose into strings of very short sentences.",
+    "Use sustained postgraduate academic prose: formal but readable, with mostly medium and long sentences and occasional short emphasis. Merge neighbouring short statements where they express one analytical idea.",
+    "Do not introduce second-person address, contractions, idioms, journalistic phrasing, slang, or conversational metaphors. Avoid phrases such as 'when you look', 'the same thing', 'locked up', 'tiny fraction', 'ticking boxes', or similar casual substitutes.",
+    "Reconstruct syntax rather than merely swapping vocabulary: vary clause order, grammatical subject, sentence boundaries and paragraph flow, while preserving the argument and the broad-to-narrow academic progression.",
+    "No complete source sentence should survive verbatim unless it is a protected quotation or cannot be safely changed without altering a protected claim.",
+    "Preserve every citation, number, quotation, technical term and factual relationship exactly. Do not add any fact or citation.",
   ].join("\n");
 }
 
 function qualityScore(q) {
-  return q.five_gram_overlap + q.unchanged_sentence_ratio;
+  const shortPenalty = Math.max(0, (q.short_sentence_ratio || 0) - 0.24);
+  const registerPenalty = (q.direct_address_introduced || 0) * 0.2 + (q.formality_risks_introduced || 0) * 0.15;
+  const cadencePenalty = Math.max(0, 14 - (q.mean_sentence_length || 14)) / 14;
+  return q.five_gram_overlap + q.unchanged_sentence_ratio + shortPenalty + registerPenalty + cadencePenalty;
 }
 
 export async function rewrite({
@@ -156,23 +156,21 @@ export async function rewrite({
   });
 
   let parsed = await runModelPass({ systemPrompt, sourceText });
-  let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel);
+  let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, { humanCadence });
   let qualityRetryUsed = false;
   let firstAttemptQuality = null;
 
-  // Aggressive mode has an explicit rewrite-depth acceptance gate. One
-  // corrective model pass is allowed when the first answer is substantially
-  // the same prose. We keep whichever pass is objectively further from the
-  // source by the deterministic overlap audit; this is about rewrite depth,
-  // not detector evasion.
   if (naturalisationLevel === "aggressive" && !transformationQuality.passed) {
     firstAttemptQuality = transformationQuality;
-    const correctivePrompt = systemPrompt + qualityCorrectionBlock(transformationQuality);
-    const corrected = await runModelPass({ systemPrompt: correctivePrompt, sourceText });
-    const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel);
+    const corrected = await runModelPass({
+      systemPrompt: systemPrompt + qualityCorrectionBlock(transformationQuality),
+      sourceText,
+    });
+    const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, { humanCadence });
     qualityRetryUsed = true;
 
-    if (qualityScore(correctedQuality) <= qualityScore(transformationQuality)) {
+    const correctedIsBetter = correctedQuality.passed || qualityScore(correctedQuality) < qualityScore(transformationQuality);
+    if (correctedIsBetter) {
       parsed = corrected;
       transformationQuality = correctedQuality;
     }
@@ -201,6 +199,7 @@ export async function rewrite({
       texture_exemplar: naturalisationLevel === "aggressive",
       aggressive_keep_override: naturalisationLevel === "aggressive",
       transformation_quality_gate: naturalisationLevel === "aggressive",
+      academic_register_gate: naturalisationLevel === "aggressive",
       human_family_measured_sources: humanCadence?.measuredSources ?? 0,
     },
     build: getBuildInfo(),
