@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { createJob, getJob, retryChunk, summarizeJob } from "../lib/jobStore.js";
 import { llmProvider } from "../lib/llmProvider.js";
+import { LONG_DOCUMENT_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 
 export const jobsRouter = Router();
 
@@ -9,6 +10,16 @@ jobsRouter.post("/jobs", (req, res) => {
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string." });
+  }
+  try {
+    enforceWordLimit(text, LONG_DOCUMENT_WORD_LIMIT, "Long Document");
+  } catch (err) {
+    return res.status(413).json({
+      error: err.code,
+      message: `${err.message} The current in-memory beta is benchmarked for chapter-scale jobs rather than an unlimited whole-thesis upload.`,
+      wordCount: err.wordCount,
+      wordLimit: err.wordLimit,
+    });
   }
   if (!llmProvider.isConfigured()) {
     return res.status(503).json({
@@ -27,13 +38,13 @@ jobsRouter.get("/jobs/:id", (req, res) => {
   res.json(summarizeJob(job));
 });
 
-jobsRouter.post("/jobs/:id/chunks/:index/retry", async (req, res) => {
+jobsRouter.post("/jobs/:id/chunks/:index/retry", (req, res) => {
   const index = Number(req.params.index);
   if (!Number.isInteger(index)) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "chunk index must be an integer." });
   }
-  const result = await retryChunk(req.params.id, index);
+  const result = retryChunk(req.params.id, index);
   if (result.error === "JOB_NOT_FOUND") return res.status(404).json({ error: result.error });
   if (result.error === "CHUNK_NOT_FOUND") return res.status(404).json({ error: result.error });
-  res.json(summarizeJob(result.job));
+  res.status(202).json(summarizeJob(result.job));
 });
