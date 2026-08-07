@@ -1,5 +1,5 @@
-// Phase 3 (Section 19.4 / Section 14): long-document background jobs with
-// per-chunk progress, safe fallback, retry and document-level preservation.
+// Phase 3: long-document background jobs with per-chunk progress,
+// safe fallback, retries, quality gates and document-level preservation.
 
 import { randomUUID } from "node:crypto";
 import { buildDocumentMap } from "./documentMap.js";
@@ -24,6 +24,26 @@ function retryDelayMs(code, attempt, retryAfterMs = null) {
   if (retryAfterMs && Number.isFinite(retryAfterMs)) return Math.min(retryAfterMs, 15000);
   const base = code === "PROVIDER_OVERLOADED" ? 2000 : code === "RATE_LIMITED" ? 2500 : 1000;
   return Math.min(base * 2 ** (attempt - 1), 10000);
+}
+
+function normaliseHeading(text) {
+  return String(text || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function stripLeadingRepeatedHeading(text, heading) {
+  if (!heading || !text) return text;
+  const wanted = normaliseHeading(heading);
+  let lines = text.split(/\r?\n/);
+  let removed = false;
+
+  while (lines.length) {
+    while (lines.length && !lines[0].trim()) lines.shift();
+    if (!lines.length || normaliseHeading(lines[0]) !== wanted) break;
+    lines.shift();
+    removed = true;
+  }
+
+  return removed ? lines.join("\n").replace(/^\s+/, "") : text;
 }
 
 function assembleChunkText(chunk) {
@@ -66,9 +86,19 @@ async function processChunk(job, chunk) {
         precedingContext: chunk.precedingContextTail,
         documentGlossary: job.documentMap.glossary,
       });
-      chunk.revisedText = result.revised_text;
+
+      if (job.options.naturalisation === "aggressive" && result.transformation_quality && !result.transformation_quality.passed) {
+        const err = new Error(
+          `Aggressive rewrite failed the quality gate after corrective rewriting: ${result.transformation_quality.reasons.join(" ")}`
+        );
+        err.code = "QUALITY_GATE_FAILED";
+        throw err;
+      }
+
+      const revisedText = stripLeadingRepeatedHeading(result.revised_text, chunk.heading);
+      chunk.revisedText = revisedText;
       chunk.editSummary = result.edit_summary;
-      chunk.preservation = result.preservation;
+      chunk.preservation = auditPreservation(chunk.sourceText, revisedText);
       chunk.transformationQuality = result.transformation_quality || null;
       chunk.status = "done";
       chunk.error = null;
