@@ -6,6 +6,10 @@ const source = `Corporate governance influences the way firms are directed and c
 
 const nearCopy = source;
 
+const lightRewrite = `Corporate governance shapes the way firms are directed and controlled. The board monitors management while protecting shareholder interests. Strong governance can improve disclosure quality and reduce agency problems. Audit committees add an additional layer of oversight over financial reporting. Independent directors may challenge managerial decisions when necessary. Ownership structure also affects the incentives of controlling shareholders. These mechanisms interact with firm size, leverage, profitability, and industry conditions. Their combined effect varies across institutional settings and over time.`;
+
+const splitNearCopy = `Corporate governance influences the way firms are directed and controlled. The board monitors management. It also protects shareholder interests. Strong governance may improve disclosure quality while reducing agency problems. Audit committees provide an additional layer of oversight over financial reporting. Independent directors can challenge managerial decisions when necessary. Ownership structure shapes the incentives of controlling shareholders. These mechanisms interact with firm size, leverage, profitability and industry conditions. Their combined effect varies across institutional settings and over time.`;
+
 const restructured = `How firms are directed and controlled depends substantially on their governance arrangements. Protecting shareholder interests is one reason boards monitor managerial conduct. Agency problems and disclosure quality may also respond to the strength of those arrangements. Financial reporting receives a further layer of scrutiny through audit committees, while independent directors can challenge management when circumstances require it. The incentives facing controlling shareholders are shaped in part by ownership structure. Firm size, leverage, profitability and industry conditions alter how these mechanisms operate together, so their effects need not be identical across institutions or periods.`;
 
 const choppy = `Governance matters. Boards monitor managers. Shareholders need protection. Disclosure can improve. Agency problems can decline. Audit committees add oversight. Independent directors may challenge management. Ownership structure changes incentives. Firm conditions also matter. Institutional settings differ over time.`;
@@ -19,11 +23,25 @@ test("aggressive mode rejects a near-verbatim rewrite", () => {
   assert.ok(q.unchanged_sentence_ratio > 0.9);
 });
 
+test("aggressive mode rejects light synonym edits that retain source sentence skeletons", () => {
+  const q = assessTransformationQuality(source, lightRewrite, "aggressive");
+  assert.equal(q.passed, false);
+  assert.ok(q.near_source_sentence_ratio > 0.45);
+  assert.ok(q.near_source_sentence_count >= 4);
+});
+
+test("aggressive mode rejects splitting source sentences without real reconstruction", () => {
+  const q = assessTransformationQuality(source, splitNearCopy, "aggressive");
+  assert.equal(q.passed, false);
+  assert.ok(q.near_source_sentence_ratio > 0.45 || q.unchanged_sentence_ratio > 0.3);
+});
+
 test("aggressive mode accepts a materially restructured academic passage", () => {
   const q = assessTransformationQuality(source, restructured, "aggressive");
   assert.equal(q.passed, true);
   assert.ok(q.five_gram_overlap < 0.62);
   assert.ok(q.unchanged_sentence_ratio <= 0.3);
+  assert.ok(q.near_source_sentence_ratio <= 0.45);
 });
 
 test("aggressive mode rejects over-segmented choppy prose even when wording changed", () => {
