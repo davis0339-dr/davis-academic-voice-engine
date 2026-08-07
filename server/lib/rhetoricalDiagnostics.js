@@ -12,6 +12,7 @@ export function findRhetoricalScaffolding(sentences) {
   if (gapLabelled.length >= 3) {
     issues.push({
       sentenceIndex: gapLabelled[0].sentenceIndex,
+      sentenceIndices: gapLabelled.map((row) => row.sentenceIndex),
       issue: "gap_label_scaffolding",
       detail: `${gapLabelled.length} sentences are organised through explicit Conceptually/Theoretically/Methodologically/Empirically/Contextually labels. Preserve the distinct gaps, but reconstruct them as a connected argument rather than a labelled checklist.`,
       labels: gapLabelled.map((row) => row.match[1].toLowerCase()),
@@ -24,6 +25,7 @@ export function findRhetoricalScaffolding(sentences) {
     if (run.length >= 2) {
       issues.push({
         sentenceIndex: runStart,
+        sentenceIndices: run.map((row) => row.sentenceIndex),
         issue: "choppy_sentence_run",
         detail: `${run.length} consecutive sentences contain six words or fewer. Short sentences are not inherently problematic, but consecutive micro-sentences inside sustained academic exposition can create artificial rhythm rather than argument-led variation.`,
         wordCounts: run.map((row) => row.wordCount),
