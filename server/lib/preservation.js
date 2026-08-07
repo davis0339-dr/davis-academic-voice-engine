@@ -1,13 +1,5 @@
-// Pass E (preservation audit): programmatic, deterministic checks that run
-// after generation, independent of the model's own self-report. This is
-// what stops "the model says it preserved everything" from being the only
-// evidence -- see Section 6/Section 21.4 of the build handoff.
-//
-// These checks are necessarily conservative and substring-based. A false
-// warning (flagging a paraphrase of a number as "missing") is preferable
-// to silently trusting the model, but it does mean legitimate rewording of
-// a citation's surrounding grammar can trip a warning -- documented as a
-// known limitation in the README.
+// Pass E (preservation audit): deterministic checks that run after generation,
+// independent of the model's own self-report.
 
 import { extractProtectedSpans } from "./protect.js";
 
@@ -32,6 +24,27 @@ function extraNumericLike(sourceSpans, revisedSpans) {
 function extraCitationLike(sourceSpans, revisedSpans) {
   const sourceCitations = new Set(sourceSpans.citations);
   return revisedSpans.citations.filter((c) => !sourceCitations.has(c));
+}
+
+const PLANNED_STUDY = /\b(?:this|the present) study\s+(?:will|aims to|seeks to|is designed to|is intended to|proposes to)\b/gi;
+const PRESENT_REPORTING_STUDY = /\b(?:this|the present) study\s+(?:examines|investigates|assesses|evaluates|analyses|analyzes|determines|tests|adopts|uses|employs|collects|administers|measures|focuses|explores|estimates|applies)\b/gi;
+
+function countMatches(text, regex) {
+  return (String(text || "").match(regex) || []).length;
+}
+
+function assessStudyStage(sourceText, revisedText) {
+  const sourcePlanned = countMatches(sourceText, PLANNED_STUDY);
+  const revisedPlanned = countMatches(revisedText, PLANNED_STUDY);
+  const revisedPresentReporting = countMatches(revisedText, PRESENT_REPORTING_STUDY);
+
+  const changedFromPlannedToPresent = sourcePlanned > 0 && revisedPlanned === 0 && revisedPresentReporting > 0;
+  return {
+    ok: !changedFromPlannedToPresent,
+    source_planned_markers: sourcePlanned,
+    revised_planned_markers: revisedPlanned,
+    revised_present_reporting_markers: revisedPresentReporting,
+  };
 }
 
 export function auditPreservation(sourceText, revisedText, sourceSpans) {
@@ -98,11 +111,21 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     });
   }
 
+  const studyStage = assessStudyStage(sourceText, revisedText);
+  if (!studyStage.ok) {
+    warnings.push({
+      type: "study_stage_shift",
+      detail: "The source presents the study as planned/proposal-stage, but the revision changes that orientation to present-tense reporting (for example, 'this study will examine' becoming 'this study examines'). Preserve the research stage unless the author explicitly changes it.",
+    });
+  }
+
   return {
     numbers_ok: numbersOk,
     citations_ok: citationsOk,
     technical_terms_ok: technicalTermsOk,
     quotes_ok: quotesOk,
+    study_stage_ok: studyStage.ok,
+    study_stage: studyStage,
     new_factual_claims_detected: newFactualClaimsDetected,
     warnings,
   };
