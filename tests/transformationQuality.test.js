@@ -56,10 +56,11 @@ test("protected citations and figures are removed from rewrite-depth overlap sco
   assert.ok(q.protected_token_share > 0);
 });
 
-test("a moderate share of short sentences alone does not fail an otherwise sustained passage", () => {
-  const mixedCadence = `Governance remains important. Boards monitor management and protect shareholder interests through a range of formal oversight mechanisms. Audit committees add another layer of review over financial reporting, while independent directors can challenge decisions where the circumstances require it. Ownership matters too. The incentives facing controlling shareholders are partly shaped by ownership structure, but firm size, leverage, profitability and industry conditions alter how those incentives operate across settings. Outcomes therefore vary over time.`;
+test("a moderate share of short sentences alone is compatible with sustained academic cadence", () => {
+  const mixedCadence = `Governance remains important. Boards monitor management through formal oversight arrangements that are embedded within wider organisational and institutional structures. Audit committees add another layer of scrutiny over financial reporting, while independent directors can challenge managerial decisions when circumstances require it. Ownership matters too. The incentives facing controlling shareholders are partly shaped by ownership structure, although firm size, leverage, profitability and industry conditions alter how those incentives operate across settings. Financial reporting quality also depends on how these mechanisms interact with professional competence and the strength of internal monitoring systems. Institutional conditions influence the effectiveness of governance arrangements because enforcement quality and market development vary across jurisdictions. Outcomes therefore differ across firms, industries and periods even where broadly similar governance mechanisms have been adopted.`;
   const q = assessTransformationQuality(source, mixedCadence, "aggressive");
-  assert.ok(q.short_sentence_ratio <= 0.32 || q.mean_sentence_length >= 14);
+  assert.ok(q.short_sentence_ratio <= 0.32);
+  assert.ok(q.mean_sentence_length >= 14);
 });
 
 test("faithful mode reports depth metrics without enforcing aggressive thresholds", () => {
