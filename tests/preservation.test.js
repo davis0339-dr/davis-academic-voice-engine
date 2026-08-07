@@ -13,6 +13,7 @@ test("flags nothing when every protected span survives", () => {
   assert.equal(result.numbers_ok, true);
   assert.equal(result.citations_ok, true);
   assert.equal(result.quotes_ok, true);
+  assert.equal(result.study_stage_ok, true);
   assert.equal(result.warnings.length, 0);
 });
 
@@ -41,4 +42,19 @@ test("flags a fabricated new citation that was not in the source", () => {
   const result = auditPreservation(source, revised, extractProtectedSpans(source));
   assert.equal(result.new_factual_claims_detected, true);
   assert.ok(result.warnings.some((w) => w.type === "new_citation_introduced"));
+});
+
+test("flags a proposal-stage shift from planned future research to present reporting", () => {
+  const proposal = "In response to the identified gaps, this study will examine the effect of strategic initiatives on audit-firm performance while assessing the moderating role of proactiveness.";
+  const shifted = "In response to the identified gaps, this study examines the effect of strategic initiatives on audit-firm performance while assessing the moderating role of proactiveness.";
+  const result = auditPreservation(proposal, shifted, extractProtectedSpans(proposal));
+  assert.equal(result.study_stage_ok, false);
+  assert.ok(result.warnings.some((w) => w.type === "study_stage_shift"));
+});
+
+test("accepts a proposal-stage rephrase that remains explicitly planned", () => {
+  const proposal = "This study will examine the effect of strategic initiatives on audit-firm performance.";
+  const revised = "The present study aims to examine how strategic initiatives affect audit-firm performance.";
+  const result = auditPreservation(proposal, revised, extractProtectedSpans(proposal));
+  assert.equal(result.study_stage_ok, true);
 });
