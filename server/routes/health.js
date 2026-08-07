@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { llmProvider } from "../lib/llmProvider.js";
+import { getBuildInfo } from "../lib/buildInfo.js";
 
 export const healthRouter = Router();
 
 healthRouter.get("/health", (_req, res) => {
-  res.json({ status: "ok", uptimeSeconds: process.uptime() });
+  res.json({ status: "ok", uptimeSeconds: process.uptime(), build: getBuildInfo() });
 });
 
 // Section 19.3: fail fast, small enumerated state set, no indefinite spinner.

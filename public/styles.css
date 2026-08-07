@@ -45,6 +45,27 @@ body {
 .llm-status.ready { color: var(--good); }
 .llm-status.not-configured { color: var(--warn); }
 .llm-status.error { color: var(--bad); }
+.build-badge {
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  text-decoration: none;
+  margin-left: 0.75rem;
+}
+.build-badge:hover { color: var(--accent); border-color: var(--accent); }
+.proof-line {
+  font-size: 0.75rem;
+  color: var(--good);
+  background: rgba(76, 175, 125, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 0.6rem;
+}
+.proof-line a { color: inherit; }
 
 .layout {
   display: grid;

@@ -48,6 +48,18 @@ document.querySelectorAll(".tab-header").forEach((el) => {
   el.addEventListener("click", () => setTab(el.dataset.tab));
 });
 
+async function loadBuildBadge() {
+  const el = $("buildBadge");
+  try {
+    const res = await fetch("/api/health");
+    const data = await res.json();
+    el.textContent = "build: " + (data.build?.commitShort || "unknown");
+    if (data.build?.githubUrl) el.href = data.build.githubUrl;
+  } catch {
+    el.textContent = "build: unavailable";
+  }
+}
+
 async function loadLlmStatus() {
   llmStatusEl.textContent = "checking service status…";
   llmStatusEl.className = "llm-status";
@@ -168,12 +180,17 @@ function renderPlan(plan) {
   $("tab-changes").innerHTML = `<p><strong>Plan summary:</strong> ${summary}</p>${items}`;
 }
 
-function renderChangesWithEditSummary(plan, editSummary) {
+function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, build) {
   renderPlan(plan);
   const flags = (editSummary.flags_for_author || []).length
     ? `<p><strong>Flagged for author:</strong> ${editSummary.flags_for_author.join("; ")}</p>`
     : "";
+  const na = naturalisationApplied;
+  const proofLine = na
+    ? `<p class="proof-line">Naturalisation actually applied to THIS request: level=<strong>${na.level}</strong> · em-dash ban=${na.em_dash_ban ? "on" : "off"} · cadence targeting=${na.cadence_targeting ? "on" : "off"} · syntactic diversity=${na.syntactic_diversity ? "on" : "off"} · texture exemplar=${na.texture_exemplar ? "on" : "off"} · human family sources=${na.human_family_measured_sources}${build?.commitShort ? ` · build <a href="${build.githubUrl}" target="_blank" rel="noopener">${build.commitShort}</a>` : ""}</p>`
+    : "";
   $("tab-changes").innerHTML =
+    proofLine +
     `<p><strong>Model edit summary:</strong> kept ${editSummary.kept}, micro-edits ${editSummary.micro_edits}, restructures ${editSummary.sentence_restructures}, split/merge ${editSummary.split_or_merge}, paragraph reorders ${editSummary.paragraph_reorders}</p>${flags}` +
     $("tab-changes").innerHTML;
 }
@@ -265,8 +282,8 @@ async function runAnalyseAndRevise() {
     renderDiagnostics(data.diagnostics);
     renderProfile(data.style_profile_used);
     renderPreservation(data.preservation);
-    renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary);
-    setBusy(false, `Done. Request ID ${data.requestId}`);
+    renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
+    setBusy(false, `Done. Request ID ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}`);
   } catch (err) {
     setBusy(false);
     setError(err.message);
@@ -460,6 +477,7 @@ analyseOnlyBtn.addEventListener("click", runAnalyseOnly);
 analyseReviseBtn.addEventListener("click", runAnalyseAndRevise);
 
 loadLlmStatus();
+loadBuildBadge();
 loadStyleProfiles();
 loadMethodology();
 loadDetectorHealth();

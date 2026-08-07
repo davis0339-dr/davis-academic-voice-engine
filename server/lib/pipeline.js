@@ -11,6 +11,7 @@ import { buildSystemPrompt } from "./promptContract.js";
 import { auditPreservation } from "./preservation.js";
 import { llmProvider } from "./llmProvider.js";
 import { assessCadenceDeviation } from "./cadenceDeviation.js";
+import { getBuildInfo } from "./buildInfo.js";
 
 export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference }) {
   const protectedSpans = extractProtectedSpans(sourceText);
@@ -154,6 +155,8 @@ export async function rewrite({
 
   const preservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans);
 
+  const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
+
   return {
     revised_text: parsed.revised_text,
     style_profile_used: analysis.style_profile_used,
@@ -162,5 +165,19 @@ export async function rewrite({
     preservation,
     diagnostics: analysis.diagnostics,
     model_notes: parsed.diagnostics_notes || "",
+    // Verifiable proof of what this specific request actually ran, so the
+    // running app can prove its own behaviour instead of asking the user
+    // to trust a chat transcript or a git log they can't see live.
+    naturalisation_applied: {
+      level: naturalisationLevel,
+      em_dash_ban: true, // sanitiseProse runs unconditionally, all levels
+      cadence_targeting: naturalisationLevel !== "off",
+      syntactic_diversity: naturalisationLevel !== "off",
+      texture_exemplar: naturalisationLevel === "aggressive",
+      human_family_measured_sources: humanCadence?.measuredSources ?? 0,
+    },
+    build: getBuildInfo(),
   };
 }
+
+const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
