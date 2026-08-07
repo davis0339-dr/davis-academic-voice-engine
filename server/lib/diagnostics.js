@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { splitSentences, wordCount } from "./sentences.js";
+import { findRhetoricalScaffolding } from "./rhetoricalDiagnostics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -162,11 +163,13 @@ export function diagnose(text) {
   const transitionStacking = findTransitionStacking(sentences);
   const repeatedOpenings = findRepeatedOpenings(sentences);
   const paragraphPatterns = findParagraphPatterning(text, sentences);
+  const rhetoricalScaffolding = findRhetoricalScaffolding(sentences);
   const monotony = findMonotony(sentences);
 
   const structuralMonotony = [
     ...repeatedOpenings,
     ...paragraphPatterns,
+    ...rhetoricalScaffolding,
     ...monotony.overloaded.map((o) => ({
       sentenceIndex: o.sentenceIndex,
       issue: "overloaded_sentence",
@@ -186,6 +189,7 @@ export function diagnose(text) {
     generic_phrasing: genericPhrasing,
     structural_monotony: structuralMonotony,
     paragraph_patterns: paragraphPatterns,
+    rhetorical_scaffolding: rhetoricalScaffolding,
     cohesion: transitionStacking,
     evidence_alignment: [],
     monotony,
