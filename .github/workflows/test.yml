@@ -12,9 +12,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: npm
@@ -25,10 +25,19 @@ jobs:
         run: |
           set -o pipefail
           npm test 2>&1 | tee test-output.txt
+      - name: Run thesis language simulation
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/simulate-language-engine.js 2>&1 | tee language-simulation.txt
       - name: Retain test diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-output-${{ github.run_id }}
-          path: test-output.txt
+          path: |
+            test-output.txt
+            language-simulation.txt
+            language-simulation.json
+          if-no-files-found: ignore
           retention-days: 7
