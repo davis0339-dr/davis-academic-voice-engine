@@ -1,15 +1,5 @@
-// Phase 3 (Section 19.4 / Section 14): "for long documents, create a
-// background job with progress rather than relying on one long HTTP
-// request" + "allow retry of only a failed chunk rather than losing the
-// whole job."
-//
-// LIMITATION, stated plainly: this is an in-memory, single-process job
-// store. It does not survive a server restart and does not work across
-// multiple server instances. A real deployment needs a persistent queue
-// (Section 18.1 lists "Background job worker/queue" as its own service
-// boundary for exactly this reason) -- that's Phase 7 infrastructure, out
-// of scope here. What Phase 3 delivers is the actual chunking/reassembly/
-// consistency logic, which a real queue would call the same way.
+// Phase 3 (Section 19.4 / Section 14): long-document background jobs with
+// per-chunk progress, safe fallback, retry and document-level preservation.
 
 import { randomUUID } from "node:crypto";
 import { buildDocumentMap } from "./documentMap.js";
@@ -18,6 +8,12 @@ import { rewrite } from "./pipeline.js";
 import { auditPreservation } from "./preservation.js";
 
 const jobs = new Map();
+const MAX_TRANSIENT_ATTEMPTS = 2;
+const TRANSIENT_CODES = new Set(["NETWORK_TIMEOUT", "RATE_LIMITED"]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function assembleChunkText(chunk) {
   const body =
@@ -43,24 +39,44 @@ function finalizeIfComplete(job) {
 async function processChunk(job, chunk) {
   chunk.status = "processing";
   chunk.error = null;
-  try {
-    const result = await rewrite({
-      sourceText: chunk.sourceText,
-      styleFilters: job.options.styleFilters,
-      rewriteIntensity: job.options.rewriteIntensity,
-      grammarIntensity: job.options.grammarIntensity,
-      lengthPreference: job.options.lengthPreference,
-      naturalisation: job.options.naturalisation,
-      precedingContext: chunk.precedingContextTail,
-      documentGlossary: job.documentMap.glossary,
-    });
-    chunk.revisedText = result.revised_text;
-    chunk.editSummary = result.edit_summary;
-    chunk.preservation = result.preservation;
-    chunk.status = "done";
-  } catch (err) {
-    chunk.status = "failed";
-    chunk.error = { code: err.code || err.healthState || "PROVIDER_ERROR", message: err.message };
+  chunk.attempts = chunk.attempts || 0;
+
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt++) {
+    chunk.attempts += 1;
+    try {
+      const result = await rewrite({
+        sourceText: chunk.sourceText,
+        styleFilters: job.options.styleFilters,
+        rewriteIntensity: job.options.rewriteIntensity,
+        grammarIntensity: job.options.grammarIntensity,
+        lengthPreference: job.options.lengthPreference,
+        naturalisation: job.options.naturalisation,
+        precedingContext: chunk.precedingContextTail,
+        documentGlossary: job.documentMap.glossary,
+      });
+      chunk.revisedText = result.revised_text;
+      chunk.editSummary = result.edit_summary;
+      chunk.preservation = result.preservation;
+      chunk.status = "done";
+      chunk.error = null;
+      return;
+    } catch (err) {
+      const code = err.code || err.healthState || "PROVIDER_ERROR";
+      const transient = TRANSIENT_CODES.has(code);
+
+      if (transient && attempt < MAX_TRANSIENT_ATTEMPTS) {
+        chunk.error = {
+          code,
+          message: `${err.message}. Automatic retry ${attempt}/${MAX_TRANSIENT_ATTEMPTS - 1} pending.`,
+        };
+        await sleep(code === "RATE_LIMITED" ? 2000 : 750);
+        continue;
+      }
+
+      chunk.status = "failed";
+      chunk.error = { code, message: err.message };
+      return;
+    }
   }
 }
 
@@ -68,20 +84,18 @@ async function processJob(jobId) {
   const job = jobs.get(jobId);
   if (!job) return;
   job.status = "processing";
-  // Sequential on purpose: keeps this build's rate-limit behavior simple
-  // and predictable. Bounded-concurrency chunk processing is a reasonable
-  // future improvement, not required for Phase 3's acceptance gate.
+
+  // Sequential processing deliberately limits provider pressure and keeps
+  // document-order context deterministic.
   for (const chunk of job.chunks) {
-    if (chunk.status === "queued") {
-      await processChunk(job, chunk);
-    }
+    if (chunk.status === "queued") await processChunk(job, chunk);
   }
   finalizeIfComplete(job);
 }
 
 export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation }) {
   const documentMap = buildDocumentMap(text);
-  const { method, chunks } = chunkDocument(text, documentMap);
+  const { method, chunks, targetWords, hardMaxWords } = chunkDocument(text, documentMap);
 
   const job = {
     id: randomUUID(),
@@ -90,6 +104,7 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
     sourceText: text,
     documentMap,
     chunkMethod: method,
+    chunkPolicy: { targetWords, hardMaxWords },
     options: { styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation },
     chunks: chunks.map((c) => ({
       ...c,
@@ -98,14 +113,13 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
       editSummary: null,
       preservation: null,
       error: null,
+      attempts: 0,
     })),
     reassembledText: null,
     documentPreservation: null,
   };
   jobs.set(job.id, job);
 
-  // Fire-and-forget: the HTTP request that created this job returns
-  // immediately with the job id; progress is polled via GET /api/jobs/:id.
   processJob(job.id).catch((err) => {
     job.status = "failed";
     job.fatalError = err.message;
@@ -125,6 +139,7 @@ export async function retryChunk(jobId, chunkIndex) {
   if (!chunk) return { error: "CHUNK_NOT_FOUND" };
 
   chunk.status = "queued";
+  chunk.error = null;
   job.status = "processing";
   job.reassembledText = null;
   job.documentPreservation = null;
@@ -142,6 +157,7 @@ export function summarizeJob(job) {
     status: job.status,
     createdAt: job.createdAt,
     chunkMethod: job.chunkMethod,
+    chunkPolicy: job.chunkPolicy,
     progress: { chunkCount, doneCount, failedCount },
     documentMap: {
       title: job.documentMap.title,
@@ -154,6 +170,7 @@ export function summarizeJob(job) {
       heading: c.heading,
       wordCount: c.wordCount,
       status: c.status,
+      attempts: c.attempts,
       error: c.error,
       editSummary: c.editSummary,
       preservation: c.preservation,
