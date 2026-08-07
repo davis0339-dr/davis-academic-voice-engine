@@ -5,7 +5,13 @@ import { llmProvider } from "../lib/llmProvider.js";
 
 export const rewriteRouter = Router();
 
-const TRANSIENT_STATES = new Set(["RATE_LIMITED", "NETWORK_TIMEOUT", "PROVIDER_ERROR"]);
+const TRANSIENT_STATES = new Set([
+  "RATE_LIMITED",
+  "NETWORK_TIMEOUT",
+  "PROVIDER_OVERLOADED",
+  "PROVIDER_UNAVAILABLE",
+  "PROVIDER_ERROR",
+]);
 const MAX_RETRIES = 2;
 
 function sleep(ms) {
@@ -46,21 +52,23 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       const state = err.healthState;
       const retriable = TRANSIENT_STATES.has(state);
       if (!retriable || attempt === MAX_RETRIES) break;
-      await sleep(500 * 2 ** attempt); // bounded backoff, never on auth failures
+      const base = state === "PROVIDER_OVERLOADED" ? 2000 : state === "RATE_LIMITED" ? 2500 : 750;
+      await sleep(base * 2 ** attempt);
       attempt += 1;
     }
   }
 
   const state = lastErr.healthState || "PROVIDER_ERROR";
-  const httpStatus = state === "AUTH_FAILED" ? 401 : state === "RATE_LIMITED" ? 429 : state === "NETWORK_TIMEOUT" ? 504 : 502;
+  const httpStatus =
+    state === "AUTH_FAILED" ? 401 :
+    state === "RATE_LIMITED" ? 429 :
+    state === "NETWORK_TIMEOUT" ? 504 :
+    state === "PROVIDER_OVERLOADED" || state === "PROVIDER_UNAVAILABLE" ? 503 :
+    502;
 
   res.status(httpStatus).json({
     error: lastErr.code || state,
     message: lastErr.message,
     requestId,
-    // The user's source text is never discarded server-side on failure --
-    // it was never stored to begin with (Section 19.4: "keep the user's
-    // source text available if processing fails"). The client already has
-    // it in the left pane; we just don't want to silently swallow it.
   });
 });
