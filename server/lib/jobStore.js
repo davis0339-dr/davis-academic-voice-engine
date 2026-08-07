@@ -20,7 +20,8 @@ function assembleChunkText(chunk) {
     chunk.status === "done"
       ? chunk.revisedText
       : `[UNREVISED -- chunk ${chunk.index} ${chunk.status}, original text kept so nothing is silently dropped]\n${chunk.sourceText}`;
-  return chunk.heading ? `${chunk.heading}\n\n${body}` : body;
+  const shouldAttachHeading = chunk.heading && chunk.reattachHeading !== false;
+  return shouldAttachHeading ? `${chunk.heading}\n\n${body}` : body;
 }
 
 function finalizeIfComplete(job) {
