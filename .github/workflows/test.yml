@@ -21,4 +21,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run test suite
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt
+      - name: Retain test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output-${{ github.run_id }}
+          path: test-output.txt
+          retention-days: 7
