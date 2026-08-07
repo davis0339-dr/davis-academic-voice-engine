@@ -29,6 +29,7 @@ export const AI_SURFACE_TELLS = [
   'Cut throat-clearing openers ("It is important to note that", "It is worth noting that", "It should be emphasised that", "Crucially,", "Ultimately,").',
   "Avoid uniformly hedged, uniformly balanced sentences where every clause has a matching counter-clause. Real argument is sometimes lopsided.",
   'Avoid the participial-tail habit of appending ", thereby ...ing", ", underscoring ...", ", reflecting ..." to a large share of sentences.',
+  'Do NOT open a run of consecutive sentences or paragraphs with bare single-adverb category labels ("Conceptually,", "Theoretically,", "Methodologically,", "Empirically,", "Contextually,", "Practically,"). This list-in-disguise template is a strong machine tell. Rephrase each into a full clause, or fold several into one sentence.',
 ];
 
 function buildCadenceTargetBlock(humanCadence) {
@@ -69,7 +70,17 @@ const NATURALISATION_FIDELITY = {
   faithful:
     "NATURALISATION FIDELITY: faithful. Achieve the cadence variation above mainly by splitting overloaded sentences, merging choppy ones, and light clause reordering. Preserve the author's own vocabulary, register, and most of their phrasing -- do not substitute their word choices wholesale. When in doubt, keep the author's words and change the rhythm.",
   aggressive:
-    "NATURALISATION FIDELITY: aggressive. You may recast sentences substantially, rephrase, and resequence to hit the human-cadence distribution as closely as possible, INCLUDING replacing generic wording with more varied phrasing. Every claim, citation, number, quotation, and technical term must still be preserved exactly, and you must not introduce any new fact or reference. Within that hard boundary, prioritise landing inside the human sentence-length mean and standard-deviation bands over staying close to the original wording.",
+    [
+      "NATURALISATION FIDELITY: aggressive. You may recast sentences substantially, rephrase, and resequence. Every claim, citation, number, quotation, and technical term must be preserved exactly, and you must not introduce any new fact or reference. Within that hard boundary:",
+      "",
+      "REGISTER TARGET -- write like a real (often second-language) academic, not like a polished model. The clearest machine tell in formal academic text is not any single word; it is UNIFORM OPTIMISATION -- every sentence maximally dense, maximally clear, maximally sophisticated, perfectly balanced. Real human academic prose is unevenly good. Concretely:",
+      "- LOWER the information density. Do not pack every sentence with maximum content. Let some sentences make a single, plain point and stop.",
+      "- LOWER the lexical register. Prefer ordinary, common academic words over elevated or 'sophisticated' synonyms. Keep technical terms exactly, but around them use plain vocabulary. If a simpler everyday word carries the meaning, use it instead of the impressive one.",
+      "- Allow natural redundancy. Real writers restate and circle back; a key term or idea may recur in plain words rather than being elegantly varied each time. Do not strive to say each thing exactly once in the most efficient way.",
+      "- Break perfect balance. Not every sentence needs a matching subordinate clause, a parenthetical qualifier, or a summarising tail. Let some sentences be flat and direct.",
+      "- Vary sentence openings and shapes; avoid a steady subject-verb-object-with-trailing-clause rhythm.",
+      "IMPORTANT LINE YOU MUST NOT CROSS: do NOT introduce grammatical errors, misspellings, wrong words, or broken syntax to seem human. Plainer and less dense is the goal, not incorrect. The text must remain fully correct and defensible to an examiner.",
+    ].join("\n"),
 };
 
 export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, precedingContext, documentGlossary, humanCadence, naturalisation }) {
