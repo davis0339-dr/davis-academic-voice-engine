@@ -68,6 +68,90 @@ function removeProtectedMaterial(text, protectedSpans) {
   return out.replace(/\s+/g, " ").trim();
 }
 
+const CONTENT_STOPWORDS = new Set(
+  "a an the and or but if then than so to of in on at by for from with as is are was were be been being it its this that these those who whom whose which where when while into within across over under through about between among both each any some such no not do does did have has had can could may might must shall should will would their there here also itself themselves himself herself own".split(" ")
+);
+
+function contentTokens(text, protectedSpans) {
+  return normalise(removeProtectedMaterial(text, protectedSpans)).filter((token) => !CONTENT_STOPWORDS.has(token));
+}
+
+function lcsLength(a, b) {
+  if (!a.length || !b.length) return 0;
+  let previous = new Array(b.length + 1).fill(0);
+  for (const left of a) {
+    const current = new Array(b.length + 1).fill(0);
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = left === b[j - 1]
+        ? previous[j - 1] + 1
+        : Math.max(current[j - 1], previous[j]);
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+function lexicalContainment(a, b) {
+  const left = new Set(a);
+  const right = new Set(b);
+  if (!left.size || !right.size) return 0;
+  let intersection = 0;
+  for (const token of left) if (right.has(token)) intersection += 1;
+  return intersection / Math.min(left.size, right.size);
+}
+
+// N-grams catch literal phrase reuse, but they can miss a common weak
+// paraphrase pattern: preserve the same sentence skeleton/content-word order,
+// substitute one or two words, or split one source sentence into two. This
+// metric compares each revised sentence against every source sentence after
+// protected material and stopwords are removed. A sentence is near-source
+// only when both lexical containment and ordered-token containment are high.
+function assessNearSourceSentences(sourceText, revisedText, protectedSpans) {
+  const source = splitSentences(sourceText)
+    .map((text) => ({ text, tokens: contentTokens(text, protectedSpans) }))
+    .filter((item) => item.tokens.length >= 5);
+  const revised = splitSentences(revisedText)
+    .map((text) => ({ text, tokens: contentTokens(text, protectedSpans) }))
+    .filter((item) => item.tokens.length >= 5);
+
+  if (!revised.length || !source.length) {
+    return { ratio: 0, count: 0, eligible: revised.length, worst: [] };
+  }
+
+  const matched = [];
+  for (const candidate of revised) {
+    let best = null;
+    for (const original of source) {
+      const minLength = Math.min(candidate.tokens.length, original.tokens.length);
+      if (minLength < 5) continue;
+      const orderedContainment = lcsLength(candidate.tokens, original.tokens) / minLength;
+      const lexical = lexicalContainment(candidate.tokens, original.tokens);
+      const score = orderedContainment * 0.55 + lexical * 0.45;
+      if (!best || score > best.score) {
+        best = {
+          score,
+          orderedContainment,
+          lexicalContainment: lexical,
+          revised: candidate.text,
+          source: original.text,
+        };
+      }
+    }
+
+    if (best && best.orderedContainment >= 0.72 && best.lexicalContainment >= 0.78) {
+      matched.push(best);
+    }
+  }
+
+  matched.sort((a, b) => b.score - a.score);
+  return {
+    ratio: matched.length / revised.length,
+    count: matched.length,
+    eligible: revised.length,
+    worst: matched.slice(0, 3),
+  };
+}
+
 const DIRECT_ADDRESS = /\b(?:you|your|yours|yourself|yourselves)\b/gi;
 const FORMALITY_RISK = /\b(?:don't|doesn't|didn't|can't|won't|isn't|aren't|wasn't|weren't|it's|that's|there's|you're|we're|they're|ticking\s+(?:the\s+)?boxes|locked\s+up|tiny\s+fraction|same\s+thing|goes?\s+hand\s+in\s+hand|when\s+you\s+look|old\s+yardstick)\b/gi;
 
@@ -92,6 +176,7 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
   const sourceSentences = splitSentences(sourceText).map(normaliseSentence).filter(Boolean);
   const unchangedSentenceCount = sourceSentences.filter((s) => revisedSentenceSet.has(s)).length;
   const unchangedSentenceRatio = sourceSentences.length ? unchangedSentenceCount / sourceSentences.length : 0;
+  const nearSource = assessNearSourceSentences(sourceText, revisedText, protectedSpans);
 
   const revisedLengths = sentenceWordCounts(revisedText);
   const shortSentenceCount = revisedLengths.filter((n) => n <= 9).length;
@@ -123,12 +208,15 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
       passed = false;
       reasons.push(`${(unchangedSentenceRatio * 100).toFixed(1)}% of source sentences remain verbatim, above the aggressive-mode ceiling of 30%.`);
     }
+    if (nearSource.ratio > 0.45) {
+      passed = false;
+      reasons.push(`${(nearSource.ratio * 100).toFixed(1)}% of substantive revised sentences retain near-source content-word order/structure, above the aggressive-mode ceiling of 45%.`);
+    }
 
     // A fixed 24% short-sentence cutoff proved too brittle on real thesis
-    // prose (24.2% was rejected despite otherwise reasonable variation).
-    // Reject genuinely dominant short-sentence texture, or a moderately high
-    // share only when the overall mean has also fallen below the academic
-    // cadence floor. Long runs remain a hard over-segmentation signal.
+    // prose. Reject genuinely dominant short-sentence texture, or a
+    // moderately high share only when the overall mean has also fallen below
+    // the academic cadence floor. Long runs remain a hard signal.
     const shortDominant = shortSentenceRatio > 0.32;
     const shortAndThin = shortSentenceRatio > 0.27 && meanSentenceLength < cadenceFloor;
     if (shortDominant || shortAndThin) {
@@ -169,6 +257,16 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
     unchanged_sentence_ratio: Number(unchangedSentenceRatio.toFixed(3)),
     unchanged_sentence_count: unchangedSentenceCount,
     source_sentence_count: sourceSentences.length,
+    near_source_sentence_ratio: Number(nearSource.ratio.toFixed(3)),
+    near_source_sentence_count: nearSource.count,
+    near_source_sentence_eligible: nearSource.eligible,
+    near_source_examples: nearSource.worst.map((item) => ({
+      score: Number(item.score.toFixed(3)),
+      ordered_containment: Number(item.orderedContainment.toFixed(3)),
+      lexical_containment: Number(item.lexicalContainment.toFixed(3)),
+      revised: item.revised,
+      source: item.source,
+    })),
     revised_sentence_count: revisedLengths.length,
     mean_sentence_length: Number(meanSentenceLength.toFixed(2)),
     short_sentence_ratio: Number(shortSentenceRatio.toFixed(3)),
