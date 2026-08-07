@@ -1,8 +1,5 @@
 // Server-side only. This module is never sent to the browser.
 // Provider adapter for the LLM used by the revision pipeline.
-// Currently implements the Anthropic Messages API over plain fetch (no SDK
-// dependency) so the health-check/timeout/error-state contract in Section 19
-// of the build handoff is fully under our control.
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -19,7 +16,10 @@ export const HealthState = Object.freeze({
 function getConfig() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
-  const timeoutMs = Number(process.env.LLM_TIMEOUT_MS || 30000);
+  // 30s was too short for genuine academic rewrites on Render. Long-document
+  // requests are now smaller as well, but a 90s ceiling gives legitimate
+  // revisions room to finish without making the health endpoint sluggish.
+  const timeoutMs = Number(process.env.LLM_TIMEOUT_MS || 90000);
   return { apiKey, model, timeoutMs };
 }
 
@@ -28,7 +28,7 @@ function isConfigured() {
   return Boolean(apiKey && apiKey.trim().length > 0);
 }
 
-async function callAnthropic({ system, messages, maxTokens = 4096 }) {
+async function callAnthropic({ system, messages, maxTokens = 4096, timeoutOverrideMs = null }) {
   const { apiKey, model, timeoutMs } = getConfig();
 
   if (!apiKey) {
@@ -37,8 +37,9 @@ async function callAnthropic({ system, messages, maxTokens = 4096 }) {
     throw err;
   }
 
+  const effectiveTimeoutMs = timeoutOverrideMs || timeoutMs;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
 
   let response;
   try {
@@ -60,7 +61,7 @@ async function callAnthropic({ system, messages, maxTokens = 4096 }) {
   } catch (networkErr) {
     clearTimeout(timer);
     if (networkErr.name === "AbortError") {
-      const err = new Error("LLM request timed out");
+      const err = new Error(`LLM request timed out after ${Math.round(effectiveTimeoutMs / 1000)}s`);
       err.healthState = HealthState.NETWORK_TIMEOUT;
       throw err;
     }
@@ -96,8 +97,8 @@ async function callAnthropic({ system, messages, maxTokens = 4096 }) {
   };
 }
 
-// Cheap connection test: minimal max_tokens, minimal prompt. Used by
-// GET /api/health/llm. Must fail fast, not hang -- see Section 19.3.
+// Keep the health check genuinely fast even though real rewrite requests may
+// take longer. This prevents a provider outage from hanging the whole UI.
 async function checkHealth() {
   if (!isConfigured()) {
     return { state: HealthState.NOT_CONFIGURED, message: "ANTHROPIC_API_KEY is not set." };
@@ -107,6 +108,7 @@ async function checkHealth() {
       system: "Reply with the single word: ok",
       messages: [{ role: "user", content: "ping" }],
       maxTokens: 8,
+      timeoutOverrideMs: 10000,
     });
     return { state: HealthState.READY, message: "Provider reachable and authenticated." };
   } catch (err) {
