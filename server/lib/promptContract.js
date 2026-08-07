@@ -11,6 +11,8 @@ Restyle the text so that its sentence architecture, rhythm, lexical register, rh
 
 You may restructure wording substantially. Reorder clauses, change grammatical subjects, split or merge sentences where the argument requires it, redistribute information across neighbouring sentences, and remove repetitive rhetorical templates when doing so preserves the argument.
 
+Preserve the source's MACRO-ARGUMENT ORDER unless the intervention plan explicitly identifies a paragraph-level structural problem. Aggressive sentence rewriting is not permission to scramble the author's funnel, chronology, variable-development sequence, claim-evidence adjacency, problem-to-gap logic, or the relationship between one rhetorical stage and the next.
+
 Do not invent facts, citations, studies, findings, methods, statistics or limitations. Do not change a result's direction or convert association into causation. Do not mechanically replace technical terms. Do not manufacture grammar errors, fake roughness, random quirks, invisible characters, homoglyphs or hidden-token tricks.
 
 Use the supplied style-family profile as descriptive evidence about plausible variation, not as an imitation target for an individual author. Never force every metric toward a median. Section purpose and the actual argument take priority over numeric style matching.
@@ -32,6 +34,8 @@ export const SYNTACTIC_DIVERSITY_INSTRUCTIONS = [
   "Use active and passive voice according to emphasis, information structure and disciplinary convention. Do not force a numeric active/passive ratio.",
   "Vary clause order in multi-clause sentences when a different order improves emphasis or progression. Do not apply one restructuring pattern uniformly across the passage.",
   "Where several neighbouring sentences express one analytical unit, consider redistributing propositions across them rather than preserving source sentence boundaries.",
+  "Build LOCAL DISCOURSE CONTINUITY. When a sentence explains, qualifies, contrasts with, or draws a consequence from the preceding sentence, let that relationship be visible through carried-forward terminology, a natural demonstrative/reference (for example 'this pattern', 'these conditions', 'such concentration') or clause linkage where appropriate. Do not polish every sentence into an isolated mini-topic sentence.",
+  "Do not overuse demonstratives or explicit transitions merely to satisfy the previous rule. The relationship can also be carried by repeated technical terms, shared grammatical subjects or an unfolding evidence chain.",
   "Keep technical constructs stable. Vary ordinary surrounding language only where repetition is stylistically unnecessary; do not thesaurus-swap discipline terms.",
   "Allow paragraph length and sentence complexity to follow rhetorical function. A definition, evidence statement, interpretation and transition need not have the same shape.",
   "The goal is structural variety arising from reasoning, not visible randomisation. If a pattern looks deliberately alternated, it is probably too mechanical.",
@@ -70,12 +74,13 @@ const NATURALISATION_FIDELITY = {
     "NATURALISATION FIDELITY: faithful. Improve cadence and structure mainly through selective splitting/merging, clause reordering and local phrasing changes. Preserve the author's vocabulary and register where they already work.",
   aggressive:
     [
-      "NATURALISATION FIDELITY: aggressive. You may recast sentences substantially, change grammatical subjects, redistribute propositions across neighbouring sentences, merge or divide sentences, and resequence local paragraph material. Every claim, citation, number, quotation and technical term must remain correct, and no new fact or reference may be introduced.",
+      "NATURALISATION FIDELITY: aggressive. You may recast sentences substantially, change grammatical subjects, redistribute propositions across neighbouring sentences, and merge or divide sentences. Reorder local paragraph material only when the diagnostic plan explicitly identifies a paragraph-level structural problem. Every claim, citation, number, quotation and technical term must remain correct, and no new fact or reference may be introduced.",
       "",
       "ACADEMIC REGISTER TARGET:",
       "- Use sustained postgraduate academic prose: formal, readable and intellectually specific rather than conversational, journalistic or slogan-like.",
       "- Do not maximise lexical sophistication. Prefer the clearest ordinary academic wording that preserves the construct and disciplinary meaning.",
       "- Do not optimise every sentence into the same polished density. Some sentences may carry one proposition; others may carry a qualified chain of reasoning when that structure is justified.",
+      "- Let some sentences depend naturally on neighbouring sentences instead of making every sentence a self-contained abstract-style statement. Preserve enough local lexical and referential continuity for the paragraph to read as one developing argument.",
       "- Natural repetition of technical terms is acceptable. Do not disguise construct repetition through forced synonyms.",
       "- Break source sentence skeletons when the intervention plan calls for substantive restructuring. Changing punctuation or one or two words is not enough.",
       "- Where the source contains a visible rhetorical scaffold, preserve its intellectual distinctions but rebuild the presentation so the reasoning, not the labels, organises the prose.",
@@ -119,7 +124,7 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     "",
     naturalisationOn
       ? [
-          "SYNTACTIC DIVERSITY PRINCIPLES:",
+          "SYNTACTIC AND DISCOURSE DIVERSITY PRINCIPLES:",
           SYNTACTIC_DIVERSITY_INSTRUCTIONS.map((t) => `- ${t}`).join("\n"),
         ].join("\n")
       : "",
@@ -160,8 +165,8 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
       2
     ),
     plan.paragraphReorderSuggested
-      ? "\nDocument-level note: the diagnostics justify considering paragraph- or multi-sentence restructuring. Preserve claim-to-citation relationships and the section's logical progression; do not reorder simply to create novelty."
-      : "",
+      ? "\nDocument-level note: a paragraph-level structural pattern was actually diagnosed. You may restructure sentence grouping or local paragraph order only as needed to resolve that pattern. Preserve the section's macro-argument sequence, claim-to-citation relationships and transitions between rhetorical stages. Do not move ideas merely to create novelty."
+      : "\nDocument-level note: no paragraph-level reorder was diagnosed. Preserve the existing macro-argument and paragraph sequence; perform substantive reconstruction within that logical order.",
     "",
     "--- RESPONSE FORMAT ---",
     "Return a single JSON object matching exactly this shape, and nothing else:",
