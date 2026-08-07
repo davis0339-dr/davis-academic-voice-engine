@@ -1,4 +1,5 @@
 import { splitSentences } from "./sentences.js";
+import { findRhetoricalScaffolding } from "./rhetoricalDiagnostics.js";
 
 function normalise(text) {
   return text.toLowerCase().match(/[a-z0-9']+/g) || [];
@@ -152,6 +153,15 @@ function assessNearSourceSentences(sourceText, revisedText, protectedSpans) {
   };
 }
 
+function rhetoricalIssueSummary(text) {
+  const issues = findRhetoricalScaffolding(splitSentences(text));
+  return {
+    issues,
+    gapLabelScaffolding: issues.find((i) => i.issue === "gap_label_scaffolding") || null,
+    choppySentenceRun: issues.find((i) => i.issue === "choppy_sentence_run") || null,
+  };
+}
+
 const DIRECT_ADDRESS = /\b(?:you|your|yours|yourself|yourselves)\b/gi;
 const FORMALITY_RISK = /\b(?:don't|doesn't|didn't|can't|won't|isn't|aren't|wasn't|weren't|it's|that's|there's|you're|we're|they're|ticking\s+(?:the\s+)?boxes|locked\s+up|tiny\s+fraction|same\s+thing|goes?\s+hand\s+in\s+hand|when\s+you\s+look|old\s+yardstick)\b/gi;
 
@@ -186,6 +196,8 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
 
   const directAddressIntroduced = Math.max(0, countMatches(revisedText, DIRECT_ADDRESS) - countMatches(sourceText, DIRECT_ADDRESS));
   const formalityRisksIntroduced = Math.max(0, countMatches(revisedText, FORMALITY_RISK) - countMatches(sourceText, FORMALITY_RISK));
+  const sourceRhetorical = rhetoricalIssueSummary(sourceText);
+  const revisedRhetorical = rhetoricalIssueSummary(revisedText);
 
   const lengthRatio = sourceTokens.length ? revisedTokens.length / sourceTokens.length : 1;
   const level = (naturalisation || "faithful").toLowerCase();
@@ -200,17 +212,28 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
   const reasons = [];
 
   if (level === "aggressive" && longEnoughForGate) {
-    if (fiveGramOverlap > 0.62) {
+    if (fiveGramOverlap > 0.56) {
       passed = false;
-      reasons.push(`Protected-span-adjusted 5-word phrase overlap is ${(fiveGramOverlap * 100).toFixed(1)}%, above the aggressive-mode ceiling of 62%.`);
+      reasons.push(`Protected-span-adjusted 5-word phrase overlap is ${(fiveGramOverlap * 100).toFixed(1)}%, above the aggressive-mode ceiling of 56%.`);
     }
-    if (unchangedSentenceRatio > 0.30) {
+    if (unchangedSentenceRatio > 0.22) {
       passed = false;
-      reasons.push(`${(unchangedSentenceRatio * 100).toFixed(1)}% of source sentences remain verbatim, above the aggressive-mode ceiling of 30%.`);
+      reasons.push(`${(unchangedSentenceRatio * 100).toFixed(1)}% of source sentences remain verbatim, above the aggressive-mode ceiling of 22%.`);
     }
-    if (nearSource.ratio > 0.45) {
+    if (nearSource.ratio > 0.38) {
       passed = false;
-      reasons.push(`${(nearSource.ratio * 100).toFixed(1)}% of substantive revised sentences retain near-source content-word order/structure, above the aggressive-mode ceiling of 45%.`);
+      reasons.push(`${(nearSource.ratio * 100).toFixed(1)}% of substantive revised sentences retain near-source content-word order/structure, above the aggressive-mode ceiling of 38%.`);
+    }
+
+    // A source-level rhetorical problem diagnosed by the engine must actually
+    // be resolved by aggressive revision. Grammar alone is not enough.
+    if (sourceRhetorical.gapLabelScaffolding && revisedRhetorical.gapLabelScaffolding) {
+      passed = false;
+      reasons.push("The source's Conceptual/Theoretical/Methodological/Empirical/Contextual gap-label scaffold remains in the revision. Preserve the distinct gaps but integrate them into connected argumentation.");
+    }
+    if (sourceRhetorical.choppySentenceRun && revisedRhetorical.choppySentenceRun) {
+      passed = false;
+      reasons.push("A diagnosed consecutive micro-sentence run remains unresolved in the revision; merge or redistribute those propositions into argument-led academic cadence.");
     }
 
     // A fixed 24% short-sentence cutoff proved too brittle on real thesis
@@ -273,7 +296,13 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
     max_consecutive_short_sentences: consecutiveShortMax,
     direct_address_introduced: directAddressIntroduced,
     formality_risks_introduced: formalityRisksIntroduced,
+    rhetorical_resolution: {
+      source_gap_label_scaffolding: Boolean(sourceRhetorical.gapLabelScaffolding),
+      revised_gap_label_scaffolding: Boolean(revisedRhetorical.gapLabelScaffolding),
+      source_choppy_sentence_run: Boolean(sourceRhetorical.choppySentenceRun),
+      revised_choppy_sentence_run: Boolean(revisedRhetorical.choppySentenceRun),
+    },
     reasons,
-    note: "This is a protected-span-adjusted rewrite-depth and academic-register quality audit, not an AI-authorship or detector score.",
+    note: "This is a protected-span-adjusted rewrite-depth, rhetorical-resolution and academic-register quality audit, not an AI-authorship or detector score.",
   };
 }
