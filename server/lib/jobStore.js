@@ -145,7 +145,7 @@ export function getJob(jobId) {
   return jobs.get(jobId) || null;
 }
 
-export function retryChunk(jobId, chunkIndex) {
+export async function retryChunk(jobId, chunkIndex) {
   const job = jobs.get(jobId);
   if (!job) return { error: "JOB_NOT_FOUND" };
   const chunk = job.chunks.find((c) => c.index === chunkIndex);
@@ -157,16 +157,8 @@ export function retryChunk(jobId, chunkIndex) {
   job.reassembledText = null;
   job.documentPreservation = null;
 
-  // Retry in the background so the retry endpoint returns immediately and
-  // the browser can keep polling progress instead of hanging on the LLM call.
-  processChunk(job, chunk)
-    .then(() => finalizeIfComplete(job))
-    .catch((err) => {
-      chunk.status = "failed";
-      chunk.error = { code: err.code || err.healthState || "PROVIDER_ERROR", message: err.message };
-      finalizeIfComplete(job);
-    });
-
+  await processChunk(job, chunk);
+  finalizeIfComplete(job);
   return { job };
 }
 
