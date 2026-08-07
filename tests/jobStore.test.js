@@ -30,12 +30,26 @@ test("a job created with no ANTHROPIC_API_KEY configured fails every chunk but s
     assert.ok(finished.chunks.every((c) => c.status === "failed"));
     assert.ok(finished.chunks.every((c) => c.error && c.error.code === "NOT_CONFIGURED"));
 
-    // Nothing silently dropped: every original protected span still appears
-    // in the reassembled document, because failed chunks fall back to their
-    // original source text rather than being omitted.
     for (const citation of finished.documentMap.protectedSpans.citations) {
       assert.ok(finished.reassembledText.includes(citation), `expected reassembled text to still contain ${citation}`);
     }
+  } finally {
+    if (originalKey !== undefined) process.env.ANTHROPIC_API_KEY = originalKey;
+  }
+});
+
+test("fallback markers do not inject numeric chunk indexes that create false preservation warnings", async () => {
+  const originalKey = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  try {
+    const job = createJob({ text: DOC, styleFilters: {}, rewriteIntensity: "auto", grammarIntensity: "standard", lengthPreference: "auto" });
+    const finished = await waitForCompletion(job.id);
+
+    assert.ok(!finished.reassembledText.includes("chunk 0"));
+    const introducedZero = finished.documentPreservation.warnings.some(
+      (w) => w.type === "new_numeric_value_introduced" && /:\s*0(?:\D|$)/.test(w.detail)
+    );
+    assert.equal(introducedZero, false);
   } finally {
     if (originalKey !== undefined) process.env.ANTHROPIC_API_KEY = originalKey;
   }
