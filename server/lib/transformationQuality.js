@@ -37,7 +37,10 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
 
   const lengthRatio = sourceTokens.length ? revisedTokens.length / sourceTokens.length : 1;
   const level = (naturalisation || "faithful").toLowerCase();
-  const longEnoughForGate = sourceTokens.length >= 120;
+  // Below ~60 words these ratios become too unstable to use as a hard gate.
+  // Above it, aggressive mode should not be allowed to return near-verbatim
+  // prose while claiming a substantive rewrite.
+  const longEnoughForGate = sourceTokens.length >= 60;
 
   let passed = true;
   const reasons = [];
