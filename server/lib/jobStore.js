@@ -69,6 +69,7 @@ async function processChunk(job, chunk) {
       chunk.revisedText = result.revised_text;
       chunk.editSummary = result.edit_summary;
       chunk.preservation = result.preservation;
+      chunk.transformationQuality = result.transformation_quality || null;
       chunk.status = "done";
       chunk.error = null;
       return;
@@ -98,8 +99,6 @@ async function processJob(jobId) {
   if (!job) return;
   job.status = "processing";
 
-  // Sequential processing deliberately limits provider pressure and keeps
-  // document-order context deterministic.
   for (const chunk of job.chunks) {
     if (chunk.status === "queued") await processChunk(job, chunk);
   }
@@ -125,6 +124,7 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
       revisedText: null,
       editSummary: null,
       preservation: null,
+      transformationQuality: null,
       error: null,
       attempts: 0,
     })),
@@ -153,6 +153,7 @@ export async function retryChunk(jobId, chunkIndex) {
 
   chunk.status = "queued";
   chunk.error = null;
+  chunk.transformationQuality = null;
   job.status = "processing";
   job.reassembledText = null;
   job.documentPreservation = null;
@@ -188,6 +189,7 @@ export function summarizeJob(job) {
       error: c.error,
       editSummary: c.editSummary,
       preservation: c.preservation,
+      transformationQuality: c.transformationQuality,
     })),
     reassembledText: job.reassembledText,
     documentPreservation: job.documentPreservation,
