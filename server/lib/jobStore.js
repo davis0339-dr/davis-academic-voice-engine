@@ -8,18 +8,29 @@ import { rewrite } from "./pipeline.js";
 import { auditPreservation } from "./preservation.js";
 
 const jobs = new Map();
-const MAX_TRANSIENT_ATTEMPTS = 2;
-const TRANSIENT_CODES = new Set(["NETWORK_TIMEOUT", "RATE_LIMITED"]);
+const MAX_TRANSIENT_ATTEMPTS = 4;
+const TRANSIENT_CODES = new Set([
+  "NETWORK_TIMEOUT",
+  "RATE_LIMITED",
+  "PROVIDER_OVERLOADED",
+  "PROVIDER_UNAVAILABLE",
+]);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(code, attempt, retryAfterMs = null) {
+  if (retryAfterMs && Number.isFinite(retryAfterMs)) return Math.min(retryAfterMs, 15000);
+  const base = code === "PROVIDER_OVERLOADED" ? 2000 : code === "RATE_LIMITED" ? 2500 : 1000;
+  return Math.min(base * 2 ** (attempt - 1), 10000);
 }
 
 function assembleChunkText(chunk) {
   const body =
     chunk.status === "done"
       ? chunk.revisedText
-      : `[UNREVISED -- chunk ${chunk.index} ${chunk.status}, original text kept so nothing is silently dropped]\n${chunk.sourceText}`;
+      : `[UNREVISED -- failed chunk; original text kept so nothing is silently dropped]\n${chunk.sourceText}`;
   const shouldAttachHeading = chunk.heading && chunk.reattachHeading !== false;
   return shouldAttachHeading ? `${chunk.heading}\n\n${body}` : body;
 }
@@ -66,11 +77,12 @@ async function processChunk(job, chunk) {
       const transient = TRANSIENT_CODES.has(code);
 
       if (transient && attempt < MAX_TRANSIENT_ATTEMPTS) {
+        const delay = retryDelayMs(code, attempt, err.retryAfterMs);
         chunk.error = {
           code,
-          message: `${err.message}. Automatic retry ${attempt}/${MAX_TRANSIENT_ATTEMPTS - 1} pending.`,
+          message: `${err.message}. Automatic retry ${attempt}/${MAX_TRANSIENT_ATTEMPTS - 1} in ${Math.round(delay / 1000)}s.`,
         };
-        await sleep(code === "RATE_LIMITED" ? 2000 : 750);
+        await sleep(delay);
         continue;
       }
 
@@ -133,7 +145,7 @@ export function getJob(jobId) {
   return jobs.get(jobId) || null;
 }
 
-export async function retryChunk(jobId, chunkIndex) {
+export function retryChunk(jobId, chunkIndex) {
   const job = jobs.get(jobId);
   if (!job) return { error: "JOB_NOT_FOUND" };
   const chunk = job.chunks.find((c) => c.index === chunkIndex);
@@ -144,8 +156,17 @@ export async function retryChunk(jobId, chunkIndex) {
   job.status = "processing";
   job.reassembledText = null;
   job.documentPreservation = null;
-  await processChunk(job, chunk);
-  finalizeIfComplete(job);
+
+  // Retry in the background so the retry endpoint returns immediately and
+  // the browser can keep polling progress instead of hanging on the LLM call.
+  processChunk(job, chunk)
+    .then(() => finalizeIfComplete(job))
+    .catch((err) => {
+      chunk.status = "failed";
+      chunk.error = { code: err.code || err.healthState || "PROVIDER_ERROR", message: err.message };
+      finalizeIfComplete(job);
+    });
+
   return { job };
 }
 
