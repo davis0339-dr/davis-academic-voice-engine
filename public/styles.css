@@ -196,6 +196,41 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .detector-result summary { cursor: pointer; color: var(--muted); }
 
+#longdocSource {
+  width: 100%;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+  resize: vertical;
+}
+.chunk-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.chunk-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--border);
+  min-width: 5.5rem;
+  text-align: center;
+}
+.chunk-badge.done { background: rgba(76, 175, 125, 0.2); color: var(--good); }
+.chunk-badge.failed { background: rgba(224, 92, 92, 0.2); color: var(--bad); }
+.chunk-badge.processing { background: rgba(91, 141, 239, 0.2); color: var(--accent); }
+.chunk-badge.queued { color: var(--muted); }
+.chunk-heading { flex: 1; }
+.chunk-row button { padding: 0.2rem 0.6rem; font-size: 0.72rem; }
+
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
   .editor-panes { grid-template-columns: 1fr; }

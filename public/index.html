@@ -8,7 +8,7 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">Academic Voice Engine <span class="tag">Phase 1</span></div>
+  <div class="brand">Academic Voice Engine <span class="tag">Phase 3</span></div>
   <div id="llmStatus" class="llm-status">checking service status…</div>
 </header>
 
@@ -96,6 +96,7 @@
     <button class="tab-header" data-tab="profile">Style Profile</button>
     <button class="tab-header" data-tab="methodology">Methodology</button>
     <button class="tab-header" data-tab="detectorqa">Detector QA</button>
+    <button class="tab-header" data-tab="longdoc">Long Document</button>
   </div>
 
   <div id="tab-changes" class="tab-panel active">
@@ -121,6 +122,16 @@
       <span id="detectorStatus" class="llm-status"></span>
     </div>
     <div id="detectorResults"></div>
+  </div>
+  <div id="tab-longdoc" class="tab-panel">
+    <p class="muted">For a full chapter/thesis-length document. Uses the same style/intensity/grammar/length controls above. Processes as a background job, chunk by chunk, so one failed chunk never loses the whole document.</p>
+    <textarea id="longdocSource" placeholder="Paste a full chapter or document here…" rows="8"></textarea>
+    <div class="action-row">
+      <button id="startJobBtn" class="primary">Start Long-Document Job</button>
+      <span id="longdocStatus" class="status-message"></span>
+    </div>
+    <div id="longdocProgress"></div>
+    <div id="longdocOutput"></div>
   </div>
 </section>
 

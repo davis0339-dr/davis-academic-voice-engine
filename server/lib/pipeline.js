@@ -62,7 +62,21 @@ function validateShape(parsed) {
   return errors;
 }
 
-export async function rewrite({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference }) {
+export async function rewrite({
+  sourceText,
+  styleFilters,
+  rewriteIntensity,
+  grammarIntensity,
+  lengthPreference,
+  // Optional, used only by the long-document job pipeline (Phase 3,
+  // server/lib/jobStore.js) so a chunk's revision flows naturally from the
+  // chunk before it and stays terminology-consistent with the rest of the
+  // document. Never used by /api/rewrite's single-paragraph path. Neither
+  // field is protected-span-checked or preservation-audited -- they are
+  // context for the model, not part of the text being revised.
+  precedingContext,
+  documentGlossary,
+}) {
   const analysis = analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference });
 
   const systemPrompt = buildSystemPrompt({
@@ -70,6 +84,8 @@ export async function rewrite({ sourceText, styleFilters, rewriteIntensity, gram
     protectedSpans: analysis.protectedSpans,
     plan: analysis.plan,
     grammarIntensity: grammarIntensity || "standard",
+    precedingContext,
+    documentGlossary,
   });
 
   const llmResult = await llmProvider.callAnthropic({

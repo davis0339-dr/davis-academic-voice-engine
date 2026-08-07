@@ -329,6 +329,111 @@ async function runDetectorScan(which) {
 $("scanSourceBtn").addEventListener("click", () => runDetectorScan("source"));
 $("scanRevisedBtn").addEventListener("click", () => runDetectorScan("revised"));
 
+let longdocPollTimer = null;
+
+function chunkStatusBadge(status) {
+  return `<span class="chunk-badge ${status}">${status}</span>`;
+}
+
+function renderJobProgress(job) {
+  const { progress, chunkMethod, documentMap } = job;
+  const glossaryEntries = Object.entries(documentMap.glossary || {});
+  const header = `
+    <p><strong>${documentMap.title || "(untitled)"}</strong> — chunked by ${chunkMethod === "heading_boundary" ? "detected section headings" : "paragraph groups (no reliable headings found)"}, ${documentMap.headingCount} heading(s) detected, ${documentMap.citationCount} citation(s) tracked document-wide.</p>
+    ${glossaryEntries.length ? `<p class="muted">Glossary: ${glossaryEntries.map(([k, v]) => `${k}=${v}`).join(", ")}</p>` : ""}
+    <p>Progress: ${progress.doneCount}/${progress.chunkCount} done${progress.failedCount ? `, ${progress.failedCount} failed` : ""} — status: <strong>${job.status}</strong></p>
+  `;
+  const rows = job.chunks
+    .map(
+      (c) => `
+    <div class="chunk-row">
+      ${chunkStatusBadge(c.status)}
+      <span class="chunk-heading">${c.heading || `chunk ${c.index}`} (${c.wordCount} words)${c.error ? ` — ${c.error.code}: ${c.error.message}` : ""}</span>
+      ${c.status === "failed" ? `<button data-retry-index="${c.index}">Retry</button>` : ""}
+    </div>`
+    )
+    .join("");
+  $("longdocProgress").innerHTML = header + rows;
+
+  $("longdocProgress").querySelectorAll("[data-retry-index]").forEach((btn) => {
+    btn.addEventListener("click", () => retryChunk(job.id, Number(btn.dataset.retryIndex)));
+  });
+
+  if (job.status === "completed" || job.status === "completed_with_errors") {
+    const p = job.documentPreservation;
+    const warnings = p.warnings.map((w) => `<div class="warning-item bad">${w.type}: ${w.detail}</div>`).join("");
+    $("longdocOutput").innerHTML = `
+      <h4>Reassembled document</h4>
+      <textarea id="longdocReassembled" readonly rows="12">${job.reassembledText}</textarea>
+      <h4>Document-level preservation audit</h4>
+      <div class="warning-item ${p.numbers_ok ? "" : "bad"}">${p.numbers_ok ? "✓" : "✗"} Numbers preserved</div>
+      <div class="warning-item ${p.citations_ok ? "" : "bad"}">${p.citations_ok ? "✓" : "✗"} Citations preserved</div>
+      <div class="warning-item ${p.technical_terms_ok ? "" : "bad"}">${p.technical_terms_ok ? "✓" : "✗"} Technical terms preserved</div>
+      ${warnings}
+    `;
+  } else {
+    $("longdocOutput").innerHTML = "";
+  }
+}
+
+async function pollJob(jobId) {
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    const job = await res.json();
+    renderJobProgress(job);
+    if (job.status === "completed" || job.status === "completed_with_errors" || job.status === "failed") {
+      clearInterval(longdocPollTimer);
+      $("longdocStatus").textContent = `Job ${job.status}.`;
+    }
+  } catch (err) {
+    clearInterval(longdocPollTimer);
+    $("longdocStatus").textContent = `Lost connection to job: ${err.message}`;
+  }
+}
+
+async function retryChunk(jobId, index) {
+  $("longdocStatus").textContent = `Retrying chunk ${index}…`;
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/chunks/${index}/retry`, { method: "POST" });
+    const job = await res.json();
+    renderJobProgress(job);
+    $("longdocStatus").textContent = `Chunk ${index} retry: ${job.chunks[index].status}.`;
+  } catch (err) {
+    $("longdocStatus").textContent = `Retry failed: ${err.message}`;
+  }
+}
+
+async function startLongDocJob() {
+  const text = $("longdocSource").value.trim();
+  if (!text) return ($("longdocStatus").textContent = "Paste a document first.");
+  $("longdocStatus").textContent = "Creating job…";
+  $("longdocProgress").innerHTML = "";
+  $("longdocOutput").innerHTML = "";
+  try {
+    const res = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text,
+        styleFilters: currentStyleFilters(),
+        rewriteIntensity: $("rewriteIntensity").value,
+        grammarIntensity: $("grammarIntensity").value,
+        lengthPreference: $("lengthPreference").value,
+      }),
+    });
+    const job = await res.json();
+    if (!res.ok) throw new Error(`[${job.error}] ${job.message}`);
+    renderJobProgress(job);
+    $("longdocStatus").textContent = `Job ${job.id} started.`;
+    if (longdocPollTimer) clearInterval(longdocPollTimer);
+    longdocPollTimer = setInterval(() => pollJob(job.id), 1500);
+  } catch (err) {
+    $("longdocStatus").textContent = `Could not start job: ${err.message}`;
+  }
+}
+
+$("startJobBtn").addEventListener("click", startLongDocJob);
+
 analyseOnlyBtn.addEventListener("click", runAnalyseOnly);
 analyseReviseBtn.addEventListener("click", runAnalyseAndRevise);
 

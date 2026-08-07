@@ -8,12 +8,13 @@ import { methodologyRouter } from "./routes/methodology.js";
 import { analyseRouter } from "./routes/analyse.js";
 import { rewriteRouter } from "./routes/rewrite.js";
 import { detectorScanRouter } from "./routes/detectorScan.js";
+import { jobsRouter } from "./routes/jobs.js";
 import { llmProvider } from "./lib/llmProvider.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "10mb" })); // long-document jobs (Phase 3) can carry a whole thesis chapter
 
 app.use("/api", healthRouter);
 app.use("/api", styleProfilesRouter);
@@ -21,6 +22,7 @@ app.use("/api", methodologyRouter);
 app.use("/api", analyseRouter);
 app.use("/api", rewriteRouter);
 app.use("/api", detectorScanRouter);
+app.use("/api", jobsRouter);
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 

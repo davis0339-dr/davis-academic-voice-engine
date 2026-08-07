@@ -19,7 +19,7 @@ Treat generic/repetitive/over-smoothed language as a writing-quality issue. Do n
 
 Return only the requested structured response schema.`;
 
-export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity }) {
+export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, precedingContext, documentGlossary }) {
   return [
     BASE_SYSTEM_PROMPT,
     "",
@@ -33,6 +33,12 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     "Protected spans -- these exact strings must still be present, verbatim, somewhere in your revised text unless the user's own source sentence containing them was itself marked FLAG_FOR_AUTHOR:",
     JSON.stringify(protectedSpans, null, 2),
     "",
+    precedingContext
+      ? `This passage is one chunk of a longer document. The text immediately before it (already revised, already final) ends with:\n"${precedingContext}"\nUse this ONLY to make your revision's opening flow naturally from it. Do not repeat it, quote it, or revise it -- it is not part of the text you are revising below.\n`
+      : "",
+    documentGlossary && Object.keys(documentGlossary).length > 0
+      ? `Document-wide glossary established elsewhere in this document -- keep abbreviation usage consistent with these expansions if the abbreviation appears in this chunk:\n${JSON.stringify(documentGlossary, null, 2)}\n`
+      : "",
     "Per-sentence intervention plan (source order). Follow each sentence's assigned level:",
     "KEEP = do not alter. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = you may reorder clauses/rebuild the sentence. SPLIT_OR_MERGE = split an overloaded sentence or merge choppy ones. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add explanatory connective reasoning using only content already present elsewhere in the source, never new facts. COMPRESS = remove padding. FLAG_FOR_AUTHOR = leave substantively as-is and note in flags_for_author; do not guess missing information.",
     JSON.stringify(plan.items.map((i) => ({ sentenceIndex: i.sentenceIndex, level: i.level, sentence: i.sentence })), null, 2),

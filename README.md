@@ -1,11 +1,14 @@
-# Davis Academic Voice Engine — Phase 2 + Detector QA
+# Davis Academic Voice Engine — Phase 3 + Detector QA
 
 Real build against the *Academic Writing & Research Style Engine — Master
 Build Handoff* (7 Aug 2026). Phase 1 built the multi-pass rewrite pipeline;
 Phase 2 replaced the two hand-typed "style family" rows from Phase 1 with a
 real coverage-density engine computed over an actual 52-document evidence
 dataset transcribed from `Davis_Academic_Language_Corpus_v0.1.md` (Baseline
-v0.9, Batches 1-9). This update adds a **Detector QA module** (Section 15.4).
+v0.9, Batches 1-9); an interim update added a measurement-only **Detector
+QA module** (Section 15.4); this update adds **Phase 3: long-document
+processing** (Section 14/25) — chapter/thesis-length documents processed
+as a chunked background job instead of one request.
 
 ## On detector scores — read this before using the Detector QA tab
 
@@ -116,6 +119,70 @@ sets a visible `parseWarning` instead of guessing when it can't. Tested in
 `tests/detectorQA.test.js` against both a well-formed and a malformed
 fixture, with no network call needed.
 
+## What Phase 3 added (long-document processing)
+
+Section 14's requirement: chapter/thesis-length documents can't go through
+`/api/rewrite` as one giant request. Phase 3 adds a real background-job
+pipeline:
+
+- **`server/lib/documentMap.js`** — builds a real document map: detects
+  headings (Markdown `#`, numbered `1.2.3`, or ALL-CAPS section titles),
+  builds a glossary from `Term (ACR)` / `ACR (Term)` pairs found anywhere
+  in the document, and aggregates the full document-wide citation/number/
+  quote list via Pass A. Two regex-overmatching bugs were caught and fixed
+  by its own test suite during this build (a phrase boundary that could
+  cross a paragraph break, and one that let a lowercase run-on sentence get
+  mistaken for a defined term) — see `tests/documentMap.test.js`.
+- **`server/lib/chunker.js`** — chunks on detected heading boundaries when
+  there are at least two; otherwise falls back to paragraph-group chunking.
+  A chunk boundary never falls mid-paragraph. Each chunk after the first
+  carries a short trailing-sentence excerpt of the previous chunk as
+  read-only continuity context (Section 14 point 4) — the excerpt is never
+  itself protected-span-checked or repeated in output, it's context only.
+  **The heading line is stripped before the chunk is sent to the model and
+  reattached verbatim on reassembly** — a concrete implementation of
+  "preserve formatting" (Section 14 point 8): section titles are
+  structurally incapable of being reworded.
+- **`server/lib/jobStore.js`** — an in-memory background job store
+  (`createJob`/`getJob`/`retryChunk`). Chunks process sequentially through
+  the *same* `pipeline.rewrite()` used by the single-paragraph flow (now
+  extended with optional `precedingContext`/`documentGlossary` parameters),
+  so long-document revision is not a second, divergent code path. A failed
+  chunk never drops content: reassembly falls back to that chunk's
+  original source text, clearly marked, so nothing silently disappears
+  (Section 14 point 10's "allow retry... rather than losing the whole
+  job," honored literally).
+- **Document-level consistency pass**: once every chunk has been attempted,
+  the full original document and the full reassembled document are run
+  through the same `auditPreservation()` used per-chunk, catching anything
+  that survived each individual chunk but broke across a chunk boundary.
+- **`POST /api/jobs`, `GET /api/jobs/:id`, `POST /api/jobs/:id/chunks/:index/retry`**
+  — exactly the endpoints Section 18.1 specifies, plus the retry-one-chunk
+  endpoint Section 14 calls for.
+- **"Long Document" tab** in the UI — paste a chapter, start a job, watch
+  per-chunk progress with status badges, retry a failed chunk individually,
+  view the reassembled output and the document-level preservation audit.
+
+**Verified live** (real Anthropic key, run during this build): a 3-section
+document with a defined abbreviation (`Board Independence (BI)`), two
+citation styles, and inline statistics was submitted as a job. All 4
+chunks (a headless preamble plus 3 sections) completed successfully;
+section headings ("1 Introduction", "2 Literature Review", "3 Conclusion")
+came back byte-for-byte unchanged; and the document-level preservation
+audit reported `numbers_ok: true, citations_ok: true, technical_terms_ok:
+true, quotes_ok: true` with zero warnings across the whole reassembled
+document — including a case where the model spelled out "Board
+Independence" in full in the conclusion instead of reusing "BI," which is
+a legitimate stylistic choice the audit correctly did not flag.
+
+**Known limitation, stated plainly:** the job store is in-memory and
+single-process — it does not survive a server restart and won't work
+across multiple server instances. That's Phase 7 infrastructure (a real
+queue/worker), not something Phase 3 was scoped to build; see Section
+18.1, which lists "Background job worker/queue" as its own service
+boundary for exactly this reason. Chunks also process sequentially, not
+concurrently, to keep rate-limit behavior simple and predictable.
+
 ## Architecture
 
 ```
@@ -128,26 +195,31 @@ server/
     analyse.js                POST /api/analyse   (Passes A-C, no LLM call)
     rewrite.js                  POST /api/rewrite    (Passes A-F, calls the LLM)
     detectorScan.js               GET /api/health/detectors, POST /api/detector-scan   (Detector QA)
+    jobs.js                         POST /api/jobs, GET /api/jobs/:id, POST /api/jobs/:id/chunks/:index/retry   (Phase 3)
   lib/
     llmProvider.js          Server-side-only Anthropic adapter + health check states
     protect.js                Pass A: citations/numbers/quotes/acronyms extraction
     diagnostics.js             Pass B: rule-based writing-quality diagnostics
     planner.js                   Pass C: per-sentence intervention plan
-    promptContract.js             Server-side system prompt (Section 12)
+    promptContract.js             Server-side system prompt (Section 12) + optional chunk context
     preservation.js                Pass E: post-generation preservation audit
-    pipeline.js                      Orchestrates A-F; the ONE path used by demo and real input
+    pipeline.js                      Orchestrates A-F; the ONE path used by single-paragraph AND chunked input
     detectorQA.js                      Manual-only detector orchestrator; NEVER imported by pipeline.js
     detectorProviders/gptzero.js         The one detector with a real public API
     corpusEngine.js                    Coverage-density + hierarchical fallback   (Phase 2)
     styleProfileStore.js                 Adapter: corpusEngine -> pipeline's expected shape
+    documentMap.js                        Heading/glossary/citation map for a whole document   (Phase 3)
+    chunker.js                              Heading- or paragraph-boundary chunking               (Phase 3)
+    jobStore.js                               In-memory background job store + reassembly            (Phase 3)
   data/
     corpusDocuments.js       52 real per-document evidence records         (Phase 2)
-public/                    Two-pane editor UI + Methodology tab (plain HTML/CSS/JS)
+public/                    Editor UI + Methodology / Detector QA / Long Document tabs (plain HTML/CSS/JS)
 tests/                     node:test suite, runs without any API key
 ```
 
 `pipeline.js` remains the only entry point into generation — no separate
-"demo" code path (Section 18.2).
+"demo" code path, and no separate code path for long documents either
+(Section 18.2).
 
 ## Gate status (Section 22 of the handoff)
 
@@ -160,7 +232,7 @@ tests/                     node:test suite, runs without any API key
 | 4 — preservation | Numbers, citations, coefficients, technical terms survive revision | **Passes** — automatically, independent of the LLM (`tests/preservation.test.js`), and confirmed live: zero preservation warnings across every live test run. |
 | 5 — intensity differentiation | Minor/Moderate/Deep must genuinely differ | **Passes**, verified live: the same formulaic passage produced different edit summaries and different prose in Minor vs. Deep mode (Minor kept 2 sentences unchanged; Deep restructured all but the numeric sentence). |
 | 6 — evidence-backed styles | Selectors load from a real store; sparse narrow request triggers visible fallback, not a fabricated profile | **Passes**, verified live: a UK/PhD/Finance/quantitative/discussion request correctly resolved against 12 real sources with an honest fallback message (see "What Phase 2 added" above). |
-| 7 — long document | Chunked jobs, progress, retry | **Not built.** Explicitly Phase 3. |
+| 7 — long document | Chunked jobs, progress, retry | **Passes**, verified live: a 3-section document processed as 4 chunks, one failed-chunk retry path is unit-tested (`tests/jobStore.test.js`), and terminology/citations stayed consistent across chunks (document-level audit, zero warnings). |
 | 8 — diagnostics | Writing-quality flags hit real spans, no invented detector score | **Passes for what's built.** No 0-100 "AI score" anywhere in this codebase (a calibrated internal score is Phase 4 territory, requires calibration this build doesn't have). The Detector QA module reports raw third-party outputs, unedited, never a synthesized score of our own. |
 | 9 — similarity | Real matches on a copied fixture, no fabricated matches on a clean one | **Not built.** Explicitly Phase 5; needs a licensed/indexed provider. |
 | 10 — failure UX | Timeout/error/rate-limit handled gracefully, source text never lost, no infinite spinner | **Passes.** Bounded backoff on transient errors only, `AUTH_FAILED` never retried, specific error shown, source pane never cleared. Same discipline now applies to the detector adapter (`NOT_CONFIGURED`/`AUTH_FAILED`/etc., no indefinite spinner on a scan). |
@@ -168,27 +240,29 @@ tests/                     node:test suite, runs without any API key
 ## What's real vs. not built (Section 27 deliverable)
 
 **Real and working today, no key needed:**
-- Editor UI, controls, Changes / Writing Quality / Preservation / Style Profile / Methodology / Detector QA tabs
+- Editor UI, controls, Changes / Writing Quality / Preservation / Style Profile / Methodology / Detector QA / Long Document tabs
 - `/api/health`, `/api/health/llm`, `/api/health/detectors`, `/api/analyse`, `/api/style-profiles`, `/api/methodology`
 - Full coverage-density engine and fallback ladder over the real 52-document dataset
-- Preservation audit logic
+- Preservation audit logic (per-chunk and whole-document)
 - Detector QA request/response plumbing, defensive response parsing, and the hard boundary keeping it out of the generation path
-- 31 automated tests, all passing
+- Document map extraction, chunking, and job-store state machine (job creation gracefully fails every chunk with a clear `NOT_CONFIGURED` error and still reassembles losing nothing, when no LLM key is present — `tests/jobStore.test.js`)
+- 44 automated tests, all passing
 
 **Real code, confirmed working live with a real `ANTHROPIC_API_KEY`:**
 - `/api/rewrite` end to end — Gates 1, 2, 3, 5, 6 above were run against a live Anthropic account during this build, not just unit-tested
+- `/api/jobs` end to end (Phase 3) — a real 3-section, multi-citation, abbreviation-carrying document was processed, polled to completion, and its reassembled output and document-level preservation audit inspected (see "What Phase 3 added" above)
 
 **Real code, not yet exercised against a live account:**
 - `/api/detector-scan` and the GPTZero adapter — logic is implemented and unit-tested against fixture responses (`tests/detectorQA.test.js`), but this build has not been run against a real `GPTZERO_API_KEY`. The response normalizer is intentionally defensive (see above) precisely because that live check hasn't happened yet.
 
-**Not implemented — explicitly out of scope for Phases 1-2:**
-- Long-document chunking/job queue (Phase 3)
+**Not implemented — explicitly out of scope for Phases 1-3:**
 - Calibrated AI-pattern/formulaicity score (Phase 4)
 - Similarity/plagiarism checker (Phase 5)
 - Citation/reference reconciliation and DOI verification (Phase 6)
-- Auth, billing, rate limiting, monitoring, backups (Phase 7)
+- Auth, billing, rate limiting, monitoring, backups (Phase 7) — including a real persistent job queue; the current job store is in-memory/single-process
 - Personal style-profile upload (Section 7.3) — corpus-side coverage engine is done; per-user sample blending is not
 - A Turnitin adapter — will never be built as a real integration; there is no public API to build it against
+- Concurrent chunk processing — chunks currently process one at a time within a job
 
 ## Known limitations
 
@@ -207,14 +281,22 @@ tests/                     node:test suite, runs without any API key
 - Only one provider is genuinely reachable. This is a corpus-access constraint, not a code limitation: no other major detector publishes a public developer API either, and none will be faked here.
 - `normalizeGptZeroResponse` was written from general knowledge of GPTZero's API shape, not verified against a current live response — that's exactly why it's defensive (`parseWarning` on anything unrecognized) rather than confidently asserting fields that might not match the real current schema.
 
+## Known limitations (Phase 3)
+
+- The job store is in-memory and single-process — a server restart loses all in-flight and completed jobs. Real durability needs Phase 7's persistent queue/worker (Section 18.1).
+- Chunks process sequentially, not concurrently.
+- Heading detection is regex-based (Markdown, numbered, ALL-CAPS) and will miss non-standard heading styles; those documents fall back to paragraph-group chunking, which still works but doesn't get heading-verbatim preservation or section-scoped context.
+- The document-level consistency pass checks that protected spans (citations/numbers/quotes/acronyms) survive across chunk boundaries. It does not check for more subtle cross-chunk issues, like the same acronym being expanded two different ways in two different chunks — that would need a stronger terminology-consistency checker than currently exists.
+
 ## Next phase
 
-Phase 3 (Section 25): long-document chunking — document map, section-boundary
-chunking, shared glossary/style state across chunks, progress/retry, format-
-and citation-order-preserving reassembly. Do not start Phase 4/5/6
-(diagnostics score, similarity, citations) before that, and do not expand
-corpus coverage claims without adding real new source documents to
-`corpusDocuments.js` — the coverage engine's honesty depends on the
-dataset staying accurate. Do not, at any phase, add a code path that feeds
-a Detector QA result back into `/api/rewrite`'s generation loop — that
+Phase 4 (Section 25): calibrated AI-pattern/formulaicity diagnostics —
+feature extraction, sentence-level flags, a labelled benchmark set, and a
+score shown only after calibration supports it (Section 15.2). This needs
+a labelled evaluation set this build does not have (Section 21.2); do not
+build a scoring UI ahead of having one. Do not start Phase 5/6 (similarity,
+citations) before that. Do not expand corpus coverage claims without adding
+real new source documents to `corpusDocuments.js`. Do not, at any phase,
+add a code path that feeds a Detector QA result back into `/api/rewrite`'s
+generation loop, or a long-document job's per-chunk generation loop — that
 boundary is load-bearing for the reasons in Section 15.4.
