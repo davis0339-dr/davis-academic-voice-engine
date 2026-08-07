@@ -4,7 +4,7 @@ import { analyse } from "../lib/pipeline.js";
 export const analyseRouter = Router();
 
 analyseRouter.post("/analyse", (req, res) => {
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference } = req.body || {};
+  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation } = req.body || {};
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string." });
@@ -17,6 +17,7 @@ analyseRouter.post("/analyse", (req, res) => {
       rewriteIntensity,
       grammarIntensity,
       lengthPreference,
+      naturalisation,
     });
     res.json(result);
   } catch (err) {
