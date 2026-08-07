@@ -24,9 +24,23 @@ test("deep and auto intensity differ from minor on the same flagged passage", ()
   );
 });
 
-test("clean, technical, citation-and-number-heavy prose is mostly left as KEEP", () => {
-  const plan = buildInterventionPlan(diagnose(cleanTechnicalText), { rewriteIntensity: "auto", lengthPreference: "auto" });
+test("clean, technical, citation-and-number-heavy prose is mostly left as KEEP when naturalisation is not aggressive", () => {
+  const plan = buildInterventionPlan(diagnose(cleanTechnicalText), {
+    rewriteIntensity: "auto",
+    lengthPreference: "auto",
+    naturalisation: "faithful",
+  });
   assert.ok(plan.items.every((i) => i.level === LEVELS.KEEP));
+});
+
+test("aggressive naturalisation overrides KEEP even for technically clean prose", () => {
+  const plan = buildInterventionPlan(diagnose(cleanTechnicalText), {
+    rewriteIntensity: "auto",
+    lengthPreference: "auto",
+    naturalisation: "aggressive",
+  });
+  assert.ok(plan.items.every((i) => i.level !== LEVELS.KEEP));
+  assert.ok(plan.items.some((i) => i.level === LEVELS.SENTENCE_RESTRUCTURE));
 });
 
 test("an overloaded sentence is planned for SPLIT_OR_MERGE regardless of intensity", () => {
