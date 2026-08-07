@@ -108,18 +108,42 @@ function qualityCorrectionBlock(quality) {
     "Rewrite again from the ORIGINAL source below, not from the previous attempt.",
     "Keep the substantive transformation, but repair any overcorrection. Do not solve structural similarity by chopping the prose into strings of very short sentences.",
     "Use sustained postgraduate academic prose: formal but readable, with mostly medium and long sentences and occasional short emphasis. Merge neighbouring short statements where they express one analytical idea.",
-    "Do not introduce second-person address, contractions, idioms, journalistic phrasing, slang, or conversational metaphors. Avoid phrases such as 'when you look', 'the same thing', 'locked up', 'tiny fraction', 'ticking boxes', or similar casual substitutes.",
+    "Do not introduce second-person address, contractions, idioms, journalistic phrasing, slang, or conversational metaphors.",
     "Reconstruct syntax rather than merely swapping vocabulary: vary clause order, grammatical subject, sentence boundaries and paragraph flow, while preserving the argument and the broad-to-narrow academic progression.",
     "No complete source sentence should survive verbatim unless it is a protected quotation or cannot be safely changed without altering a protected claim.",
     "Preserve every citation, number, quotation, technical term and factual relationship exactly. Do not add any fact or citation.",
   ].join("\n");
 }
 
+function finalRescueBlock(quality) {
+  const issueLines = (quality.reasons || []).map((reason) => `- ${reason}`).join("\n");
+  return [
+    "",
+    "--- FINAL ACADEMIC CADENCE RESCUE ---",
+    "A second rewrite is already substantially different from the source but still fails one or more quality checks.",
+    issueLines || "- Residual cadence/register problems remain.",
+    "The user message for this pass contains both the ORIGINAL SOURCE and the CURRENT CANDIDATE REVISION.",
+    "Repair the CURRENT CANDIDATE rather than reverting to the source wording. Use the original only as the factual and citation-preservation authority.",
+    "If phrase overlap remains high, change information packaging and clause architecture while retaining all technical meaning: vary which idea carries the grammatical subject, move qualification clauses, combine or separate evidence and interpretation differently, and rebuild transitions.",
+    "If the prose is choppy, merge adjacent short sentences that belong to the same analytical unit. A normal thesis paragraph should contain a mixture of roughly 15-35 word sentences, some longer analytical sentences, and only occasional genuinely short sentences for emphasis.",
+    "Maintain a postgraduate academic register throughout. No second-person address, contractions, colloquialisms, slogans, journalistic shorthand, or casual metaphors.",
+    "Do not simply restore long source sentences. The objective is structurally fresh but academically sustained prose.",
+    "Every citation, number, quotation, acronym, technical term and factual relationship from the original must remain correct and no new factual content may be introduced.",
+  ].join("\n");
+}
+
 function qualityScore(q) {
-  const shortPenalty = Math.max(0, (q.short_sentence_ratio || 0) - 0.24);
+  const shortPenalty = Math.max(0, (q.short_sentence_ratio || 0) - 0.27);
   const registerPenalty = (q.direct_address_introduced || 0) * 0.2 + (q.formality_risks_introduced || 0) * 0.15;
   const cadencePenalty = Math.max(0, 14 - (q.mean_sentence_length || 14)) / 14;
   return q.five_gram_overlap + q.unchanged_sentence_ratio + shortPenalty + registerPenalty + cadencePenalty;
+}
+
+function qualityOptions(analysis, humanCadence) {
+  return {
+    humanCadence,
+    protectedSpans: analysis.protectedSpans,
+  };
 }
 
 export async function rewrite({
@@ -143,6 +167,7 @@ export async function rewrite({
   });
 
   const humanCadence = analysis.diagnostics.cadence_deviation?.family || null;
+  const qOptions = qualityOptions(analysis, humanCadence);
 
   const systemPrompt = buildSystemPrompt({
     styleProfile: analysis.style_profile_used.effective,
@@ -156,9 +181,11 @@ export async function rewrite({
   });
 
   let parsed = await runModelPass({ systemPrompt, sourceText });
-  let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, { humanCadence });
+  let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
   let qualityRetryUsed = false;
+  let rescueRetryUsed = false;
   let firstAttemptQuality = null;
+  let preRescueQuality = null;
 
   if (naturalisationLevel === "aggressive" && !transformationQuality.passed) {
     firstAttemptQuality = transformationQuality;
@@ -166,13 +193,42 @@ export async function rewrite({
       systemPrompt: systemPrompt + qualityCorrectionBlock(transformationQuality),
       sourceText,
     });
-    const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, { humanCadence });
+    const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, qOptions);
     qualityRetryUsed = true;
 
     const correctedIsBetter = correctedQuality.passed || qualityScore(correctedQuality) < qualityScore(transformationQuality);
     if (correctedIsBetter) {
       parsed = corrected;
       transformationQuality = correctedQuality;
+    }
+  }
+
+  // One final repair pass is reserved for the real-world failure mode seen
+  // in long thesis sections: the text is different enough, but the model has
+  // achieved that difference by over-segmenting or by retaining too much
+  // unprotected phrase structure. The rescue pass edits the best candidate
+  // while keeping the original alongside it as the factual authority.
+  if (naturalisationLevel === "aggressive" && !transformationQuality.passed) {
+    preRescueQuality = transformationQuality;
+    const candidateText = parsed.revised_text;
+    const rescuePayload = [
+      "ORIGINAL SOURCE (factual/citation authority):",
+      sourceText,
+      "",
+      "CURRENT CANDIDATE REVISION (repair this prose; do not merely copy the source):",
+      candidateText,
+    ].join("\n");
+
+    const rescued = await runModelPass({
+      systemPrompt: systemPrompt + finalRescueBlock(transformationQuality),
+      sourceText: rescuePayload,
+    });
+    const rescuedQuality = assessTransformationQuality(sourceText, rescued.revised_text, naturalisationLevel, qOptions);
+    rescueRetryUsed = true;
+
+    if (rescuedQuality.passed || qualityScore(rescuedQuality) < qualityScore(transformationQuality)) {
+      parsed = rescued;
+      transformationQuality = rescuedQuality;
     }
   }
 
@@ -187,7 +243,9 @@ export async function rewrite({
     transformation_quality: {
       ...transformationQuality,
       corrective_retry_used: qualityRetryUsed,
+      rescue_retry_used: rescueRetryUsed,
       first_attempt: firstAttemptQuality,
+      pre_rescue_attempt: preRescueQuality,
     },
     diagnostics: analysis.diagnostics,
     model_notes: parsed.diagnostics_notes || "",
@@ -200,6 +258,8 @@ export async function rewrite({
       aggressive_keep_override: naturalisationLevel === "aggressive",
       transformation_quality_gate: naturalisationLevel === "aggressive",
       academic_register_gate: naturalisationLevel === "aggressive",
+      protected_span_adjusted_overlap: naturalisationLevel === "aggressive",
+      final_academic_rescue: naturalisationLevel === "aggressive",
       human_family_measured_sources: humanCadence?.measuredSources ?? 0,
     },
     build: getBuildInfo(),
