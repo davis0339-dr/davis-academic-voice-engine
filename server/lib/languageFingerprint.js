@@ -118,6 +118,19 @@ function transitionStats(lowerText) {
   };
 }
 
+function regexCount(text, regex) {
+  const re = new RegExp(regex.source, regex.flags);
+  return (String(text || "").match(re) || []).length;
+}
+
+function regexHas(text, regex) {
+  // Never reuse a stateful global RegExp with .test() across sentences.
+  // A cloned regex guarantees lastIndex cannot leak from one sentence into
+  // the next and silently undercount citation-bearing sentences.
+  const flags = regex.flags.replace("g", "");
+  return new RegExp(regex.source, flags).test(String(text || ""));
+}
+
 export function measureLanguageFingerprint(text) {
   const source = String(text || "");
   const lower = source.toLowerCase();
@@ -135,12 +148,10 @@ export function measureLanguageFingerprint(text) {
   const subordinatorTotal = SUBORDINATORS.reduce((sum, p) => sum + phraseCount(lower, p), 0);
   const firstPersonTotal = FIRST_PERSON.reduce((sum, p) => sum + phraseCount(lower, p), 0);
   const studyCenteredTotal = STUDY_CENTERED.reduce((sum, p) => sum + phraseCount(lower, p), 0);
-  const passiveTotal = (source.match(PASSIVE_RE) || []).length;
-  const parentheticalCitations = (source.match(PARENTHETICAL_CITATION_RE) || []).length;
-  const narrativeCitations = (source.match(NARRATIVE_CITATION_RE) || []).length;
-  const citationSentences = sentences.filter((s) => PARENTHETICAL_CITATION_RE.test(s) || NARRATIVE_CITATION_RE.test(s)).length;
-  PARENTHETICAL_CITATION_RE.lastIndex = 0;
-  NARRATIVE_CITATION_RE.lastIndex = 0;
+  const passiveTotal = regexCount(source, PASSIVE_RE);
+  const parentheticalCitations = regexCount(source, PARENTHETICAL_CITATION_RE);
+  const narrativeCitations = regexCount(source, NARRATIVE_CITATION_RE);
+  const citationSentences = sentences.filter((s) => regexHas(s, PARENTHETICAL_CITATION_RE) || regexHas(s, NARRATIVE_CITATION_RE)).length;
 
   const initialKeys = sentences.map(sentenceInitialKey).filter(Boolean);
   const initialDiversity = initialKeys.length ? new Set(initialKeys).size / initialKeys.length : 0;
@@ -184,9 +195,9 @@ export function measureLanguageFingerprint(text) {
     sentence_initial_diversity: Number(initialDiversity.toFixed(4)),
     repeated_content_4gram_per_1k: Number(((repeatedFourgrams / Math.max(1, content.length)) * 1000).toFixed(2)),
     top10_content_word_share: Number((top10Content / Math.max(1, content.length)).toFixed(4)),
-    semicolon_per_1k: Number(((source.split(";").length - 1) / nWords * 1000).toFixed(2)),
-    colon_per_1k: Number(((source.split(":").length - 1) / nWords * 1000).toFixed(2)),
-    parenthesis_per_1k: Number((((source.split("(").length - 1 + source.split(")").length - 1) / 2) / nWords * 1000).toFixed(2)),
+    semicolon_per_1k: Number((((source.split(";").length - 1) / nWords) * 1000).toFixed(2)),
+    colon_per_1k: Number((((source.split(":").length - 1) / nWords) * 1000).toFixed(2)),
+    parenthesis_per_1k: Number(((((source.split("(").length - 1 + source.split(")").length - 1) / 2) / nWords) * 1000).toFixed(2)),
   };
 }
 
