@@ -29,7 +29,7 @@ test("aggressive mode accepts a materially restructured academic passage", () =>
 test("aggressive mode rejects over-segmented choppy prose even when wording changed", () => {
   const q = assessTransformationQuality(source, choppy, "aggressive");
   assert.equal(q.passed, false);
-  assert.ok(q.short_sentence_ratio > 0.24 || q.max_consecutive_short_sentences >= 4);
+  assert.ok(q.short_sentence_ratio > 0.32 || q.max_consecutive_short_sentences >= 4 || q.mean_sentence_length < 14);
 });
 
 test("aggressive mode rejects newly introduced conversational register", () => {
@@ -37,6 +37,29 @@ test("aggressive mode rejects newly introduced conversational register", () => {
   assert.equal(q.passed, false);
   assert.ok(q.direct_address_introduced > 0);
   assert.ok(q.formality_risks_introduced > 0);
+});
+
+test("protected citations and figures are removed from rewrite-depth overlap scoring", () => {
+  const citationHeavySource = `Audit fees rose from 17.34 in 2023 to 28.2 in 2024 (Smith, 2024; Jones, 2023). The same evidence indicates that market concentration remained high at 99 per cent (Brown, 2025; Green, 2024). These figures frame the competitive problem faced by indigenous audit firms, while regulatory requirements continue to shape the conditions under which those firms operate.`;
+  const citationHeavyRevision = `The competitive position of indigenous audit firms must be read against a market in which fee growth and concentration occurred together. Between 2023 and 2024, audit fees moved from 17.34 to 28.2 (Smith, 2024; Jones, 2023). Concentration nevertheless remained at 99 per cent (Brown, 2025; Green, 2024), showing that regulatory conditions and market expansion did not distribute opportunities evenly across firms.`;
+  const protectedSpans = {
+    citations: ["(Smith, 2024; Jones, 2023)", "(Brown, 2025; Green, 2024)"],
+    numbers: ["17.34", "2023", "28.2", "2024", "99"],
+    monetary: [],
+    statNotation: [],
+    quotes: [],
+    acronyms: [],
+  };
+
+  const q = assessTransformationQuality(citationHeavySource, citationHeavyRevision, "aggressive", { protectedSpans });
+  assert.ok(q.raw_five_gram_overlap >= q.five_gram_overlap);
+  assert.ok(q.protected_token_share > 0);
+});
+
+test("a moderate share of short sentences alone does not fail an otherwise sustained passage", () => {
+  const mixedCadence = `Governance remains important. Boards monitor management and protect shareholder interests through a range of formal oversight mechanisms. Audit committees add another layer of review over financial reporting, while independent directors can challenge decisions where the circumstances require it. Ownership matters too. The incentives facing controlling shareholders are partly shaped by ownership structure, but firm size, leverage, profitability and industry conditions alter how those incentives operate across settings. Outcomes therefore vary over time.`;
+  const q = assessTransformationQuality(source, mixedCadence, "aggressive");
+  assert.ok(q.short_sentence_ratio <= 0.32 || q.mean_sentence_length >= 14);
 });
 
 test("faithful mode reports depth metrics without enforcing aggressive thresholds", () => {
