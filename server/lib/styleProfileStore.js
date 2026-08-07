@@ -6,6 +6,7 @@
 
 import { compileFamily, listCoverageTable as coverageTable } from "./corpusEngine.js";
 import { compileMeasuredLanguageFamily } from "./languageFamilyEngine.js";
+import { sectionLanguageGuide } from "./sectionLanguageGuide.js";
 
 const SELECTABLE_DIMENSIONS = {
   document_type: ["thesis", "journal_article", "conference_paper", "other"],
@@ -47,6 +48,7 @@ export function listCoverageTable() {
 export function resolveProfile(requestedFilters) {
   const compiled = compileFamily(requestedFilters);
   const measuredLanguage = compileMeasuredLanguageFamily(compiled.effective);
+  const sectionGuide = sectionLanguageGuide(requestedFilters?.section);
 
   const label = Object.keys(compiled.effective).length === 0 ? "Auto / Evidence-backed default" : compiled.effectiveLabel;
 
@@ -55,6 +57,7 @@ export function resolveProfile(requestedFilters) {
     effective: {
       label,
       filters: compiled.effective,
+      requested_section: requestedFilters?.section || null,
       evidence: {
         independent_source_count: compiled.matchCount,
         provenance_mix: compiled.provenance_mix,
@@ -72,13 +75,14 @@ export function resolveProfile(requestedFilters) {
       features: {
         cadence: cadenceDescription(compiled.cadence),
         measured_language: measuredLanguage,
+        section_language_guide: sectionGuide,
         ...STATIC_FEATURES,
       },
     },
     measured_language_family: measuredLanguage,
     fallback_applied: compiled.fallback_applied || measuredLanguage.fallback_applied,
     evidence_strength: compiled.evidence_strength,
-    message: `${compiled.message} Measured language layer: ${measuredLanguage.measured_document_count} pilot documents (${measuredLanguage.evidence_strength}) using ${measuredLanguage.effective_label}.`,
+    message: `${compiled.message} Measured language layer: ${measuredLanguage.measured_document_count} pilot documents (${measuredLanguage.evidence_strength}) using ${measuredLanguage.effective_label}.${sectionGuide ? ` Section guidance: ${sectionGuide.section}.` : ""}`,
     dropped: [...compiled.dropped, ...measuredLanguage.dropped.map((d) => ({ ...d, layer: "measured_language" }))],
   };
 }
