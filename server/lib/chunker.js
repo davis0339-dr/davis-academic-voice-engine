@@ -77,8 +77,8 @@ function groupParagraphsByTargetSize(paragraphs, targetWords, hardMaxWords) {
   for (const para of paragraphs) {
     const w = wordCount(para);
 
-    // This was the production bug: one 2,901-word pasted paragraph bypassed
-    // the nominal 900-word target. Sentence-level fallback now prevents that.
+    // Production bug fixed: a 2,901-word pasted paragraph previously bypassed
+    // the nominal chunk target and went to the model as one request.
     if (w > hardMaxWords) {
       flush();
       groups.push(...groupSentencesByTargetSize(para, targetWords, hardMaxWords));
@@ -111,15 +111,15 @@ function chunkByHeadings(fullText, headings, targetWords, hardMaxWords) {
 
   const preamble = fullText.slice(0, headings[0].offset).trim();
   const rawChunks = [];
-  if (preamble) rawChunks.push({ heading: null, body: preamble });
+  if (preamble) rawChunks.push({ heading: null, reattachHeading: false, body: preamble });
 
   for (const section of sections) {
     if (!section.body) continue;
     const groups = groupParagraphsByTargetSize(splitParagraphs(section.body), targetWords, hardMaxWords);
     groups.forEach((body, i) => {
-      // Reattach the real source heading ONCE only. The old implementation
-      // created synthetic "(continued)" headings that polluted reassembly.
-      rawChunks.push({ heading: i === 0 ? section.heading : null, body });
+      // Keep the real section label on continuation chunks for the progress UI,
+      // but mark it for reassembly only on the first piece. No fake headings.
+      rawChunks.push({ heading: section.heading, reattachHeading: i === 0, body });
     });
   }
   return rawChunks;
@@ -127,7 +127,7 @@ function chunkByHeadings(fullText, headings, targetWords, hardMaxWords) {
 
 function chunkByParagraphGroups(fullText, targetWords, hardMaxWords) {
   const groups = groupParagraphsByTargetSize(splitParagraphs(fullText), targetWords, hardMaxWords);
-  return groups.map((body) => ({ heading: null, body }));
+  return groups.map((body) => ({ heading: null, reattachHeading: false, body }));
 }
 
 export function chunkDocument(fullText, documentMap, options = {}) {
@@ -146,6 +146,7 @@ export function chunkDocument(fullText, documentMap, options = {}) {
     chunks: rawChunks.map((c, index) => ({
       index,
       heading: c.heading,
+      reattachHeading: c.reattachHeading,
       sourceText: c.body,
       wordCount: wordCount(c.body),
       precedingContextTail: index > 0 ? lastSentenceTail(rawChunks[index - 1].body) : "",
