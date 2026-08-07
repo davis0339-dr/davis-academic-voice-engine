@@ -65,6 +65,7 @@ function summarizeMatches(matches) {
   const qualityMix = {};
   const cadenceMeans = [];
   const cadencePctLong = [];
+  const cadenceSds = [];
   for (const doc of matches) {
     provenanceMix[doc.provenanceTier] = (provenanceMix[doc.provenanceTier] || 0) + 1;
     qualityMix[doc.quality] = (qualityMix[doc.quality] || 0) + 1;
@@ -73,6 +74,12 @@ function summarizeMatches(matches) {
       // pctLong is >=30-word sentences, matching the corpus note's own
       // measurement methodology (Batches 1-7 quantitative tables).
       if (typeof doc.cadence.pctLong === "number") cadencePctLong.push(doc.cadence.pctLong);
+      // sd is the corpus note's own per-document sentence-length standard
+      // deviation -- the direct measure of how much real human academic
+      // prose varies sentence to sentence ("burstiness"). This is the
+      // property AI text is flattest on, so it's the one the rewrite
+      // engine should actively target when naturalising toward the family.
+      if (typeof doc.cadence.sd === "number") cadenceSds.push(doc.cadence.sd);
     }
   }
   const cadence =
@@ -83,8 +90,10 @@ function summarizeMatches(matches) {
           meanSentenceLengthMax: Math.max(...cadenceMeans),
           pctLongMin: cadencePctLong.length > 0 ? Math.min(...cadencePctLong) : null,
           pctLongMax: cadencePctLong.length > 0 ? Math.max(...cadencePctLong) : null,
+          sdMin: cadenceSds.length > 0 ? Math.min(...cadenceSds) : null,
+          sdMax: cadenceSds.length > 0 ? Math.max(...cadenceSds) : null,
         }
-      : { measuredSources: 0, meanSentenceLengthMin: null, meanSentenceLengthMax: null, pctLongMin: null, pctLongMax: null };
+      : { measuredSources: 0, meanSentenceLengthMin: null, meanSentenceLengthMax: null, pctLongMin: null, pctLongMax: null, sdMin: null, sdMax: null };
   return { provenanceMix, qualityMix, cadence };
 }
 

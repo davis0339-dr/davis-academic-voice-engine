@@ -45,6 +45,26 @@ function stripCodeFence(text) {
   return fenced ? fenced[1] : trimmed;
 }
 
+// Deterministic surface-tell sanitiser. Some formatting rules are too
+// important to leave to the model's discretion -- the em-dash ban is the
+// clearest example: it is a top machine-writing tell, the product owner
+// explicitly dislikes it, and the model intermittently reintroduces it
+// despite the prompt instruction. So we guarantee it in code rather than
+// hope. This only touches punctuation the model produced; it never edits
+// protected spans (citations/numbers/quotes contain no em-dashes), so the
+// preservation audit still runs on the sanitised text and stays valid.
+export function sanitiseProse(text) {
+  let out = text;
+  // Em-dash / spaced en-dash used as a clause connector -> comma. Handles
+  // "word—word", "word —word", "word— word", "word — word" uniformly.
+  out = out.replace(/\s*[—–]\s*/g, ", ");
+  // Collapse any ", ," produced when an em-dash sat next to existing comma.
+  out = out.replace(/,\s*,/g, ",");
+  // Guard against a stray leading/trailing comma introduced at an edge.
+  out = out.replace(/\s+,/g, ",").replace(/,\s*([.;:])/g, "$1");
+  return out;
+}
+
 function validateShape(parsed) {
   const errors = [];
   if (typeof parsed.revised_text !== "string" || parsed.revised_text.length === 0) {
@@ -82,6 +102,14 @@ export async function rewrite({
 }) {
   const analysis = analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference });
 
+  // The naturalisation target: the real measured sentence-length range and
+  // variation (SD) of the resolved human corpus family. Passing this makes
+  // the rewrite aim for the human distribution's burstiness rather than
+  // producing smooth, uniform prose -- the honest mechanism behind any
+  // reduction in machine-writing signal. Pulled from the same cadence
+  // deviation assessment already computed in analyse().
+  const humanCadence = analysis.diagnostics.cadence_deviation?.family || null;
+
   const systemPrompt = buildSystemPrompt({
     styleProfile: analysis.style_profile_used.effective,
     protectedSpans: analysis.protectedSpans,
@@ -89,6 +117,7 @@ export async function rewrite({
     grammarIntensity: grammarIntensity || "standard",
     precedingContext,
     documentGlossary,
+    humanCadence,
   });
 
   const llmResult = await llmProvider.callAnthropic({
@@ -114,6 +143,9 @@ export async function rewrite({
     err.code = "SCHEMA_VALIDATION_FAILED";
     throw err;
   }
+
+  // Guarantee the em-dash ban deterministically, whatever the model did.
+  parsed.revised_text = sanitiseProse(parsed.revised_text);
 
   const preservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans);
 
