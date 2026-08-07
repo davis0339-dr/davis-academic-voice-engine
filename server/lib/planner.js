@@ -17,6 +17,11 @@ const LEVELS = Object.freeze({
   FLAG_FOR_AUTHOR: "FLAG_FOR_AUTHOR",
 });
 
+function issueCoversSentence(issue, index) {
+  if (Array.isArray(issue?.sentenceIndices)) return issue.sentenceIndices.includes(index);
+  return issue?.sentenceIndex === index;
+}
+
 function sentenceSignals(sentence, index, diagnostics) {
   const hasGenericPhrase = diagnostics.generic_phrasing.some((h) => h.sentenceIndex === index);
   const isOverloaded = diagnostics.monotony.overloaded.some((o) => o.sentenceIndex === index);
@@ -27,6 +32,12 @@ function sentenceSignals(sentence, index, diagnostics) {
   const hasRepeatedParagraphFrame = diagnostics.structural_monotony.some(
     (m) => m.sentenceIndex === index && m.issue === "repeated_paragraph_opening_frame"
   );
+  const gapScaffoldIssue = (diagnostics.rhetorical_scaffolding || []).find(
+    (m) => m.issue === "gap_label_scaffolding" && issueCoversSentence(m, index)
+  );
+  const choppyRunIssue = (diagnostics.rhetorical_scaffolding || []).find(
+    (m) => m.issue === "choppy_sentence_run" && issueCoversSentence(m, index)
+  );
   const isPlaceholder = PLACEHOLDER_MARKERS.test(sentence);
   return {
     hasGenericPhrase,
@@ -34,6 +45,8 @@ function sentenceSignals(sentence, index, diagnostics) {
     isChoppy,
     hasRepeatedOpening,
     hasRepeatedParagraphFrame,
+    gapScaffoldIssue,
+    choppyRunIssue,
     isPlaceholder,
   };
 }
@@ -45,6 +58,16 @@ function planSentence(sentence, index, diagnostics, intensity, lengthPreference,
   if (s.isPlaceholder) {
     reasons.push("Sentence contains an unresolved placeholder marker.");
     return { level: LEVELS.FLAG_FOR_AUTHOR, reasons };
+  }
+
+  if (s.gapScaffoldIssue) {
+    reasons.push("This sentence is part of a labelled Conceptual/Theoretical/Methodological/Empirical/Contextual gap scaffold. Preserve the distinct gap content, but rebuild the sequence as a connected scholarly argument rather than retaining the checklist labels.");
+    return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons };
+  }
+
+  if (s.choppyRunIssue) {
+    reasons.push("This sentence is part of a consecutive micro-sentence run. Merge or redistribute the reasoning so short sentences arise from argument, not manufactured rhythm variation.");
+    return { level: LEVELS.SPLIT_OR_MERGE, reasons };
   }
 
   if (s.isOverloaded) {
@@ -134,7 +157,7 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
   const paragraphReorderSuggested =
     naturalisationLevel === "aggressive" ||
     diagnostics.structural_monotony.some(
-      (m) => m.issue === "low_sentence_length_variation" || m.issue === "uniform_paragraph_length" || m.issue === "repeated_paragraph_opening_frame"
+      (m) => m.issue === "low_sentence_length_variation" || m.issue === "uniform_paragraph_length" || m.issue === "repeated_paragraph_opening_frame" || m.issue === "gap_label_scaffolding"
     );
 
   const summary = items.reduce((acc, item) => {
