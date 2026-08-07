@@ -10,9 +10,25 @@ import { auditPreservation } from "./preservation.js";
 import { llmProvider } from "./llmProvider.js";
 import { assessCadenceDeviation } from "./cadenceDeviation.js";
 import { assessTransformationQuality } from "./transformationQuality.js";
+import { measureLanguageFingerprint } from "./languageFingerprint.js";
+import { assessLanguageDeviation } from "./languageFamilyEngine.js";
 import { getBuildInfo } from "./buildInfo.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
+
+function measuredGuidance(deviation, family) {
+  return {
+    measurement_version: family?.measurement_version || null,
+    family_document_count: family?.measured_document_count || 0,
+    family_evidence_strength: family?.evidence_strength || "pilot-insufficient",
+    family_alignment_score: deviation?.family_alignment_score ?? null,
+    high_priority_signals: (deviation?.signals || []).filter((s) => s.severity === "high"),
+    other_signals: (deviation?.signals || []).filter((s) => s.severity !== "high"),
+    recommendations: deviation?.recommendations || [],
+    preserve_not_targeted: deviation?.preserve_not_targeted || [],
+    instruction: "Use these corpus-derived signals selectively. Correct the measured structural/language problems that are actually present in this source; do not force every metric toward a median, and do not alter research voice, hedging, citation form, or technical terminology merely to match a frequency distribution.",
+  };
+}
 
 export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation }) {
   const protectedSpans = extractProtectedSpans(sourceText);
@@ -20,6 +36,17 @@ export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarInt
   const plan = buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPreference, naturalisation });
   const profileResolution = resolveProfile(styleFilters);
   const cadenceDeviation = assessCadenceDeviation(sourceText, styleFilters);
+  const languageFingerprint = measureLanguageFingerprint(sourceText);
+  const measuredLanguageFamily = profileResolution.measured_language_family || null;
+  const languageDeviation = assessLanguageDeviation(languageFingerprint, measuredLanguageFamily);
+
+  const effectiveStyleProfile = {
+    ...profileResolution.effective,
+    features: {
+      ...profileResolution.effective.features,
+      source_specific_measured_guidance: measuredGuidance(languageDeviation, measuredLanguageFamily),
+    },
+  };
 
   return {
     protectedSpans,
@@ -29,11 +56,14 @@ export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarInt
       cohesion: diagnostics.cohesion,
       evidence_alignment: diagnostics.evidence_alignment,
       cadence_deviation: cadenceDeviation,
+      language_fingerprint: languageFingerprint,
+      measured_language_deviation: languageDeviation,
     },
     plan,
+    measured_language_family: measuredLanguageFamily,
     style_profile_used: {
       requested: profileResolution.requested,
-      effective: profileResolution.effective,
+      effective: effectiveStyleProfile,
       fallback_applied: profileResolution.fallback_applied,
       evidence_strength: profileResolution.evidence_strength,
       message: profileResolution.message,
@@ -154,6 +184,21 @@ function qualityScore(q) {
   return q.five_gram_overlap + q.unchanged_sentence_ratio + nearSourcePenalty + shortPenalty + registerPenalty + cadencePenalty;
 }
 
+function measuredLanguagePenalty(text, family) {
+  if (!family) return 0;
+  const fp = measureLanguageFingerprint(text);
+  const deviation = assessLanguageDeviation(fp, family);
+  if (!deviation.available || !Number.isFinite(deviation.family_alignment_score)) return 0;
+  // Soft signal only: the pilot corpus should break ties between otherwise
+  // similar failed candidates, never override preservation or rewrite-depth
+  // gates and never force a passage to a single numeric style target.
+  return (1 - deviation.family_alignment_score) * 0.25;
+}
+
+function candidateScore(q, text, family) {
+  return qualityScore(q) + measuredLanguagePenalty(text, family);
+}
+
 function qualityOptions(analysis, humanCadence) {
   return {
     humanCadence,
@@ -183,6 +228,7 @@ export async function rewrite({
 
   const humanCadence = analysis.diagnostics.cadence_deviation?.family || null;
   const qOptions = qualityOptions(analysis, humanCadence);
+  const measuredLanguageFamily = analysis.measured_language_family;
 
   const systemPrompt = buildSystemPrompt({
     styleProfile: analysis.style_profile_used.effective,
@@ -211,7 +257,7 @@ export async function rewrite({
     const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, qOptions);
     qualityRetryUsed = true;
 
-    const correctedIsBetter = correctedQuality.passed || qualityScore(correctedQuality) < qualityScore(transformationQuality);
+    const correctedIsBetter = correctedQuality.passed || candidateScore(correctedQuality, corrected.revised_text, measuredLanguageFamily) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily);
     if (correctedIsBetter) {
       parsed = corrected;
       transformationQuality = correctedQuality;
@@ -236,13 +282,20 @@ export async function rewrite({
     const rescuedQuality = assessTransformationQuality(sourceText, rescued.revised_text, naturalisationLevel, qOptions);
     rescueRetryUsed = true;
 
-    if (rescuedQuality.passed || qualityScore(rescuedQuality) < qualityScore(transformationQuality)) {
+    if (rescuedQuality.passed || candidateScore(rescuedQuality, rescued.revised_text, measuredLanguageFamily) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily)) {
       parsed = rescued;
       transformationQuality = rescuedQuality;
     }
   }
 
   const preservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans);
+  const revisedLanguageFingerprint = measureLanguageFingerprint(parsed.revised_text);
+  const revisedLanguageDeviation = assessLanguageDeviation(revisedLanguageFingerprint, measuredLanguageFamily);
+  const sourceAlignment = analysis.diagnostics.measured_language_deviation?.family_alignment_score;
+  const revisedAlignment = revisedLanguageDeviation?.family_alignment_score;
+  const alignmentDelta = Number.isFinite(sourceAlignment) && Number.isFinite(revisedAlignment)
+    ? Number((revisedAlignment - sourceAlignment).toFixed(3))
+    : null;
 
   return {
     revised_text: parsed.revised_text,
@@ -257,6 +310,17 @@ export async function rewrite({
       first_attempt: firstAttemptQuality,
       pre_rescue_attempt: preRescueQuality,
     },
+    language_quality: {
+      measurement_version: revisedLanguageFingerprint.measurement_version,
+      family_measurement_version: measuredLanguageFamily?.measurement_version || null,
+      family_document_count: measuredLanguageFamily?.measured_document_count || 0,
+      source_fingerprint: analysis.diagnostics.language_fingerprint,
+      source_deviation: analysis.diagnostics.measured_language_deviation,
+      revised_fingerprint: revisedLanguageFingerprint,
+      revised_deviation: revisedLanguageDeviation,
+      family_alignment_delta: alignmentDelta,
+      note: "Family alignment is a descriptive academic-language diagnostic from the measured pilot corpus, not an AI-authorship score and not a hard acceptance target.",
+    },
     diagnostics: analysis.diagnostics,
     model_notes: parsed.diagnostics_notes || "",
     naturalisation_applied: {
@@ -270,8 +334,11 @@ export async function rewrite({
       academic_register_gate: naturalisationLevel === "aggressive",
       protected_span_adjusted_overlap: naturalisationLevel === "aggressive",
       near_source_sentence_gate: naturalisationLevel === "aggressive",
+      measured_language_family_guidance: naturalisationLevel !== "off",
+      measured_language_soft_candidate_selection: naturalisationLevel === "aggressive",
       final_academic_rescue: naturalisationLevel === "aggressive",
       human_family_measured_sources: humanCadence?.measuredSources ?? 0,
+      measured_language_pilot_sources: measuredLanguageFamily?.measured_document_count ?? 0,
     },
     build: getBuildInfo(),
   };
