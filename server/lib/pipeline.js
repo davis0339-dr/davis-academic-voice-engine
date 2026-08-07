@@ -1,7 +1,5 @@
 // Orchestrates Passes A-F end to end. This is the one production path
-// used by both the demo and arbitrary user input -- Section 18.2 forbids a
-// separate hard-coded demo path, and this module is the only place
-// /api/rewrite and /api/analyse are allowed to call into.
+// used by both the demo and arbitrary user input.
 
 import { extractProtectedSpans } from "./protect.js";
 import { diagnose } from "./diagnostics.js";
@@ -11,12 +9,15 @@ import { buildSystemPrompt } from "./promptContract.js";
 import { auditPreservation } from "./preservation.js";
 import { llmProvider } from "./llmProvider.js";
 import { assessCadenceDeviation } from "./cadenceDeviation.js";
+import { assessTransformationQuality } from "./transformationQuality.js";
 import { getBuildInfo } from "./buildInfo.js";
 
-export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference }) {
+const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
+
+export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation }) {
   const protectedSpans = extractProtectedSpans(sourceText);
   const diagnostics = diagnose(sourceText);
-  const plan = buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPreference });
+  const plan = buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPreference, naturalisation });
   const profileResolution = resolveProfile(styleFilters);
   const cadenceDeviation = assessCadenceDeviation(sourceText, styleFilters);
 
@@ -46,22 +47,10 @@ function stripCodeFence(text) {
   return fenced ? fenced[1] : trimmed;
 }
 
-// Deterministic surface-tell sanitiser. Some formatting rules are too
-// important to leave to the model's discretion -- the em-dash ban is the
-// clearest example: it is a top machine-writing tell, the product owner
-// explicitly dislikes it, and the model intermittently reintroduces it
-// despite the prompt instruction. So we guarantee it in code rather than
-// hope. This only touches punctuation the model produced; it never edits
-// protected spans (citations/numbers/quotes contain no em-dashes), so the
-// preservation audit still runs on the sanitised text and stays valid.
 export function sanitiseProse(text) {
   let out = text;
-  // Em-dash / spaced en-dash used as a clause connector -> comma. Handles
-  // "word—word", "word —word", "word— word", "word — word" uniformly.
   out = out.replace(/\s*[—–]\s*/g, ", ");
-  // Collapse any ", ," produced when an em-dash sat next to existing comma.
   out = out.replace(/,\s*,/g, ",");
-  // Guard against a stray leading/trailing comma introduced at an edge.
   out = out.replace(/\s+,/g, ",").replace(/,\s*([.;:])/g, "$1");
   return out;
 }
@@ -86,46 +75,7 @@ function validateShape(parsed) {
   return errors;
 }
 
-export async function rewrite({
-  sourceText,
-  styleFilters,
-  rewriteIntensity,
-  grammarIntensity,
-  lengthPreference,
-  // User-facing control: how hard to naturalise toward the human corpus
-  // cadence, and how much wording latitude to take. "off" | "faithful"
-  // (default) | "aggressive". See NATURALISATION_FIDELITY in promptContract.js.
-  naturalisation,
-  // Optional, used only by the long-document job pipeline (Phase 3,
-  // server/lib/jobStore.js) so a chunk's revision flows naturally from the
-  // chunk before it and stays terminology-consistent with the rest of the
-  // document. Never used by /api/rewrite's single-paragraph path. Neither
-  // field is protected-span-checked or preservation-audited -- they are
-  // context for the model, not part of the text being revised.
-  precedingContext,
-  documentGlossary,
-}) {
-  const analysis = analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference });
-
-  // The naturalisation target: the real measured sentence-length range and
-  // variation (SD) of the resolved human corpus family. Passing this makes
-  // the rewrite aim for the human distribution's burstiness rather than
-  // producing smooth, uniform prose -- the honest mechanism behind any
-  // reduction in machine-writing signal. Pulled from the same cadence
-  // deviation assessment already computed in analyse().
-  const humanCadence = analysis.diagnostics.cadence_deviation?.family || null;
-
-  const systemPrompt = buildSystemPrompt({
-    styleProfile: analysis.style_profile_used.effective,
-    protectedSpans: analysis.protectedSpans,
-    plan: analysis.plan,
-    grammarIntensity: grammarIntensity || "standard",
-    precedingContext,
-    documentGlossary,
-    humanCadence,
-    naturalisation,
-  });
-
+async function runModelPass({ systemPrompt, sourceText }) {
   const llmResult = await llmProvider.callAnthropic({
     system: systemPrompt,
     messages: [{ role: "user", content: sourceText }],
@@ -150,12 +100,85 @@ export async function rewrite({
     throw err;
   }
 
-  // Guarantee the em-dash ban deterministically, whatever the model did.
   parsed.revised_text = sanitiseProse(parsed.revised_text);
+  return parsed;
+}
+
+function qualityCorrectionBlock(quality) {
+  return [
+    "",
+    "--- AGGRESSIVE REWRITE QUALITY CORRECTION ---",
+    "The prior attempt was still too close to the source to satisfy the user's selected aggressive rewrite mode.",
+    `Measured five-word phrase overlap: ${(quality.five_gram_overlap * 100).toFixed(1)}%.`,
+    `Measured verbatim-source-sentence retention: ${(quality.unchanged_sentence_ratio * 100).toFixed(1)}%.`,
+    "Rewrite again from the ORIGINAL source below, not from the previous attempt.",
+    "Reconstruct the syntax of every non-protected sentence. Change clause order, grammatical subject, sentence boundaries, and paragraph flow where useful. Do not merely substitute synonyms or split one long sentence into two while retaining the same wording.",
+    "No complete source sentence should survive verbatim unless it is itself a protected quotation or cannot be safely changed without altering a protected claim. Preserve every citation, number, quotation, technical term and factual relationship exactly.",
+    "Keep the prose academically defensible and natural. Do not invent information and do not manufacture errors.",
+  ].join("\n");
+}
+
+function qualityScore(q) {
+  return q.five_gram_overlap + q.unchanged_sentence_ratio;
+}
+
+export async function rewrite({
+  sourceText,
+  styleFilters,
+  rewriteIntensity,
+  grammarIntensity,
+  lengthPreference,
+  naturalisation,
+  precedingContext,
+  documentGlossary,
+}) {
+  const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
+  const analysis = analyse({
+    sourceText,
+    styleFilters,
+    rewriteIntensity,
+    grammarIntensity,
+    lengthPreference,
+    naturalisation: naturalisationLevel,
+  });
+
+  const humanCadence = analysis.diagnostics.cadence_deviation?.family || null;
+
+  const systemPrompt = buildSystemPrompt({
+    styleProfile: analysis.style_profile_used.effective,
+    protectedSpans: analysis.protectedSpans,
+    plan: analysis.plan,
+    grammarIntensity: grammarIntensity || "standard",
+    precedingContext,
+    documentGlossary,
+    humanCadence,
+    naturalisation: naturalisationLevel,
+  });
+
+  let parsed = await runModelPass({ systemPrompt, sourceText });
+  let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel);
+  let qualityRetryUsed = false;
+  let firstAttemptQuality = null;
+
+  // Aggressive mode has an explicit rewrite-depth acceptance gate. One
+  // corrective model pass is allowed when the first answer is substantially
+  // the same prose. We keep whichever pass is objectively further from the
+  // source by the deterministic overlap audit; this is about rewrite depth,
+  // not detector evasion.
+  if (naturalisationLevel === "aggressive" && !transformationQuality.passed) {
+    firstAttemptQuality = transformationQuality;
+    const correctivePrompt = systemPrompt + qualityCorrectionBlock(transformationQuality);
+    const corrected = await runModelPass({ systemPrompt: correctivePrompt, sourceText });
+    const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel);
+    qualityRetryUsed = true;
+
+    if (qualityScore(correctedQuality) <= qualityScore(transformationQuality)) {
+      parsed = corrected;
+      transformationQuality = correctedQuality;
+    }
+  }
 
   const preservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans);
-
-  const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
 
   return {
     revised_text: parsed.revised_text,
@@ -163,21 +186,23 @@ export async function rewrite({
     edit_summary: parsed.edit_summary,
     intervention_plan_summary: analysis.plan.summary,
     preservation,
+    transformation_quality: {
+      ...transformationQuality,
+      corrective_retry_used: qualityRetryUsed,
+      first_attempt: firstAttemptQuality,
+    },
     diagnostics: analysis.diagnostics,
     model_notes: parsed.diagnostics_notes || "",
-    // Verifiable proof of what this specific request actually ran, so the
-    // running app can prove its own behaviour instead of asking the user
-    // to trust a chat transcript or a git log they can't see live.
     naturalisation_applied: {
       level: naturalisationLevel,
-      em_dash_ban: true, // sanitiseProse runs unconditionally, all levels
+      em_dash_ban: true,
       cadence_targeting: naturalisationLevel !== "off",
       syntactic_diversity: naturalisationLevel !== "off",
       texture_exemplar: naturalisationLevel === "aggressive",
+      aggressive_keep_override: naturalisationLevel === "aggressive",
+      transformation_quality_gate: naturalisationLevel === "aggressive",
       human_family_measured_sources: humanCadence?.measuredSources ?? 0,
     },
     build: getBuildInfo(),
   };
 }
-
-const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
