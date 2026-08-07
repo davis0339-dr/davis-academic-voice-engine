@@ -1,0 +1,20 @@
+{
+  "name": "davis-academic-voice-engine",
+  "version": "0.1.0",
+  "description": "Evidence-backed academic writing, revision and research-style engine (Phase 1)",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

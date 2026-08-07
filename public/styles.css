@@ -1,0 +1,183 @@
+:root {
+  color-scheme: light dark;
+  --bg: #0f1216;
+  --panel: #171b21;
+  --border: #2a2f38;
+  --text: #e6e9ee;
+  --muted: #8b93a1;
+  --accent: #5b8def;
+  --warn: #e0a941;
+  --bad: #e05c5c;
+  --good: #4caf7d;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand { font-weight: 600; font-size: 1.05rem; }
+.tag {
+  font-size: 0.7rem;
+  font-weight: 500;
+  background: var(--accent);
+  color: white;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.llm-status { font-size: 0.85rem; color: var(--muted); }
+.llm-status.ready { color: var(--good); }
+.llm-status.not-configured { color: var(--warn); }
+.llm-status.error { color: var(--bad); }
+
+.layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+}
+
+.control-rail {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem;
+  background: var(--panel);
+  align-self: start;
+}
+.control-rail h2 { font-size: 0.95rem; margin: 0 0 0.75rem; }
+.control-rail label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+.control-rail select {
+  display: block;
+  width: 100%;
+  margin-top: 0.2rem;
+  padding: 0.35rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.control-rail hr { border-color: var(--border); margin: 0.75rem 0; }
+
+.evidence-box {
+  font-size: 0.75rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.editor-panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.pane {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 340px;
+}
+.pane-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.wordcount { font-variant-numeric: tabular-nums; }
+.pane textarea {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 0.75rem;
+  resize: vertical;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  min-height: 300px;
+}
+.pane textarea:focus { outline: none; }
+
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1.25rem 1rem;
+}
+button {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  font-weight: 600;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.status-message { font-size: 0.8rem; color: var(--muted); }
+.status-message.error { color: var(--bad); }
+
+.tabs { padding: 0 1.25rem 2rem; }
+.tab-headers { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); }
+.tab-header {
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  border-radius: 0;
+  color: var(--muted);
+}
+.tab-header.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab-panel { display: none; padding: 1rem 0; font-size: 0.85rem; }
+.tab-panel.active { display: block; }
+.muted { color: var(--muted); }
+
+.plan-item { padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.plan-level {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  margin-right: 0.5rem;
+  background: var(--border);
+}
+.warning-item { padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+.warning-item.bad { color: var(--bad); }
+.ok-badge { color: var(--good); }
+.bad-badge { color: var(--bad); }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .editor-panes { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,260 @@
+const $ = (id) => document.getElementById(id);
+
+const sourceText = $("sourceText");
+const revisedText = $("revisedText");
+const llmStatusEl = $("llmStatus");
+const statusMessage = $("statusMessage");
+const analyseOnlyBtn = $("analyseOnlyBtn");
+const analyseReviseBtn = $("analyseReviseBtn");
+const profileEvidence = $("profileEvidence");
+
+const dimensionSelects = {
+  documentType: $("documentType"),
+  region: $("region"),
+  degree: $("degree"),
+  discipline: $("discipline"),
+  researchMode: $("researchMode"),
+  section: $("section"),
+};
+
+const filterKeyByField = {
+  documentType: "document_type",
+  region: "region",
+  degree: "degree",
+  discipline: "discipline",
+  researchMode: "research_mode",
+  section: "section",
+};
+
+function wordCount(text) {
+  return (text.match(/[A-Za-z0-9']+/g) || []).length;
+}
+
+function updateWordCounts() {
+  $("sourceWordCount").textContent = `${wordCount(sourceText.value)} words`;
+  $("revisedWordCount").textContent = `${wordCount(revisedText.value)} words`;
+}
+sourceText.addEventListener("input", updateWordCounts);
+
+function setTab(tabName) {
+  document.querySelectorAll(".tab-header").forEach((el) => {
+    el.classList.toggle("active", el.dataset.tab === tabName);
+  });
+  document.querySelectorAll(".tab-panel").forEach((el) => {
+    el.classList.toggle("active", el.id === `tab-${tabName}`);
+  });
+}
+document.querySelectorAll(".tab-header").forEach((el) => {
+  el.addEventListener("click", () => setTab(el.dataset.tab));
+});
+
+async function loadLlmStatus() {
+  llmStatusEl.textContent = "checking service status…";
+  llmStatusEl.className = "llm-status";
+  try {
+    const res = await fetch("/api/health/llm");
+    const data = await res.json();
+    const labels = {
+      READY: "LLM: ready",
+      NOT_CONFIGURED: "LLM: not configured (server needs ANTHROPIC_API_KEY)",
+      AUTH_FAILED: "LLM: auth failed",
+      RATE_LIMITED: "LLM: rate limited",
+      NETWORK_TIMEOUT: "LLM: network timeout",
+      PROVIDER_ERROR: "LLM: provider error",
+    };
+    llmStatusEl.textContent = labels[data.state] || `LLM: ${data.state}`;
+    llmStatusEl.className =
+      "llm-status " + (data.state === "READY" ? "ready" : data.state === "NOT_CONFIGURED" ? "not-configured" : "error");
+  } catch {
+    llmStatusEl.textContent = "LLM: status check failed";
+    llmStatusEl.className = "llm-status error";
+  }
+}
+
+function fillSelect(select, options, includeAuto = true) {
+  select.innerHTML = "";
+  if (includeAuto) {
+    const optAuto = document.createElement("option");
+    optAuto.value = "";
+    optAuto.textContent = "Auto / evidence-backed default";
+    select.appendChild(optAuto);
+  }
+  options.forEach((opt) => {
+    const el = document.createElement("option");
+    el.value = opt;
+    el.textContent = opt.replace(/_/g, " ");
+    select.appendChild(el);
+  });
+}
+
+async function loadStyleProfiles() {
+  const res = await fetch("/api/style-profiles");
+  const data = await res.json();
+  const dims = data.selectable_dimensions;
+  fillSelect(dimensionSelects.documentType, dims.document_type);
+  fillSelect(dimensionSelects.region, dims.region);
+  fillSelect(dimensionSelects.degree, dims.degree);
+  fillSelect(dimensionSelects.discipline, dims.discipline);
+  fillSelect(dimensionSelects.researchMode, dims.research_mode);
+  fillSelect(dimensionSelects.section, dims.section);
+}
+
+function currentStyleFilters() {
+  const filters = {};
+  for (const [field, key] of Object.entries(filterKeyByField)) {
+    const val = dimensionSelects[field].value;
+    if (val) filters[key] = val;
+  }
+  return filters;
+}
+
+function renderProfile(styleProfileUsed) {
+  const strengthColor = { supported: "ok-badge", emerging: "", insufficient: "bad-badge" };
+  profileEvidence.innerHTML = `Evidence strength: <span class="${strengthColor[styleProfileUsed.evidence_strength] || ""}">${styleProfileUsed.evidence_strength}</span>${styleProfileUsed.fallback_applied ? " (fallback applied)" : ""}`;
+
+  $("tab-profile").innerHTML = `
+    <p>${styleProfileUsed.message}</p>
+    <p><strong>Effective family:</strong> ${styleProfileUsed.effective.label}</p>
+    <pre>${JSON.stringify(styleProfileUsed.effective.evidence, null, 2)}</pre>
+  `;
+}
+
+function renderDiagnostics(diagnostics) {
+  const genericList = diagnostics.generic_phrasing
+    .map((h) => `<div class="warning-item">Sentence ${h.sentenceIndex}: formulaic phrase "<em>${h.phrase}</em>"</div>`)
+    .join("") || '<p class="muted">No stock/formulaic phrasing flagged.</p>';
+
+  const monotonyList = diagnostics.structural_monotony
+    .map((m) => `<div class="warning-item">${m.sentenceIndex !== null ? `Sentence ${m.sentenceIndex}: ` : ""}${m.issue} — ${m.detail}</div>`)
+    .join("") || '<p class="muted">No structural monotony flagged.</p>';
+
+  const cohesionList = diagnostics.cohesion
+    .map((c) => `<div class="warning-item">Sentence ${c.sentenceIndex}: ${c.detail}</div>`)
+    .join("") || '<p class="muted">No transition-stacking flagged.</p>';
+
+  $("tab-diagnostics").innerHTML = `
+    <h4>Generic / formulaic phrasing</h4>${genericList}
+    <h4>Structural monotony</h4>${monotonyList}
+    <h4>Cohesion (transition stacking)</h4>${cohesionList}
+  `;
+}
+
+function renderPlan(plan) {
+  const items = plan.items
+    .map((i) => `<div class="plan-item"><span class="plan-level">${i.level}</span>${i.sentence}</div>`)
+    .join("");
+  const summary = Object.entries(plan.summary)
+    .map(([level, count]) => `${level}: ${count}`)
+    .join(" · ");
+  $("tab-changes").innerHTML = `<p><strong>Plan summary:</strong> ${summary}</p>${items}`;
+}
+
+function renderChangesWithEditSummary(plan, editSummary) {
+  renderPlan(plan);
+  const flags = (editSummary.flags_for_author || []).length
+    ? `<p><strong>Flagged for author:</strong> ${editSummary.flags_for_author.join("; ")}</p>`
+    : "";
+  $("tab-changes").innerHTML =
+    `<p><strong>Model edit summary:</strong> kept ${editSummary.kept}, micro-edits ${editSummary.micro_edits}, restructures ${editSummary.sentence_restructures}, split/merge ${editSummary.split_or_merge}, paragraph reorders ${editSummary.paragraph_reorders}</p>${flags}` +
+    $("tab-changes").innerHTML;
+}
+
+function renderPreservation(preservation) {
+  const rows = [
+    ["Numbers preserved", preservation.numbers_ok],
+    ["Citations preserved", preservation.citations_ok],
+    ["Technical terms preserved", preservation.technical_terms_ok],
+    ["Quotations unaltered", preservation.quotes_ok],
+    ["No new factual claims detected", !preservation.new_factual_claims_detected],
+  ];
+  const rowsHtml = rows
+    .map(([label, ok]) => `<div class="warning-item ${ok ? "" : "bad"}">${ok ? "✓" : "✗"} ${label}</div>`)
+    .join("");
+  const warnings = preservation.warnings
+    .map((w) => `<div class="warning-item bad">${w.type}: ${w.detail}</div>`)
+    .join("");
+  $("tab-preservation").innerHTML = rowsHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
+}
+
+function setBusy(busy, label) {
+  analyseOnlyBtn.disabled = busy;
+  analyseReviseBtn.disabled = busy;
+  statusMessage.textContent = label || "";
+  statusMessage.className = "status-message";
+}
+
+function setError(message) {
+  statusMessage.textContent = message;
+  statusMessage.className = "status-message error";
+}
+
+async function runAnalyseOnly() {
+  const text = sourceText.value.trim();
+  if (!text) return setError("Paste some text first.");
+  setBusy(true, "Analysing…");
+  try {
+    const res = await fetch("/api/analyse", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text,
+        styleFilters: currentStyleFilters(),
+        rewriteIntensity: $("rewriteIntensity").value,
+        grammarIntensity: $("grammarIntensity").value,
+        lengthPreference: $("lengthPreference").value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Analysis failed");
+    renderDiagnostics(data.diagnostics);
+    renderPlan(data.plan);
+    renderProfile(data.style_profile_used);
+    setBusy(false, "Analysis complete.");
+  } catch (err) {
+    setBusy(false);
+    setError(err.message);
+  }
+}
+
+async function runAnalyseAndRevise() {
+  const text = sourceText.value.trim();
+  if (!text) return setError("Paste some text first.");
+  setBusy(true, "Revising…");
+  try {
+    const res = await fetch("/api/rewrite", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text,
+        styleFilters: currentStyleFilters(),
+        rewriteIntensity: $("rewriteIntensity").value,
+        grammarIntensity: $("grammarIntensity").value,
+        lengthPreference: $("lengthPreference").value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      // Section 19.4/22 Gate 10: specific error, source text preserved
+      // (it was never sent anywhere it could be lost -- it's still in the
+      // left textarea), no indefinite spinner, retry is just clicking again.
+      throw new Error(`[${data.error}] ${data.message}`);
+    }
+    revisedText.value = data.revised_text;
+    updateWordCounts();
+    renderDiagnostics(data.diagnostics);
+    renderProfile(data.style_profile_used);
+    renderPreservation(data.preservation);
+    renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary);
+    setBusy(false, `Done. Request ID ${data.requestId}`);
+  } catch (err) {
+    setBusy(false);
+    setError(err.message);
+  }
+}
+
+analyseOnlyBtn.addEventListener("click", runAnalyseOnly);
+analyseReviseBtn.addEventListener("click", runAnalyseAndRevise);
+
+loadLlmStatus();
+loadStyleProfiles();
+updateWordCounts();

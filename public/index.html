@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Academic Voice Engine — Editor</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Academic Voice Engine <span class="tag">Phase 1</span></div>
+  <div id="llmStatus" class="llm-status">checking service status…</div>
+</header>
+
+<main class="layout">
+  <section class="control-rail">
+    <h2>Controls</h2>
+
+    <label>Document type
+      <select id="documentType"></select>
+    </label>
+    <label>Region
+      <select id="region"></select>
+    </label>
+    <label>Degree
+      <select id="degree"></select>
+    </label>
+    <label>Discipline
+      <select id="discipline"></select>
+    </label>
+    <label>Research mode
+      <select id="researchMode"></select>
+    </label>
+    <label>Section
+      <select id="section"></select>
+    </label>
+
+    <hr />
+
+    <label>Rewrite intensity
+      <select id="rewriteIntensity">
+        <option value="auto" selected>Auto / Smart</option>
+        <option value="minor">Minor / Targeted</option>
+        <option value="moderate">Moderate</option>
+        <option value="deep">Deep / Structural</option>
+      </select>
+    </label>
+
+    <label>Grammar intensity
+      <select id="grammarIntensity">
+        <option value="light">Light</option>
+        <option value="standard" selected>Standard</option>
+        <option value="strict">Strict</option>
+      </select>
+    </label>
+
+    <label>Length preference
+      <select id="lengthPreference">
+        <option value="auto" selected>Auto</option>
+        <option value="concise">Concise</option>
+        <option value="maintain">Maintain</option>
+        <option value="expand">Expand</option>
+      </select>
+    </label>
+
+    <div id="profileEvidence" class="evidence-box">Evidence strength: —</div>
+  </section>
+
+  <section class="editor-panes">
+    <div class="pane">
+      <div class="pane-header">Source
+        <span id="sourceWordCount" class="wordcount">0 words</span>
+      </div>
+      <textarea id="sourceText" placeholder="Paste your academic text here…"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-header">Revised
+        <span id="revisedWordCount" class="wordcount">0 words</span>
+      </div>
+      <textarea id="revisedText" readonly placeholder="Revision will appear here after Analyse &amp; Revise…"></textarea>
+    </div>
+  </section>
+</main>
+
+<div class="action-bar">
+  <button id="analyseOnlyBtn">Analyse Only</button>
+  <button id="analyseReviseBtn" class="primary">Analyse &amp; Revise</button>
+  <span id="statusMessage" class="status-message"></span>
+</div>
+
+<section class="tabs">
+  <div class="tab-headers">
+    <button class="tab-header active" data-tab="changes">Changes</button>
+    <button class="tab-header" data-tab="diagnostics">Writing Quality</button>
+    <button class="tab-header" data-tab="preservation">Preservation</button>
+    <button class="tab-header" data-tab="profile">Style Profile</button>
+  </div>
+
+  <div id="tab-changes" class="tab-panel active">
+    <p class="muted">Run Analyse &amp; Revise to see the edit plan and edit summary.</p>
+  </div>
+  <div id="tab-diagnostics" class="tab-panel">
+    <p class="muted">Run Analyse Only or Analyse &amp; Revise to see writing-quality diagnostics.</p>
+  </div>
+  <div id="tab-preservation" class="tab-panel">
+    <p class="muted">Run Analyse &amp; Revise to see the preservation audit (numbers, citations, quotes, technical terms).</p>
+  </div>
+  <div id="tab-profile" class="tab-panel">
+    <p class="muted">Select controls above to see which evidence-backed style family is actually being used.</p>
+  </div>
+</section>
+
+<script src="/app.js"></script>
+</body>
+</html>
