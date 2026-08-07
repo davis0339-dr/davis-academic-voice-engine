@@ -98,6 +98,15 @@ async function runModelPass({ systemPrompt, sourceText }) {
   return parsed;
 }
 
+function nearSourceExamples(quality) {
+  const examples = quality.near_source_examples || [];
+  if (!examples.length) return "";
+  return [
+    "Examples of sentences still too structurally close to the source:",
+    ...examples.map((item, i) => `${i + 1}. CURRENT: ${item.revised}\n   SOURCE: ${item.source}`),
+  ].join("\n");
+}
+
 function qualityCorrectionBlock(quality) {
   const issueLines = (quality.reasons || []).map((reason) => `- ${reason}`).join("\n");
   return [
@@ -105,38 +114,44 @@ function qualityCorrectionBlock(quality) {
     "--- AGGRESSIVE REWRITE QUALITY CORRECTION ---",
     "The previous attempt failed the product's rewrite-depth and academic-register quality gate.",
     issueLines || "- The previous attempt did not meet the required quality profile.",
+    nearSourceExamples(quality),
     "Rewrite again from the ORIGINAL source below, not from the previous attempt.",
+    "Do not preserve a source sentence merely by changing punctuation, replacing one or two words, or splitting it into two sentences. If the same content words remain in roughly the same order, rebuild the sentence again.",
+    "Change information packaging: vary which idea becomes the grammatical subject, move causes/conditions/qualifications to different positions, combine evidence and interpretation differently, and use genuinely different clause architecture.",
     "Keep the substantive transformation, but repair any overcorrection. Do not solve structural similarity by chopping the prose into strings of very short sentences.",
     "Use sustained postgraduate academic prose: formal but readable, with mostly medium and long sentences and occasional short emphasis. Merge neighbouring short statements where they express one analytical idea.",
     "Do not introduce second-person address, contractions, idioms, journalistic phrasing, slang, or conversational metaphors.",
-    "Reconstruct syntax rather than merely swapping vocabulary: vary clause order, grammatical subject, sentence boundaries and paragraph flow, while preserving the argument and the broad-to-narrow academic progression.",
+    "Preserve the argument and broad-to-narrow academic progression, but not the source's sentence-by-sentence wording or clause sequence.",
     "No complete source sentence should survive verbatim unless it is a protected quotation or cannot be safely changed without altering a protected claim.",
     "Preserve every citation, number, quotation, technical term and factual relationship exactly. Do not add any fact or citation.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function finalRescueBlock(quality) {
   const issueLines = (quality.reasons || []).map((reason) => `- ${reason}`).join("\n");
   return [
     "",
-    "--- FINAL ACADEMIC CADENCE RESCUE ---",
-    "A second rewrite is already substantially different from the source but still fails one or more quality checks.",
-    issueLines || "- Residual cadence/register problems remain.",
+    "--- FINAL ACADEMIC CADENCE AND STRUCTURE RESCUE ---",
+    "A second rewrite still fails one or more quality checks.",
+    issueLines || "- Residual cadence/register/structural problems remain.",
+    nearSourceExamples(quality),
     "The user message for this pass contains both the ORIGINAL SOURCE and the CURRENT CANDIDATE REVISION.",
-    "Repair the CURRENT CANDIDATE rather than reverting to the source wording. Use the original only as the factual and citation-preservation authority.",
-    "If phrase overlap remains high, change information packaging and clause architecture while retaining all technical meaning: vary which idea carries the grammatical subject, move qualification clauses, combine or separate evidence and interpretation differently, and rebuild transitions.",
-    "If the prose is choppy, merge adjacent short sentences that belong to the same analytical unit. A normal thesis paragraph should contain a mixture of roughly 15-35 word sentences, some longer analytical sentences, and only occasional genuinely short sentences for emphasis.",
+    "Repair the CURRENT CANDIDATE rather than reverting to source wording. Use the original only as the factual and citation-preservation authority.",
+    "Where a candidate sentence still follows the source's content-word order, rebuild it from the underlying proposition: choose a different grammatical subject, alter clause order, redistribute information across neighbouring sentences, and reconstruct transitions. Do not preserve the sentence skeleton.",
+    "If phrase overlap remains high, change information packaging and clause architecture while retaining all technical meaning.",
+    "If the prose is choppy, merge adjacent short sentences that belong to the same analytical unit. A thesis paragraph should contain a mixture of medium and long sentences, some longer analytical sentences, and only occasional short sentences for emphasis.",
     "Maintain a postgraduate academic register throughout. No second-person address, contractions, colloquialisms, slogans, journalistic shorthand, or casual metaphors.",
     "Do not simply restore long source sentences. The objective is structurally fresh but academically sustained prose.",
     "Every citation, number, quotation, acronym, technical term and factual relationship from the original must remain correct and no new factual content may be introduced.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function qualityScore(q) {
   const shortPenalty = Math.max(0, (q.short_sentence_ratio || 0) - 0.27);
   const registerPenalty = (q.direct_address_introduced || 0) * 0.2 + (q.formality_risks_introduced || 0) * 0.15;
   const cadencePenalty = Math.max(0, 14 - (q.mean_sentence_length || 14)) / 14;
-  return q.five_gram_overlap + q.unchanged_sentence_ratio + shortPenalty + registerPenalty + cadencePenalty;
+  const nearSourcePenalty = Math.max(0, (q.near_source_sentence_ratio || 0) - 0.30);
+  return q.five_gram_overlap + q.unchanged_sentence_ratio + nearSourcePenalty + shortPenalty + registerPenalty + cadencePenalty;
 }
 
 function qualityOptions(analysis, humanCadence) {
@@ -203,11 +218,6 @@ export async function rewrite({
     }
   }
 
-  // One final repair pass is reserved for the real-world failure mode seen
-  // in long thesis sections: the text is different enough, but the model has
-  // achieved that difference by over-segmenting or by retaining too much
-  // unprotected phrase structure. The rescue pass edits the best candidate
-  // while keeping the original alongside it as the factual authority.
   if (naturalisationLevel === "aggressive" && !transformationQuality.passed) {
     preRescueQuality = transformationQuality;
     const candidateText = parsed.revised_text;
@@ -259,6 +269,7 @@ export async function rewrite({
       transformation_quality_gate: naturalisationLevel === "aggressive",
       academic_register_gate: naturalisationLevel === "aggressive",
       protected_span_adjusted_overlap: naturalisationLevel === "aggressive",
+      near_source_sentence_gate: naturalisationLevel === "aggressive",
       final_academic_rescue: naturalisationLevel === "aggressive",
       human_family_measured_sources: humanCadence?.measuredSources ?? 0,
     },
