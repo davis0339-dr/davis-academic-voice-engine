@@ -4,6 +4,8 @@
 // profile are passed as structured data appended to this contract, not
 // folded into freeform prose -- see Section 12's closing paragraph.
 
+import { texturePromptBlock } from "../data/textureExemplars.js";
+
 export const BASE_SYSTEM_PROMPT = `You are the revision engine for an evidence-backed academic editor.
 
 Primary objective:
@@ -104,6 +106,12 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
         ].join("\n")
       : "",
     "",
+    // The few-shot texture exemplar is the strongest register lever, so it
+    // is reserved for aggressive mode -- faithful mode is meant to preserve
+    // the author's own wording, which matching an exemplar's texture would
+    // work against.
+    level === "aggressive" ? texturePromptBlock() : "",
+    level === "aggressive" ? "" : null,
     `Grammar intensity: ${grammarIntensity}. Light = correct only errors that obstruct meaning. Standard = correct clear grammar problems while preserving personal cadence. Strict = apply formal academic grammar consistently. Never manufacture grammatical mistakes to look "more human".`,
     "",
     "Style profile (a RANGE to draw from, not an imitation target):",
