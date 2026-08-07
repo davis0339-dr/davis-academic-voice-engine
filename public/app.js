@@ -2,11 +2,24 @@ const $ = (id) => document.getElementById(id);
 
 const sourceText = $("sourceText");
 const revisedText = $("revisedText");
+const longdocSource = $("longdocSource");
 const llmStatusEl = $("llmStatus");
 const statusMessage = $("statusMessage");
 const analyseOnlyBtn = $("analyseOnlyBtn");
 const analyseReviseBtn = $("analyseReviseBtn");
 const profileEvidence = $("profileEvidence");
+const startJobBtn = $("startJobBtn");
+
+const DEFAULT_LIMITS = {
+  singleEditorWordLimit: 1500,
+  longDocumentWordLimit: 12000,
+  uploadFileSizeLimitBytes: 5 * 1024 * 1024,
+};
+let capabilities = { ...DEFAULT_LIMITS };
+let busyTimer = null;
+let busyStartedAt = null;
+let busyBaseLabel = "";
+let longdocPollTimer = null;
 
 const dimensionSelects = {
   documentType: $("documentType"),
@@ -27,14 +40,52 @@ const filterKeyByField = {
 };
 
 function wordCount(text) {
-  return (text.match(/[A-Za-z0-9']+/g) || []).length;
+  return (String(text || "").match(/[A-Za-z0-9']+/g) || []).length;
+}
+
+function formatNumber(n) {
+  return Number(n || 0).toLocaleString();
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}m ${remainder}s`;
+}
+
+function updateLimitUi() {
+  $("sourceLimitHint").textContent = `Single editor: up to ${formatNumber(capabilities.singleEditorWordLimit)} words. Larger text belongs in Long Document.`;
+  $("longdocLimitHint").textContent = `Current beta benchmark: up to ${formatNumber(capabilities.longDocumentWordLimit)} words per job.`;
+}
+
+function setLimitState(el, count, limit) {
+  el.classList.toggle("near-limit", count >= limit * 0.85 && count <= limit);
+  el.classList.toggle("over-limit", count > limit);
 }
 
 function updateWordCounts() {
-  $("sourceWordCount").textContent = `${wordCount(sourceText.value)} words`;
-  $("revisedWordCount").textContent = `${wordCount(revisedText.value)} words`;
+  const sourceWords = wordCount(sourceText.value);
+  const revisedWords = wordCount(revisedText.value);
+  const longWords = wordCount(longdocSource.value);
+
+  $("sourceWordCount").textContent = `${formatNumber(sourceWords)} / ${formatNumber(capabilities.singleEditorWordLimit)} words`;
+  $("revisedWordCount").textContent = `${formatNumber(revisedWords)} words`;
+  $("longdocWordCount").textContent = `${formatNumber(longWords)} / ${formatNumber(capabilities.longDocumentWordLimit)} words`;
+
+  setLimitState($("sourceWordCount"), sourceWords, capabilities.singleEditorWordLimit);
+  setLimitState($("longdocWordCount"), longWords, capabilities.longDocumentWordLimit);
+
+  const singleOver = sourceWords > capabilities.singleEditorWordLimit;
+  const longOver = longWords > capabilities.longDocumentWordLimit;
+  analyseOnlyBtn.disabled = analyseOnlyBtn.dataset.busy === "true" || singleOver;
+  analyseReviseBtn.disabled = analyseReviseBtn.dataset.busy === "true" || singleOver;
+  startJobBtn.disabled = startJobBtn.dataset.busy === "true" || longOver;
 }
 sourceText.addEventListener("input", updateWordCounts);
+longdocSource.addEventListener("input", updateWordCounts);
 
 function setTab(tabName) {
   document.querySelectorAll(".tab-header").forEach((el) => {
@@ -48,6 +99,19 @@ document.querySelectorAll(".tab-header").forEach((el) => {
   el.addEventListener("click", () => setTab(el.dataset.tab));
 });
 
+function configureMobileControls() {
+  const rail = $("controlRail");
+  const button = $("toggleControlsBtn");
+  if (!rail || !button) return;
+  const apply = (collapsed) => {
+    rail.classList.toggle("collapsed", collapsed);
+    button.textContent = collapsed ? "Show" : "Hide";
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  };
+  if (window.matchMedia("(max-width: 700px)").matches) apply(true);
+  button.addEventListener("click", () => apply(!rail.classList.contains("collapsed")));
+}
+
 async function loadBuildBadge() {
   const el = $("buildBadge");
   try {
@@ -55,8 +119,12 @@ async function loadBuildBadge() {
     const data = await res.json();
     el.textContent = "build: " + (data.build?.commitShort || "unknown");
     if (data.build?.githubUrl) el.href = data.build.githubUrl;
+    capabilities = { ...DEFAULT_LIMITS, ...(data.capabilities || {}) };
+    updateLimitUi();
+    updateWordCounts();
   } catch {
     el.textContent = "build: unavailable";
+    updateLimitUi();
   }
 }
 
@@ -68,10 +136,12 @@ async function loadLlmStatus() {
     const data = await res.json();
     const labels = {
       READY: "LLM: ready",
-      NOT_CONFIGURED: "LLM: not configured (server needs ANTHROPIC_API_KEY)",
+      NOT_CONFIGURED: "LLM: not configured",
       AUTH_FAILED: "LLM: auth failed",
       RATE_LIMITED: "LLM: rate limited",
       NETWORK_TIMEOUT: "LLM: network timeout",
+      PROVIDER_OVERLOADED: "LLM: provider overloaded",
+      PROVIDER_UNAVAILABLE: "LLM: provider unavailable",
       PROVIDER_ERROR: "LLM: provider error",
     };
     llmStatusEl.textContent = labels[data.state] || `LLM: ${data.state}`;
@@ -158,21 +228,21 @@ function renderDiagnostics(diagnostics) {
       <p>This document: ${cd.doc.mean.toFixed(1)} words/sentence mean, ${cd.doc.pctLong.toFixed(1)}% sentences &ge;30 words (${cd.doc.sentenceCount} sentences).</p>
       <p class="muted">Family range (${cd.family.measuredSources} measured sources): ${cd.family.meanSentenceLengthMin.toFixed(1)}&ndash;${cd.family.meanSentenceLengthMax.toFixed(1)} words/sentence mean.</p>
       ${flagsHtml}
-      <p class="muted" style="margin-top:0.5rem">${cd.note || ""}</p>
+      <p class="muted">${cd.note || ""}</p>
     `;
   }
 
   $("tab-diagnostics").innerHTML = `
     <h4>Generic / formulaic phrasing</h4>${genericList}
     <h4>Structural monotony</h4>${monotonyList}
-    <h4>Cohesion (transition stacking)</h4>${cohesionList}
-    <h4>Cadence deviation from corpus family (experimental, Phase 4 seed)</h4>${cadenceHtml}
+    <h4>Cohesion and transition patterning</h4>${cohesionList}
+    <h4>Cadence deviation from corpus family</h4>${cadenceHtml}
   `;
 }
 
 function renderPlan(plan) {
   const items = plan.items
-    .map((i) => `<div class="plan-item"><span class="plan-level">${i.level}</span>${i.sentence}</div>`)
+    .map((i) => `<div class="plan-item"><span class="plan-level">${i.level}</span><span>${i.sentence}</span></div>`)
     .join("");
   const summary = Object.entries(plan.summary)
     .map(([level, count]) => `${level}: ${count}`)
@@ -187,7 +257,7 @@ function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, 
     : "";
   const na = naturalisationApplied;
   const proofLine = na
-    ? `<p class="proof-line">Naturalisation actually applied to THIS request: level=<strong>${na.level}</strong> · em-dash ban=${na.em_dash_ban ? "on" : "off"} · cadence targeting=${na.cadence_targeting ? "on" : "off"} · syntactic diversity=${na.syntactic_diversity ? "on" : "off"} · texture exemplar=${na.texture_exemplar ? "on" : "off"} · human family sources=${na.human_family_measured_sources}${build?.commitShort ? ` · build <a href="${build.githubUrl}" target="_blank" rel="noopener">${build.commitShort}</a>` : ""}</p>`
+    ? `<p class="proof-line">Applied to this request: level=<strong>${na.level}</strong> · cadence profile=${na.cadence_targeting ? "on" : "off"} · syntactic diversity=${na.syntactic_diversity ? "on" : "off"} · measured family sources=${na.human_family_measured_sources}${build?.commitShort ? ` · build <a href="${build.githubUrl}" target="_blank" rel="noopener">${build.commitShort}</a>` : ""}</p>`
     : "";
   $("tab-changes").innerHTML =
     proofLine +
@@ -201,6 +271,7 @@ function renderPreservation(preservation) {
     ["Citations preserved", preservation.citations_ok],
     ["Technical terms preserved", preservation.technical_terms_ok],
     ["Quotations unaltered", preservation.quotes_ok],
+    ["Study stage / proposal tense preserved", preservation.study_stage_ok !== false],
     ["No new factual claims detected", !preservation.new_factual_claims_detected],
   ];
   const rowsHtml = rows
@@ -212,21 +283,60 @@ function renderPreservation(preservation) {
   $("tab-preservation").innerHTML = rowsHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
 }
 
+function clearBusyTimer() {
+  if (busyTimer) clearInterval(busyTimer);
+  busyTimer = null;
+  busyStartedAt = null;
+}
+
 function setBusy(busy, label) {
+  analyseOnlyBtn.dataset.busy = busy ? "true" : "false";
+  analyseReviseBtn.dataset.busy = busy ? "true" : "false";
   analyseOnlyBtn.disabled = busy;
   analyseReviseBtn.disabled = busy;
-  statusMessage.textContent = label || "";
+  clearBusyTimer();
+
+  if (busy) {
+    busyStartedAt = Date.now();
+    busyBaseLabel = label || "Working…";
+    const paint = () => {
+      const elapsed = Math.round((Date.now() - busyStartedAt) / 1000);
+      statusMessage.textContent = `${busyBaseLabel} ${elapsed}s elapsed. Complex rewrites may need more than one model pass.`;
+    };
+    paint();
+    busyTimer = setInterval(paint, 1000);
+  } else {
+    statusMessage.textContent = label || "";
+  }
   statusMessage.className = "status-message";
+  updateWordCounts();
 }
 
 function setError(message) {
+  clearBusyTimer();
   statusMessage.textContent = message;
   statusMessage.className = "status-message error";
+  analyseOnlyBtn.dataset.busy = "false";
+  analyseReviseBtn.dataset.busy = "false";
+  updateWordCounts();
+}
+
+function validateSingleText(text) {
+  const words = wordCount(text);
+  if (!text) {
+    setError("Paste or upload some text first.");
+    return false;
+  }
+  if (words > capabilities.singleEditorWordLimit) {
+    setError(`This text is ${formatNumber(words)} words. The single editor accepts up to ${formatNumber(capabilities.singleEditorWordLimit)} words; use Long Document instead.`);
+    return false;
+  }
+  return true;
 }
 
 async function runAnalyseOnly() {
   const text = sourceText.value.trim();
-  if (!text) return setError("Paste some text first.");
+  if (!validateSingleText(text)) return;
   setBusy(true, "Analysing…");
   try {
     const res = await fetch("/api/analyse", {
@@ -255,7 +365,7 @@ async function runAnalyseOnly() {
 
 async function runAnalyseAndRevise() {
   const text = sourceText.value.trim();
-  if (!text) return setError("Paste some text first.");
+  if (!validateSingleText(text)) return;
   setBusy(true, "Revising…");
   try {
     const res = await fetch("/api/rewrite", {
@@ -271,19 +381,14 @@ async function runAnalyseAndRevise() {
       }),
     });
     const data = await res.json();
-    if (!res.ok) {
-      // Section 19.4/22 Gate 10: specific error, source text preserved
-      // (it was never sent anywhere it could be lost -- it's still in the
-      // left textarea), no indefinite spinner, retry is just clicking again.
-      throw new Error(`[${data.error}] ${data.message}`);
-    }
+    if (!res.ok) throw new Error(`[${data.error || "ERROR"}] ${data.message || "Revision failed"}`);
     revisedText.value = data.revised_text;
     updateWordCounts();
     renderDiagnostics(data.diagnostics);
     renderProfile(data.style_profile_used);
     renderPreservation(data.preservation);
     renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
-    setBusy(false, `Done. Request ID ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}`);
+    setBusy(false, `Done. Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}`);
   } catch (err) {
     setBusy(false);
     setError(err.message);
@@ -291,18 +396,17 @@ async function runAnalyseAndRevise() {
 }
 
 function renderMethodology(data) {
-  const rows = (dimName, entries) =>
-    entries
-      .map((e) => `<div class="warning-item">${e.value}: <strong>${e.count}</strong> <span class="muted">(${e.strength})</span></div>`)
-      .join("");
+  const rows = (entries) => entries
+    .map((e) => `<div class="warning-item">${e.value}: <strong>${e.count}</strong> <span class="muted">(${e.strength})</span></div>`)
+    .join("");
   $("tab-methodology").innerHTML = `
-    <p>${data.totalIncluded} independent sources counted (of ${data.totalReceived} unique documents received; the rest are non-English reserve or a contemporary partial-thesis reserve, held out of counting).</p>
-    <p class="muted">Strength thresholds: insufficient &lt; ${data.thresholds.emergingAt}, emerging ${data.thresholds.emergingAt}-${data.thresholds.supportedAt - 1}, supported &ge; ${data.thresholds.supportedAt}. This threshold is a configurable research parameter, not an empirically calibrated constant.</p>
-    <h4>By document type</h4>${rows("document_type", data.table.document_type)}
-    <h4>By region</h4>${rows("region", data.table.region)}
-    <h4>By degree</h4>${rows("degree", data.table.degree)}
-    <h4>By discipline</h4>${rows("discipline", data.table.discipline)}
-    <h4>By research mode</h4>${rows("research_mode", data.table.research_mode)}
+    <p>${data.totalIncluded} independent sources counted from the current evidence corpus.</p>
+    <p class="muted">Strength thresholds are research parameters, not authorship probabilities.</p>
+    <h4>By document type</h4>${rows(data.table.document_type)}
+    <h4>By region</h4>${rows(data.table.region)}
+    <h4>By degree</h4>${rows(data.table.degree)}
+    <h4>By discipline</h4>${rows(data.table.discipline)}
+    <h4>By research mode</h4>${rows(data.table.research_mode)}
   `;
 }
 
@@ -323,8 +427,7 @@ async function loadDetectorHealth() {
     const data = await res.json();
     const statuses = data.providers.map((p) => `${p.label}: ${p.state}`).join(" · ");
     disclaimerEl.textContent =
-      "These are raw outputs from a third-party classifier, shown only for your own evaluation. They are not proof of who wrote a text, are not guaranteed to match Turnitin (no public API exists for this build to call), and are never fed back into the rewrite engine. Scanning is a separate, manual action you trigger below. Provider status: " +
-      statuses;
+      "Third-party classifier output is shown for evaluation only. It is not proof of authorship and is never fed automatically into generation. Provider status: " + statuses;
   } catch {
     disclaimerEl.textContent = "Could not load detector provider status.";
   }
@@ -367,8 +470,6 @@ async function runDetectorScan(which) {
 $("scanSourceBtn").addEventListener("click", () => runDetectorScan("source"));
 $("scanRevisedBtn").addEventListener("click", () => runDetectorScan("revised"));
 
-let longdocPollTimer = null;
-
 function chunkStatusBadge(status) {
   return `<span class="chunk-badge ${status}">${status}</span>`;
 }
@@ -376,20 +477,20 @@ function chunkStatusBadge(status) {
 function renderJobProgress(job) {
   const { progress, chunkMethod, documentMap } = job;
   const glossaryEntries = Object.entries(documentMap.glossary || {});
+  const eta = progress.estimatedRemainingMs ? ` · estimated remaining ${formatDuration(progress.estimatedRemainingMs)}` : "";
+  const avg = progress.averageChunkDurationMs ? ` · avg chunk ${formatDuration(progress.averageChunkDurationMs)}` : "";
   const header = `
-    <p><strong>${documentMap.title || "(untitled)"}</strong> — chunked by ${chunkMethod === "heading_boundary" ? "detected section headings" : "paragraph groups (no reliable headings found)"}, ${documentMap.headingCount} heading(s) detected, ${documentMap.citationCount} citation(s) tracked document-wide.</p>
+    <p><strong>${documentMap.title || "(untitled)"}</strong> — ${chunkMethod === "heading_boundary" ? "section-aware chunking" : "paragraph-group chunking"}, ${documentMap.headingCount} heading(s), ${documentMap.citationCount} citation(s) tracked.</p>
     ${glossaryEntries.length ? `<p class="muted">Glossary: ${glossaryEntries.map(([k, v]) => `${k}=${v}`).join(", ")}</p>` : ""}
-    <p>Progress: ${progress.doneCount}/${progress.chunkCount} done${progress.failedCount ? `, ${progress.failedCount} failed` : ""} — status: <strong>${job.status}</strong></p>
+    <p>Progress: <strong>${progress.doneCount}/${progress.chunkCount}</strong> done${progress.failedCount ? `, ${progress.failedCount} failed` : ""} · status <strong>${job.status}</strong>${avg}${eta}</p>
   `;
   const rows = job.chunks
-    .map(
-      (c) => `
+    .map((c) => `
     <div class="chunk-row">
       ${chunkStatusBadge(c.status)}
-      <span class="chunk-heading">${c.heading || `chunk ${c.index}`} (${c.wordCount} words)${c.error ? ` — ${c.error.code}: ${c.error.message}` : ""}</span>
+      <span class="chunk-heading">${c.heading || `chunk ${c.index}`} (${c.wordCount} words)${c.inferredSection ? ` · ${c.inferredSection.replace(/_/g, " ")}` : ""}${c.attempts ? ` · attempt ${c.attempts}` : ""}${c.durationMs ? ` · ${formatDuration(c.durationMs)}` : ""}${c.error ? ` — ${c.error.code}: ${c.error.message}` : ""}</span>
       ${c.status === "failed" ? `<button data-retry-index="${c.index}">Retry</button>` : ""}
-    </div>`
-    )
+    </div>`)
     .join("");
   $("longdocProgress").innerHTML = header + rows;
 
@@ -407,6 +508,7 @@ function renderJobProgress(job) {
       <div class="warning-item ${p.numbers_ok ? "" : "bad"}">${p.numbers_ok ? "✓" : "✗"} Numbers preserved</div>
       <div class="warning-item ${p.citations_ok ? "" : "bad"}">${p.citations_ok ? "✓" : "✗"} Citations preserved</div>
       <div class="warning-item ${p.technical_terms_ok ? "" : "bad"}">${p.technical_terms_ok ? "✓" : "✗"} Technical terms preserved</div>
+      <div class="warning-item ${p.study_stage_ok !== false ? "" : "bad"}">${p.study_stage_ok !== false ? "✓" : "✗"} Study stage preserved</div>
       ${warnings}
     `;
   } else {
@@ -414,37 +516,63 @@ function renderJobProgress(job) {
   }
 }
 
+function stopLongdocPolling() {
+  if (longdocPollTimer) clearTimeout(longdocPollTimer);
+  longdocPollTimer = null;
+}
+
 async function pollJob(jobId) {
   try {
     const res = await fetch(`/api/jobs/${jobId}`);
     const job = await res.json();
+    if (!res.ok) throw new Error(job.message || job.error || "Job status unavailable");
     renderJobProgress(job);
     if (job.status === "completed" || job.status === "completed_with_errors" || job.status === "failed") {
-      clearInterval(longdocPollTimer);
+      stopLongdocPolling();
+      startJobBtn.dataset.busy = "false";
       $("longdocStatus").textContent = `Job ${job.status}.`;
+      updateWordCounts();
+      return;
     }
+    $("longdocStatus").textContent = `Processing ${job.progress.doneCount + job.progress.processingCount}/${job.progress.chunkCount} chunks…`;
+    longdocPollTimer = setTimeout(() => pollJob(jobId), 1000);
   } catch (err) {
-    clearInterval(longdocPollTimer);
+    stopLongdocPolling();
+    startJobBtn.dataset.busy = "false";
+    updateWordCounts();
     $("longdocStatus").textContent = `Lost connection to job: ${err.message}`;
   }
 }
 
+function beginLongdocPolling(jobId) {
+  stopLongdocPolling();
+  longdocPollTimer = setTimeout(() => pollJob(jobId), 500);
+}
+
 async function retryChunk(jobId, index) {
-  $("longdocStatus").textContent = `Retrying chunk ${index}…`;
+  $("longdocStatus").textContent = `Retry queued for chunk ${index}…`;
   try {
     const res = await fetch(`/api/jobs/${jobId}/chunks/${index}/retry`, { method: "POST" });
     const job = await res.json();
+    if (!res.ok) throw new Error(job.message || job.error || "Retry failed");
     renderJobProgress(job);
-    $("longdocStatus").textContent = `Chunk ${index} retry: ${job.chunks[index].status}.`;
+    $("longdocStatus").textContent = `Chunk ${index} retry is processing in the background.`;
+    beginLongdocPolling(job.id);
   } catch (err) {
     $("longdocStatus").textContent = `Retry failed: ${err.message}`;
   }
 }
 
 async function startLongDocJob() {
-  const text = $("longdocSource").value.trim();
-  if (!text) return ($("longdocStatus").textContent = "Paste a document first.");
-  $("longdocStatus").textContent = "Creating job…";
+  const text = longdocSource.value.trim();
+  const words = wordCount(text);
+  if (!text) return ($("longdocStatus").textContent = "Paste or upload a document first.");
+  if (words > capabilities.longDocumentWordLimit) {
+    return ($("longdocStatus").textContent = `This document is ${formatNumber(words)} words. Current long-document capacity is ${formatNumber(capabilities.longDocumentWordLimit)} words per job.`);
+  }
+  startJobBtn.dataset.busy = "true";
+  startJobBtn.disabled = true;
+  $("longdocStatus").textContent = "Creating background job…";
   $("longdocProgress").innerHTML = "";
   $("longdocOutput").innerHTML = "";
   try {
@@ -461,24 +589,56 @@ async function startLongDocJob() {
       }),
     });
     const job = await res.json();
-    if (!res.ok) throw new Error(`[${job.error}] ${job.message}`);
+    if (!res.ok) throw new Error(`[${job.error || "ERROR"}] ${job.message || "Could not create job"}`);
     renderJobProgress(job);
-    $("longdocStatus").textContent = `Job ${job.id} started.`;
-    if (longdocPollTimer) clearInterval(longdocPollTimer);
-    longdocPollTimer = setInterval(() => pollJob(job.id), 1500);
+    $("longdocStatus").textContent = `Job started. ${job.progress.chunkCount} chunks queued.`;
+    beginLongdocPolling(job.id);
   } catch (err) {
+    startJobBtn.dataset.busy = "false";
+    updateWordCounts();
     $("longdocStatus").textContent = `Could not start job: ${err.message}`;
   }
 }
 
-$("startJobBtn").addEventListener("click", startLongDocJob);
+async function importInto(fileInput, targetTextarea, statusEl, limit, label) {
+  const file = fileInput.files?.[0];
+  if (!file) return;
+  statusEl.textContent = `Reading ${file.name}…`;
+  statusEl.className = "file-status";
+  try {
+    const result = await window.AcademicFileImport.readAcademicFile(file, capabilities.uploadFileSizeLimitBytes);
+    targetTextarea.value = result.text;
+    const words = wordCount(result.text);
+    statusEl.textContent = `${file.name}: ${formatNumber(words)} words imported${result.warnings?.length ? ` · ${result.warnings.length} conversion warning(s)` : ""}.`;
+    statusEl.className = `file-status ${words > limit ? "error" : "ready"}`;
+    updateWordCounts();
+    if (words > limit) {
+      statusEl.textContent += ` ${label} limit is ${formatNumber(limit)} words.`;
+    }
+  } catch (err) {
+    statusEl.textContent = err.message;
+    statusEl.className = "file-status error";
+  } finally {
+    fileInput.value = "";
+  }
+}
 
+$("sourceFileInput").addEventListener("change", () =>
+  importInto($("sourceFileInput"), sourceText, $("sourceFileStatus"), capabilities.singleEditorWordLimit, "Single editor")
+);
+$("longdocFileInput").addEventListener("change", () =>
+  importInto($("longdocFileInput"), longdocSource, $("longdocFileStatus"), capabilities.longDocumentWordLimit, "Long Document")
+);
+
+$("startJobBtn").addEventListener("click", startLongDocJob);
 analyseOnlyBtn.addEventListener("click", runAnalyseOnly);
 analyseReviseBtn.addEventListener("click", runAnalyseAndRevise);
 
+configureMobileControls();
 loadLlmStatus();
 loadBuildBadge();
 loadStyleProfiles();
 loadMethodology();
 loadDetectorHealth();
+updateLimitUi();
 updateWordCounts();
