@@ -1,0 +1,19 @@
+# Exported from Render on 2026-08-07T13:38:24Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: davis-academic-voice-engine
+      runtime: node
+      repo: https://github.com/davis0339-dr/davis-academic-voice-engine
+      plan: free
+      envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      region: oregon
+      buildCommand: npm install
+      startCommand: node server/index.js
+      autoDeployTrigger: commit
