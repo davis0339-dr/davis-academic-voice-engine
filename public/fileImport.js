@@ -2,6 +2,10 @@
   const DOCX_EXT = /\.docx$/i;
   const PDF_EXT = /\.pdf$/i;
   const TEXT_EXT = /\.(txt|md|markdown)$/i;
+  const MAMMOTH_SRC = "https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js";
+  const PDFJS_SRC = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
+  const PDFJS_WORKER_SRC = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+  const loading = new Map();
 
   function extensionOf(file) {
     const name = file?.name || "";
@@ -9,14 +13,27 @@
     return match ? match[1] : "";
   }
 
+  function loadScript(src, ready) {
+    if (ready()) return Promise.resolve();
+    if (loading.has(src)) return loading.get(src);
+    const promise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      script.onload = () => ready() ? resolve() : reject(new Error(`Library loaded from ${src} but did not initialise.`));
+      script.onerror = () => reject(new Error("Could not load the document reader library. Check your connection and try again."));
+      document.head.appendChild(script);
+    }).finally(() => loading.delete(src));
+    loading.set(src, promise);
+    return promise;
+  }
+
   async function readPlain(file) {
     return (await file.text()).replace(/\r\n/g, "\n").trim();
   }
 
   async function readDocx(file) {
-    if (!window.mammoth?.extractRawText) {
-      throw new Error("Word-file reader did not load. Refresh the page and try again.");
-    }
+    await loadScript(MAMMOTH_SRC, () => Boolean(window.mammoth?.extractRawText));
     const arrayBuffer = await file.arrayBuffer();
     const result = await window.mammoth.extractRawText({ arrayBuffer });
     const text = String(result.value || "").replace(/\r\n/g, "\n").trim();
@@ -25,11 +42,8 @@
   }
 
   async function readPdf(file) {
-    if (!window.pdfjsLib?.getDocument) {
-      throw new Error("PDF reader did not load. Refresh the page and try again.");
-    }
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+    await loadScript(PDFJS_SRC, () => Boolean(window.pdfjsLib?.getDocument));
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
     const pages = [];
