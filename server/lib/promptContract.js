@@ -34,6 +34,26 @@ export const AI_SURFACE_TELLS = [
   'Do NOT open a run of consecutive sentences or paragraphs with bare single-adverb category labels ("Conceptually,", "Theoretically,", "Methodologically,", "Empirically,", "Contextually,", "Practically,"). This list-in-disguise template is a strong machine tell. Rephrase each into a full clause, or fold several into one sentence.',
 ];
 
+// SYNTACTIC PATTERN DIVERSITY -- this is the mechanism, distinct from
+// vocabulary/register changes above. Machine-generated prose overwhelmingly
+// defaults to one clause order (subject-verb-object), one voice (active),
+// and one sentence-opening pattern (grammatical subject first) applied
+// uniformly across a passage. Real writers vary all three unconsciously.
+// This is standard paraphrase-tool mechanics (the same category of
+// transformation commercial paraphrasers use), not fabrication and not
+// grammatical error -- every transformed sentence must remain fully
+// correct. Applied whenever naturalisation is on; more assertively at
+// aggressive fidelity.
+export const SYNTACTIC_DIVERSITY_INSTRUCTIONS = [
+  "Vary sentence-opening structure across the passage. Do not let most sentences open with their grammatical subject. Front an adverbial phrase, a prepositional phrase, or a subordinate clause in a meaningful share of sentences instead (e.g. 'Under these conditions, X occurs' rather than always 'X occurs under these conditions').",
+  "Alternate active and passive voice deliberately where both are natural and correct. Do not default to uniform active voice through the whole passage -- a mix (mostly active, with passive used where it genuinely reads better or shifts emphasis) is more natural than either extreme.",
+  "Vary clause order in multi-clause sentences: sometimes place the subordinate, conditional, or causal clause before the main clause, sometimes after. Do not settle into one fixed order and repeat it.",
+  "Vary grammatical form for restating an idea: alternate between a nominalised phrase ('the analysis of the data showed...'), a verbal phrase ('analysing the data showed...'), and a finite clause ('when the data were analysed, ...') rather than always reaching for the same construction.",
+  "Where an ordinary (non-technical) adjective, adverb, or descriptive word recurs, vary it with a natural synonym rather than repeating the identical word each time. Never substitute a protected span, a discipline-specific technical term, or a citation.",
+  "Reorder sentence constituents naturally where more than one correct order is available (e.g. moving a time or place phrase to the front or the end of a clause) so consecutive sentences don't all share the same internal shape.",
+  "The goal is structural variety across the passage, sentence to sentence -- not a single 'improved' formula applied uniformly. Uniform application of any single rewrite pattern (including these instructions) recreates the same machine-uniformity problem in a new form.",
+];
+
 function buildCadenceTargetBlock(humanCadence) {
   if (!humanCadence || !humanCadence.measuredSources || humanCadence.measuredSources < 3) {
     return [
@@ -103,6 +123,13 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
       ? [
           "SURFACE TELLS TO SUPPRESS (these are habits over-represented in machine-generated academic prose; reducing them makes the writing read more like the human corpus):",
           AI_SURFACE_TELLS.map((t) => `- ${t}`).join("\n"),
+        ].join("\n")
+      : "",
+    "",
+    naturalisationOn
+      ? [
+          "SYNTACTIC PATTERN DIVERSITY (apply throughout -- this is standard paraphrase-tool mechanics: restructure clause order, alternate voice, vary sentence-opening constituent and grammatical form. Every result must remain fully grammatically correct; this is structural variation, not error):",
+          SYNTACTIC_DIVERSITY_INSTRUCTIONS.map((t) => `- ${t}`).join("\n"),
         ].join("\n")
       : "",
     "",
