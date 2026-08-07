@@ -1,19 +1,12 @@
-// Phase 3 (Section 14, points 3-4): "chunk by semantic/section boundaries,
-// not arbitrary character counts where practical" + "include limited
-// preceding/following context for each chunk."
-//
-// Strategy: if the document map found at least two headings, chunk on
-// heading boundaries (splitting an oversized section further at paragraph
-// boundaries). Otherwise fall back to paragraph-group chunking. Either way,
-// a chunk boundary never falls mid-sentence or mid-paragraph -- the source
-// is only ever cut at a blank-line (paragraph) boundary.
-//
-// The heading line itself is stripped out of what gets sent to the model
-// (see jobStore.js) and re-attached verbatim on reassembly, so section
-// titles are never at risk of being reworded -- a concrete implementation
-// of Section 14 point 8, "preserve formatting."
+// Phase 3 long-document chunking.
+// Prefer semantic/section and paragraph boundaries, but enforce a real size
+// ceiling. Pasted Word/PDF text often arrives as one enormous paragraph; in
+// that case sentence boundaries are the safe fallback. A pathological single
+// sentence is finally split by words rather than allowing a multi-thousand-word
+// request to reach the LLM and time out.
 
-const DEFAULT_TARGET_WORDS = 900;
+const DEFAULT_TARGET_WORDS = 800;
+const HARD_MAX_MULTIPLIER = 1.25;
 
 function wordCount(text) {
   return (text.match(/[A-Za-z0-9']+/g) || []).length;
@@ -23,21 +16,81 @@ function splitParagraphs(text) {
   return text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
 }
 
-function groupParagraphsByTargetSize(paragraphs, targetWords) {
+function splitSentences(text) {
+  if (!text.trim()) return [];
+  try {
+    const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
+    return Array.from(segmenter.segment(text), (part) => part.segment.trim()).filter(Boolean);
+  } catch {
+    return (text.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) || [text])
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+}
+
+function splitPathologicalSentence(sentence, hardMaxWords) {
+  const words = sentence.split(/\s+/).filter(Boolean);
+  if (words.length <= hardMaxWords) return [sentence.trim()];
+  const pieces = [];
+  for (let i = 0; i < words.length; i += hardMaxWords) {
+    pieces.push(words.slice(i, i + hardMaxWords).join(" "));
+  }
+  return pieces;
+}
+
+function groupSentencesByTargetSize(text, targetWords, hardMaxWords) {
+  const sentences = splitSentences(text).flatMap((sentence) =>
+    splitPathologicalSentence(sentence, hardMaxWords)
+  );
   const groups = [];
   let current = [];
   let currentWords = 0;
+
+  const flush = () => {
+    if (current.length) groups.push(current.join(" ").trim());
+    current = [];
+    currentWords = 0;
+  };
+
+  for (const sentence of sentences) {
+    const w = wordCount(sentence);
+    if (current.length && currentWords + w > targetWords) flush();
+    current.push(sentence);
+    currentWords += w;
+    if (currentWords >= hardMaxWords) flush();
+  }
+  flush();
+  return groups;
+}
+
+function groupParagraphsByTargetSize(paragraphs, targetWords, hardMaxWords) {
+  const groups = [];
+  let current = [];
+  let currentWords = 0;
+
+  const flush = () => {
+    if (current.length) groups.push(current.join("\n\n"));
+    current = [];
+    currentWords = 0;
+  };
+
   for (const para of paragraphs) {
     const w = wordCount(para);
-    if (current.length > 0 && currentWords + w > targetWords) {
-      groups.push(current.join("\n\n"));
-      current = [];
-      currentWords = 0;
+
+    // This was the production bug: one 2,901-word pasted paragraph bypassed
+    // the nominal 900-word target. Sentence-level fallback now prevents that.
+    if (w > hardMaxWords) {
+      flush();
+      groups.push(...groupSentencesByTargetSize(para, targetWords, hardMaxWords));
+      continue;
     }
+
+    if (current.length && currentWords + w > targetWords) flush();
     current.push(para);
     currentWords += w;
+    if (currentWords >= hardMaxWords) flush();
   }
-  if (current.length > 0) groups.push(current.join("\n\n"));
+  flush();
   return groups;
 }
 
@@ -48,7 +101,7 @@ function lastSentenceTail(text, maxChars = 240) {
   return (sentenceStart >= 0 ? tail.slice(sentenceStart) : tail).trim();
 }
 
-function chunkByHeadings(fullText, headings, targetWords) {
+function chunkByHeadings(fullText, headings, targetWords, hardMaxWords) {
   const sections = [];
   for (let i = 0; i < headings.length; i++) {
     const start = headings[i].offset + headings[i].lineText.length + 1;
@@ -56,41 +109,40 @@ function chunkByHeadings(fullText, headings, targetWords) {
     sections.push({ heading: headings[i].text, body: fullText.slice(start, end).trim() });
   }
 
-  // Anything before the first heading (title/abstract-like preamble) becomes
-  // its own headless section so it isn't silently dropped.
   const preamble = fullText.slice(0, headings[0].offset).trim();
-
   const rawChunks = [];
   if (preamble) rawChunks.push({ heading: null, body: preamble });
+
   for (const section of sections) {
     if (!section.body) continue;
-    if (wordCount(section.body) <= targetWords * 1.4) {
-      rawChunks.push({ heading: section.heading, body: section.body });
-    } else {
-      const groups = groupParagraphsByTargetSize(splitParagraphs(section.body), targetWords);
-      groups.forEach((body, i) => {
-        rawChunks.push({ heading: i === 0 ? section.heading : `${section.heading} (continued)`, body });
-      });
-    }
+    const groups = groupParagraphsByTargetSize(splitParagraphs(section.body), targetWords, hardMaxWords);
+    groups.forEach((body, i) => {
+      // Reattach the real source heading ONCE only. The old implementation
+      // created synthetic "(continued)" headings that polluted reassembly.
+      rawChunks.push({ heading: i === 0 ? section.heading : null, body });
+    });
   }
   return rawChunks;
 }
 
-function chunkByParagraphGroups(fullText, targetWords) {
-  const groups = groupParagraphsByTargetSize(splitParagraphs(fullText), targetWords);
+function chunkByParagraphGroups(fullText, targetWords, hardMaxWords) {
+  const groups = groupParagraphsByTargetSize(splitParagraphs(fullText), targetWords, hardMaxWords);
   return groups.map((body) => ({ heading: null, body }));
 }
 
 export function chunkDocument(fullText, documentMap, options = {}) {
-  const targetWords = options.targetWordsPerChunk || DEFAULT_TARGET_WORDS;
+  const targetWords = Math.max(200, Number(options.targetWordsPerChunk || DEFAULT_TARGET_WORDS));
+  const hardMaxWords = Math.max(targetWords, Math.ceil(targetWords * HARD_MAX_MULTIPLIER));
   const useHeadings = documentMap.headings.length >= 2;
 
   const rawChunks = useHeadings
-    ? chunkByHeadings(fullText, documentMap.headings, targetWords)
-    : chunkByParagraphGroups(fullText, targetWords);
+    ? chunkByHeadings(fullText, documentMap.headings, targetWords, hardMaxWords)
+    : chunkByParagraphGroups(fullText, targetWords, hardMaxWords);
 
   return {
     method: useHeadings ? "heading_boundary" : "paragraph_group",
+    targetWords,
+    hardMaxWords,
     chunks: rawChunks.map((c, index) => ({
       index,
       heading: c.heading,
