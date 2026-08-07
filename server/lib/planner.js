@@ -1,11 +1,6 @@
 // Pass C (intervention planner): assigns one label per sentence from the
-// fixed vocabulary in Section 11 of the build handoff. This is the piece
-// that actually implements "Auto/Smart" (Section 3.1) -- it is what stops
-// the pipeline from being "one prompt, uniformly rewrite everything."
-//
-// The plan is deterministic and rule-based so it is inspectable and unit
-// testable; Pass D (the LLM call) receives it as structured instruction
-// rather than being asked to infer intervention level itself.
+// fixed vocabulary in Section 11 of the build handoff. Auto mode escalates
+// only where deterministic diagnostics found a concrete problem.
 
 const PLACEHOLDER_MARKERS = /\[(citation needed|TBD|TODO|XXX)\]/i;
 
@@ -27,8 +22,18 @@ function sentenceSignals(sentence, index, diagnostics) {
   const hasRepeatedOpening = diagnostics.structural_monotony.some(
     (m) => m.sentenceIndex === index && m.issue === "repeated_opening"
   );
+  const hasRepeatedParagraphFrame = diagnostics.structural_monotony.some(
+    (m) => m.sentenceIndex === index && m.issue === "repeated_paragraph_opening_frame"
+  );
   const isPlaceholder = PLACEHOLDER_MARKERS.test(sentence);
-  return { hasGenericPhrase, isOverloaded, isChoppy, hasRepeatedOpening, isPlaceholder };
+  return {
+    hasGenericPhrase,
+    isOverloaded,
+    isChoppy,
+    hasRepeatedOpening,
+    hasRepeatedParagraphFrame,
+    isPlaceholder,
+  };
 }
 
 function planSentence(sentence, index, diagnostics, intensity, lengthPreference) {
@@ -43,6 +48,12 @@ function planSentence(sentence, index, diagnostics, intensity, lengthPreference)
   if (s.isOverloaded) {
     reasons.push("Sentence exceeds 40 words -- candidate for split.");
     return { level: LEVELS.SPLIT_OR_MERGE, reasons };
+  }
+
+  if (s.hasRepeatedParagraphFrame) {
+    reasons.push("Paragraph opening repeats a structural frame used across several paragraphs.");
+    if (intensity === "minor") return { level: LEVELS.MICRO_EDIT, reasons };
+    return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons };
   }
 
   if (lengthPreference === "concise" && s.hasGenericPhrase) {
@@ -98,7 +109,7 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
   });
 
   const paragraphReorderSuggested = diagnostics.structural_monotony.some(
-    (m) => m.issue === "low_sentence_length_variation"
+    (m) => m.issue === "low_sentence_length_variation" || m.issue === "uniform_paragraph_length"
   );
 
   const summary = items.reduce((acc, item) => {
