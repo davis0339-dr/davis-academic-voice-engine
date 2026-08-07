@@ -56,6 +56,13 @@ function assembleChunkText(chunk) {
   return shouldAttachHeading ? `${chunk.heading}\n\n${body}` : body;
 }
 
+function finishChunkTiming(chunk) {
+  chunk.completedAt = new Date().toISOString();
+  if (chunk.startedAt) {
+    chunk.durationMs = Math.max(0, Date.parse(chunk.completedAt) - Date.parse(chunk.startedAt));
+  }
+}
+
 function finalizeIfComplete(job) {
   const allAttempted = job.chunks.every((c) => c.status === "done" || c.status === "failed");
   if (!allAttempted) return;
@@ -67,12 +74,16 @@ function finalizeIfComplete(job) {
   job.reassembledText = reassembledText;
   job.documentPreservation = documentPreservation;
   job.status = anyFailed ? "completed_with_errors" : "completed";
+  job.completedAt = new Date().toISOString();
 }
 
 async function processChunk(job, chunk) {
   chunk.status = "processing";
   chunk.error = null;
   chunk.attempts = chunk.attempts || 0;
+  chunk.startedAt = new Date().toISOString();
+  chunk.completedAt = null;
+  chunk.durationMs = null;
 
   const inferredSection = inferSectionFromHeading(chunk.heading);
   const chunkStyleFilters = { ...(job.options.styleFilters || {}) };
@@ -109,6 +120,7 @@ async function processChunk(job, chunk) {
       chunk.languageQuality = result.language_quality || null;
       chunk.status = "done";
       chunk.error = null;
+      finishChunkTiming(chunk);
       return;
     } catch (err) {
       const code = err.code || err.healthState || "PROVIDER_ERROR";
@@ -126,6 +138,7 @@ async function processChunk(job, chunk) {
 
       chunk.status = "failed";
       chunk.error = { code, message: err.message };
+      finishChunkTiming(chunk);
       return;
     }
   }
@@ -135,6 +148,7 @@ async function processJob(jobId) {
   const job = jobs.get(jobId);
   if (!job) return;
   job.status = "processing";
+  job.startedAt = job.startedAt || new Date().toISOString();
 
   for (const chunk of job.chunks) {
     if (chunk.status === "queued") await processChunk(job, chunk);
@@ -150,6 +164,8 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
     id: randomUUID(),
     status: "queued",
     createdAt: new Date().toISOString(),
+    startedAt: null,
+    completedAt: null,
     sourceText: text,
     documentMap,
     chunkMethod: method,
@@ -166,6 +182,9 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
       inferredSection: inferSectionFromHeading(c.heading),
       error: null,
       attempts: 0,
+      startedAt: null,
+      completedAt: null,
+      durationMs: null,
     })),
     reassembledText: null,
     documentPreservation: null,
@@ -175,6 +194,7 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
   processJob(job.id).catch((err) => {
     job.status = "failed";
     job.fatalError = err.message;
+    job.completedAt = new Date().toISOString();
   });
 
   return job;
@@ -184,7 +204,7 @@ export function getJob(jobId) {
   return jobs.get(jobId) || null;
 }
 
-export async function retryChunk(jobId, chunkIndex) {
+export function retryChunk(jobId, chunkIndex) {
   const job = jobs.get(jobId);
   if (!job) return { error: "JOB_NOT_FOUND" };
   const chunk = job.chunks.find((c) => c.index === chunkIndex);
@@ -194,12 +214,26 @@ export async function retryChunk(jobId, chunkIndex) {
   chunk.error = null;
   chunk.transformationQuality = null;
   chunk.languageQuality = null;
+  chunk.startedAt = null;
+  chunk.completedAt = null;
+  chunk.durationMs = null;
   job.status = "processing";
+  job.completedAt = null;
   job.reassembledText = null;
   job.documentPreservation = null;
 
-  await processChunk(job, chunk);
-  finalizeIfComplete(job);
+  // True background retry: return immediately to the browser and let normal
+  // job polling show progress. A retry should never hold an HTTP connection
+  // open for the duration of an LLM request.
+  processChunk(job, chunk)
+    .then(() => finalizeIfComplete(job))
+    .catch((err) => {
+      chunk.status = "failed";
+      chunk.error = { code: err.code || "RETRY_FAILED", message: err.message };
+      finishChunkTiming(chunk);
+      finalizeIfComplete(job);
+    });
+
   return { job };
 }
 
@@ -207,13 +241,23 @@ export function summarizeJob(job) {
   const chunkCount = job.chunks.length;
   const doneCount = job.chunks.filter((c) => c.status === "done").length;
   const failedCount = job.chunks.filter((c) => c.status === "failed").length;
+  const processingCount = job.chunks.filter((c) => c.status === "processing").length;
+  const completedDurations = job.chunks.map((c) => c.durationMs).filter((n) => Number.isFinite(n) && n > 0);
+  const averageChunkDurationMs = completedDurations.length
+    ? Math.round(completedDurations.reduce((a, b) => a + b, 0) / completedDurations.length)
+    : null;
+  const remainingCount = Math.max(0, chunkCount - doneCount - failedCount);
+  const estimatedRemainingMs = averageChunkDurationMs ? averageChunkDurationMs * remainingCount : null;
+
   return {
     id: job.id,
     status: job.status,
     createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    completedAt: job.completedAt,
     chunkMethod: job.chunkMethod,
     chunkPolicy: job.chunkPolicy,
-    progress: { chunkCount, doneCount, failedCount },
+    progress: { chunkCount, doneCount, failedCount, processingCount, averageChunkDurationMs, estimatedRemainingMs },
     documentMap: {
       title: job.documentMap.title,
       headingCount: job.documentMap.headings.length,
@@ -227,6 +271,9 @@ export function summarizeJob(job) {
       wordCount: c.wordCount,
       status: c.status,
       attempts: c.attempts,
+      startedAt: c.startedAt,
+      completedAt: c.completedAt,
+      durationMs: c.durationMs,
       error: c.error,
       editSummary: c.editSummary,
       preservation: c.preservation,
