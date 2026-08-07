@@ -1,6 +1,8 @@
 // Pass C (intervention planner): assigns one label per sentence from the
-// fixed vocabulary in Section 11 of the build handoff. Auto mode escalates
-// only where deterministic diagnostics found a concrete problem.
+// fixed vocabulary in Section 11 of the build handoff. Auto mode remains
+// diagnostic-led, but aggressive naturalisation is allowed to override KEEP
+// because a KEEP-heavy plan contradicts a user request for substantive
+// structural restyling.
 
 const PLACEHOLDER_MARKERS = /\[(citation needed|TBD|TODO|XXX)\]/i;
 
@@ -36,7 +38,7 @@ function sentenceSignals(sentence, index, diagnostics) {
   };
 }
 
-function planSentence(sentence, index, diagnostics, intensity, lengthPreference) {
+function planSentence(sentence, index, diagnostics, intensity, lengthPreference, naturalisation) {
   const s = sentenceSignals(sentence, index, diagnostics);
   const reasons = [];
 
@@ -46,8 +48,28 @@ function planSentence(sentence, index, diagnostics, intensity, lengthPreference)
   }
 
   if (s.isOverloaded) {
-    reasons.push("Sentence exceeds 40 words -- candidate for split.");
+    reasons.push("Sentence exceeds 40 words -- candidate for split or clause redistribution.");
     return { level: LEVELS.SPLIT_OR_MERGE, reasons };
+  }
+
+  // Critical interaction rule: aggressive naturalisation cannot coexist with
+  // a KEEP-heavy plan. Protected facts are preserved separately by Pass A/E;
+  // here the user has explicitly authorised structural restyling.
+  if (naturalisation === "aggressive") {
+    if (lengthPreference === "concise" && s.hasGenericPhrase) {
+      reasons.push("Aggressive naturalisation plus Concise preference: compress formulaic padding and rebuild the sentence.");
+      return { level: LEVELS.COMPRESS, reasons };
+    }
+    if (s.hasRepeatedParagraphFrame) {
+      reasons.push("Aggressive naturalisation: repeated paragraph-opening frame requires a new sentence architecture.");
+      return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons };
+    }
+    if (s.hasGenericPhrase || s.hasRepeatedOpening || s.isChoppy) {
+      reasons.push("Aggressive naturalisation: diagnosed wording/structure requires substantive reconstruction.");
+      return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons };
+    }
+    reasons.push("Aggressive naturalisation: substantive structural restyling authorised; do not leave the sentence verbatim merely because it is technically clean.");
+    return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons };
   }
 
   if (s.hasRepeatedParagraphFrame) {
@@ -99,18 +121,21 @@ function planSentence(sentence, index, diagnostics, intensity, lengthPreference)
   }
 }
 
-export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPreference }) {
+export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPreference, naturalisation }) {
   const intensity = (rewriteIntensity || "auto").toLowerCase();
   const length = (lengthPreference || "auto").toLowerCase();
+  const naturalisationLevel = (naturalisation || "faithful").toLowerCase();
 
   const items = diagnostics.sentences.map((sentence, index) => {
-    const { level, reasons } = planSentence(sentence, index, diagnostics, intensity, length);
+    const { level, reasons } = planSentence(sentence, index, diagnostics, intensity, length, naturalisationLevel);
     return { sentenceIndex: index, sentence, level, reasons };
   });
 
-  const paragraphReorderSuggested = diagnostics.structural_monotony.some(
-    (m) => m.issue === "low_sentence_length_variation" || m.issue === "uniform_paragraph_length"
-  );
+  const paragraphReorderSuggested =
+    naturalisationLevel === "aggressive" ||
+    diagnostics.structural_monotony.some(
+      (m) => m.issue === "low_sentence_length_variation" || m.issue === "uniform_paragraph_length" || m.issue === "repeated_paragraph_opening_frame"
+    );
 
   const summary = items.reduce((acc, item) => {
     acc[item.level] = (acc[item.level] || 0) + 1;
@@ -120,6 +145,7 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
   return {
     intensity,
     lengthPreference: length,
+    naturalisation: naturalisationLevel,
     items,
     paragraphReorderSuggested,
     summary,
