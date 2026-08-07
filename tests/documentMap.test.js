@@ -8,6 +8,14 @@ const SAMPLE = `A Study of Board Independence and Firm Performance
 
 This thesis examines Board Independence (BI) in UK-listed firms. Prior work (Al-Najjar, 2012) established the baseline relationship.
 
+Revenue Growth
+
+Revenue growth captures changes in fee income over time.
+
+Market Share
+
+Market share captures competitive standing.
+
 2 Literature Review
 
 The Board Independence (BI) literature is extensive. Governance scholars have long debated agency theory implications.
@@ -30,6 +38,20 @@ test("detects numbered headings at the right nesting depth", () => {
   assert.ok(texts.includes("2.1 Agency Theory"));
   const nested = map.headings.find((h) => h.text === "2.1 Agency Theory");
   assert.equal(nested.level, 2);
+});
+
+test("detects short unnumbered Title Case academic subheadings", () => {
+  const map = buildDocumentMap(SAMPLE);
+  const revenue = map.headings.find((h) => h.text === "Revenue Growth");
+  const market = map.headings.find((h) => h.text === "Market Share");
+  assert.ok(revenue);
+  assert.ok(market);
+  assert.equal(revenue.style, "titlecase");
+});
+
+test("does not mistake the longer thesis title for a short subheading", () => {
+  const map = buildDocumentMap(SAMPLE);
+  assert.equal(map.headings.some((h) => h.text === "A Study of Board Independence and Firm Performance"), false);
 });
 
 test("builds a glossary from acronym-expansion pairs found anywhere in the document", () => {
