@@ -252,9 +252,36 @@ async function runAnalyseAndRevise() {
   }
 }
 
+function renderMethodology(data) {
+  const rows = (dimName, entries) =>
+    entries
+      .map((e) => `<div class="warning-item">${e.value}: <strong>${e.count}</strong> <span class="muted">(${e.strength})</span></div>`)
+      .join("");
+  $("tab-methodology").innerHTML = `
+    <p>${data.totalIncluded} independent sources counted (of ${data.totalReceived} unique documents received; the rest are non-English reserve or a contemporary partial-thesis reserve, held out of counting).</p>
+    <p class="muted">Strength thresholds: insufficient &lt; ${data.thresholds.emergingAt}, emerging ${data.thresholds.emergingAt}-${data.thresholds.supportedAt - 1}, supported &ge; ${data.thresholds.supportedAt}. This threshold is a configurable research parameter, not an empirically calibrated constant.</p>
+    <h4>By document type</h4>${rows("document_type", data.table.document_type)}
+    <h4>By region</h4>${rows("region", data.table.region)}
+    <h4>By degree</h4>${rows("degree", data.table.degree)}
+    <h4>By discipline</h4>${rows("discipline", data.table.discipline)}
+    <h4>By research mode</h4>${rows("research_mode", data.table.research_mode)}
+  `;
+}
+
+async function loadMethodology() {
+  try {
+    const res = await fetch("/api/methodology");
+    const data = await res.json();
+    renderMethodology(data);
+  } catch {
+    $("tab-methodology").innerHTML = '<p class="muted">Could not load coverage data.</p>';
+  }
+}
+
 analyseOnlyBtn.addEventListener("click", runAnalyseOnly);
 analyseReviseBtn.addEventListener("click", runAnalyseAndRevise);
 
 loadLlmStatus();
 loadStyleProfiles();
+loadMethodology();
 updateWordCounts();

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { healthRouter } from "./routes/health.js";
 import { styleProfilesRouter } from "./routes/styleProfiles.js";
+import { methodologyRouter } from "./routes/methodology.js";
 import { analyseRouter } from "./routes/analyse.js";
 import { rewriteRouter } from "./routes/rewrite.js";
 import { llmProvider } from "./lib/llmProvider.js";
@@ -15,6 +16,7 @@ app.use(express.json({ limit: "2mb" }));
 
 app.use("/api", healthRouter);
 app.use("/api", styleProfilesRouter);
+app.use("/api", methodologyRouter);
 app.use("/api", analyseRouter);
 app.use("/api", rewriteRouter);
 
