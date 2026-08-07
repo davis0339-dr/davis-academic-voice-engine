@@ -20,6 +20,10 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Check browser JavaScript syntax
+        run: |
+          node --check public/app.js
+          node --check public/fileImport.js
       - name: Run test suite
         shell: bash
         run: |
