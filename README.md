@@ -1,11 +1,29 @@
-# Davis Academic Voice Engine — Phase 2
+# Davis Academic Voice Engine — Phase 2 + Detector QA
 
 Real build against the *Academic Writing & Research Style Engine — Master
 Build Handoff* (7 Aug 2026). Phase 1 built the multi-pass rewrite pipeline;
-Phase 2 (this update) replaces the two hand-typed "style family" rows from
-Phase 1 with a real coverage-density engine computed over an actual
-52-document evidence dataset transcribed from `Davis_Academic_Language_Corpus_v0.1.md`
-(Baseline v0.9, Batches 1-9). See Section 25 for the phase plan.
+Phase 2 replaced the two hand-typed "style family" rows from Phase 1 with a
+real coverage-density engine computed over an actual 52-document evidence
+dataset transcribed from `Davis_Academic_Language_Corpus_v0.1.md` (Baseline
+v0.9, Batches 1-9). This update adds a **Detector QA module** (Section 15.4).
+
+## On detector scores — read this before using the Detector QA tab
+
+This build deliberately does **not** try to guarantee a low score on any
+AI-detection tool, and the Detector QA module is not a step toward that.
+Section 15.4 of the handoff is explicit: *"[the engine] must not run an
+endless generate → external detector → regenerate loop intended to force a
+chosen external AI score."* Making "beat Turnitin/GPTZero" the product's
+success criterion would be a losing target for three concrete reasons:
+detectors disagree with each other and with re-runs of themselves; both
+major providers actively patch against known evasion patterns, so anything
+that works today needs re-fighting later; and it inverts the actual value
+proposition, which is writing that's genuinely better structured and less
+formulaic — not writing engineered to fool a classifier. The Detector QA
+module exists only so you can *observe* how a real detector responds to
+revised text, as one input among several during your own product QA — it
+is never wired into `/api/rewrite`, and no code path in this repo feeds a
+detector result back into generation.
 
 ## Run it
 
@@ -65,6 +83,39 @@ request was well-evidenced enough to use directly. Requesting
 `Sub-Saharan Africa + Sport Science` correctly falls back, because the
 corpus only has 2 Sub-Saharan African sources.
 
+## What the Detector QA module added
+
+- **`server/lib/detectorProviders/gptzero.js`** — the only detector this
+  build can reach with a real, documented API. **Turnitin has no public
+  developer API** — it's licensed directly into institutional LMS
+  platforms with no third-party access route, so there is no Turnitin
+  adapter here and there will not be one that actually works; faking one
+  would violate Section 18.2's "no fake production functions" rule.
+- **`server/lib/detectorQA.js`** — orchestrates configured providers,
+  always attaches a disclaimer, and is never imported by
+  `pipeline.js`/`rewrite.js`/`analyse.js`. That's not a style choice, it's
+  the enforcement mechanism for Section 15.4's separation requirement.
+- **`GET /api/health/detectors`, `POST /api/detector-scan`** — manual,
+  on-demand only. Nothing auto-triggers a scan after a rewrite.
+- **Detector QA tab** in the UI — "Scan source" / "Scan revised" buttons,
+  a persistent disclaimer, a running results log so you can compare runs.
+- **`npm run qa:detector`** (`scripts/detector-qa-report.js`) — a Section
+  15.3-style comparison harness for the product team: runs a clean
+  technical sample, a deliberately formulaic sample, and (if
+  `ANTHROPIC_API_KEY` is set) a raw unedited LLM sample and an
+  engine-revised sample through whatever detector is configured, and
+  prints what each one reports. All sample text is original, written for
+  this script — never copied from real thesis material, to avoid the
+  copyright problem of reproducing corpus source text.
+
+**Response parsing is defensive on purpose.** This build has not verified
+the exact current GPTZero response schema against a live account — rather
+than assert a shape and risk silently misreporting a score, the normalizer
+(`normalizeGptZeroResponse`) extracts recognizable fields where present and
+sets a visible `parseWarning` instead of guessing when it can't. Tested in
+`tests/detectorQA.test.js` against both a well-formed and a malformed
+fixture, with no network call needed.
+
 ## Architecture
 
 ```
@@ -76,6 +127,7 @@ server/
     methodology.js            GET /api/methodology              (Phase 2)
     analyse.js                POST /api/analyse   (Passes A-C, no LLM call)
     rewrite.js                  POST /api/rewrite    (Passes A-F, calls the LLM)
+    detectorScan.js               GET /api/health/detectors, POST /api/detector-scan   (Detector QA)
   lib/
     llmProvider.js          Server-side-only Anthropic adapter + health check states
     protect.js                Pass A: citations/numbers/quotes/acronyms extraction
@@ -84,6 +136,8 @@ server/
     promptContract.js             Server-side system prompt (Section 12)
     preservation.js                Pass E: post-generation preservation audit
     pipeline.js                      Orchestrates A-F; the ONE path used by demo and real input
+    detectorQA.js                      Manual-only detector orchestrator; NEVER imported by pipeline.js
+    detectorProviders/gptzero.js         The one detector with a real public API
     corpusEngine.js                    Coverage-density + hierarchical fallback   (Phase 2)
     styleProfileStore.js                 Adapter: corpusEngine -> pipeline's expected shape
   data/
@@ -107,21 +161,25 @@ tests/                     node:test suite, runs without any API key
 | 5 — intensity differentiation | Minor/Moderate/Deep must genuinely differ | **Passes**, verified live: the same formulaic passage produced different edit summaries and different prose in Minor vs. Deep mode (Minor kept 2 sentences unchanged; Deep restructured all but the numeric sentence). |
 | 6 — evidence-backed styles | Selectors load from a real store; sparse narrow request triggers visible fallback, not a fabricated profile | **Passes**, verified live: a UK/PhD/Finance/quantitative/discussion request correctly resolved against 12 real sources with an honest fallback message (see "What Phase 2 added" above). |
 | 7 — long document | Chunked jobs, progress, retry | **Not built.** Explicitly Phase 3. |
-| 8 — diagnostics | Writing-quality flags hit real spans, no invented detector score | **Passes for what's built.** No 0-100 "AI score" anywhere in this codebase (Phase 4 territory, requires calibration this build doesn't have). |
+| 8 — diagnostics | Writing-quality flags hit real spans, no invented detector score | **Passes for what's built.** No 0-100 "AI score" anywhere in this codebase (a calibrated internal score is Phase 4 territory, requires calibration this build doesn't have). The Detector QA module reports raw third-party outputs, unedited, never a synthesized score of our own. |
 | 9 — similarity | Real matches on a copied fixture, no fabricated matches on a clean one | **Not built.** Explicitly Phase 5; needs a licensed/indexed provider. |
-| 10 — failure UX | Timeout/error/rate-limit handled gracefully, source text never lost, no infinite spinner | **Passes.** Bounded backoff on transient errors only, `AUTH_FAILED` never retried, specific error shown, source pane never cleared. |
+| 10 — failure UX | Timeout/error/rate-limit handled gracefully, source text never lost, no infinite spinner | **Passes.** Bounded backoff on transient errors only, `AUTH_FAILED` never retried, specific error shown, source pane never cleared. Same discipline now applies to the detector adapter (`NOT_CONFIGURED`/`AUTH_FAILED`/etc., no indefinite spinner on a scan). |
 
 ## What's real vs. not built (Section 27 deliverable)
 
 **Real and working today, no key needed:**
-- Editor UI, controls, Changes / Writing Quality / Preservation / Style Profile / Methodology tabs
-- `/api/health`, `/api/health/llm`, `/api/analyse`, `/api/style-profiles`, `/api/methodology`
+- Editor UI, controls, Changes / Writing Quality / Preservation / Style Profile / Methodology / Detector QA tabs
+- `/api/health`, `/api/health/llm`, `/api/health/detectors`, `/api/analyse`, `/api/style-profiles`, `/api/methodology`
 - Full coverage-density engine and fallback ladder over the real 52-document dataset
 - Preservation audit logic
-- 25 automated tests, all passing
+- Detector QA request/response plumbing, defensive response parsing, and the hard boundary keeping it out of the generation path
+- 31 automated tests, all passing
 
 **Real code, confirmed working live with a real `ANTHROPIC_API_KEY`:**
 - `/api/rewrite` end to end — Gates 1, 2, 3, 5, 6 above were run against a live Anthropic account during this build, not just unit-tested
+
+**Real code, not yet exercised against a live account:**
+- `/api/detector-scan` and the GPTZero adapter — logic is implemented and unit-tested against fixture responses (`tests/detectorQA.test.js`), but this build has not been run against a real `GPTZERO_API_KEY`. The response normalizer is intentionally defensive (see above) precisely because that live check hasn't happened yet.
 
 **Not implemented — explicitly out of scope for Phases 1-2:**
 - Long-document chunking/job queue (Phase 3)
@@ -130,6 +188,7 @@ tests/                     node:test suite, runs without any API key
 - Citation/reference reconciliation and DOI verification (Phase 6)
 - Auth, billing, rate limiting, monitoring, backups (Phase 7)
 - Personal style-profile upload (Section 7.3) — corpus-side coverage engine is done; per-user sample blending is not
+- A Turnitin adapter — will never be built as a real integration; there is no public API to build it against
 
 ## Known limitations
 
@@ -142,6 +201,12 @@ tests/                     node:test suite, runs without any API key
 - `evidence_alignment` diagnostics (citation-to-claim linking) is still a stub (`[]`).
 - This is a 52-document, UK/Accounting-Finance/PhD-concentrated corpus. A cell reading "supported" means well-evidenced *relative to this corpus*, not validated at commercial scale — Section 10.3's list of needed expansion (African universities beyond the current 2 sources, Master's-level work, non-Accounting/Finance disciplines, qualitative/experimental modes, H3 contemporary sources) is still entirely open.
 
+## Known limitations (Detector QA)
+
+- Not yet run against a live GPTZero account — see "Real code, not yet exercised against a live account" above. Get a `GPTZERO_API_KEY` and run `npm run qa:detector` to close this gap.
+- Only one provider is genuinely reachable. This is a corpus-access constraint, not a code limitation: no other major detector publishes a public developer API either, and none will be faked here.
+- `normalizeGptZeroResponse` was written from general knowledge of GPTZero's API shape, not verified against a current live response — that's exactly why it's defensive (`parseWarning` on anything unrecognized) rather than confidently asserting fields that might not match the real current schema.
+
 ## Next phase
 
 Phase 3 (Section 25): long-document chunking — document map, section-boundary
@@ -150,4 +215,6 @@ and citation-order-preserving reassembly. Do not start Phase 4/5/6
 (diagnostics score, similarity, citations) before that, and do not expand
 corpus coverage claims without adding real new source documents to
 `corpusDocuments.js` — the coverage engine's honesty depends on the
-dataset staying accurate.
+dataset staying accurate. Do not, at any phase, add a code path that feeds
+a Detector QA result back into `/api/rewrite`'s generation loop — that
+boundary is load-bearing for the reasons in Section 15.4.

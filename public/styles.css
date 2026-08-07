@@ -177,6 +177,25 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ok-badge { color: var(--good); }
 .bad-badge { color: var(--bad); }
 
+.detector-disclaimer {
+  font-size: 0.78rem;
+  color: var(--warn);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background: rgba(224, 169, 65, 0.08);
+}
+.action-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+.detector-result {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+.detector-result summary { cursor: pointer; color: var(--muted); }
+
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
   .editor-panes { grid-template-columns: 1fr; }

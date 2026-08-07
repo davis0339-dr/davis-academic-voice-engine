@@ -95,6 +95,7 @@
     <button class="tab-header" data-tab="preservation">Preservation</button>
     <button class="tab-header" data-tab="profile">Style Profile</button>
     <button class="tab-header" data-tab="methodology">Methodology</button>
+    <button class="tab-header" data-tab="detectorqa">Detector QA</button>
   </div>
 
   <div id="tab-changes" class="tab-panel active">
@@ -111,6 +112,15 @@
   </div>
   <div id="tab-methodology" class="tab-panel">
     <p class="muted">Loading corpus coverage…</p>
+  </div>
+  <div id="tab-detectorqa" class="tab-panel">
+    <p class="detector-disclaimer">Loading…</p>
+    <div class="action-row">
+      <button id="scanSourceBtn">Scan source</button>
+      <button id="scanRevisedBtn">Scan revised</button>
+      <span id="detectorStatus" class="llm-status"></span>
+    </div>
+    <div id="detectorResults"></div>
   </div>
 </section>
 

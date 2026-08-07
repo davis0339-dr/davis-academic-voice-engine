@@ -278,10 +278,62 @@ async function loadMethodology() {
   }
 }
 
+async function loadDetectorHealth() {
+  const disclaimerEl = document.querySelector(".detector-disclaimer");
+  try {
+    const res = await fetch("/api/health/detectors");
+    const data = await res.json();
+    const statuses = data.providers.map((p) => `${p.label}: ${p.state}`).join(" · ");
+    disclaimerEl.textContent =
+      "These are raw outputs from a third-party classifier, shown only for your own evaluation. They are not proof of who wrote a text, are not guaranteed to match Turnitin (no public API exists for this build to call), and are never fed back into the rewrite engine. Scanning is a separate, manual action you trigger below. Provider status: " +
+      statuses;
+  } catch {
+    disclaimerEl.textContent = "Could not load detector provider status.";
+  }
+}
+
+async function runDetectorScan(which) {
+  const text = which === "source" ? sourceText.value.trim() : revisedText.value.trim();
+  if (!text) {
+    $("detectorStatus").textContent = `No ${which} text to scan.`;
+    return;
+  }
+  $("detectorStatus").textContent = "Scanning…";
+  try {
+    const res = await fetch("/api/detector-scan", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text, label: which }),
+    });
+    const data = await res.json();
+    $("detectorStatus").textContent = "";
+    const block = document.createElement("div");
+    block.className = "detector-result";
+    const summaryLines = data.results
+      .map((r) => {
+        if (r.state === "NOT_CONFIGURED") return `${r.label}: not configured`;
+        if (r.state !== "READY") return `${r.label}: ${r.state} (${r.error || ""})`;
+        const s = r.summary;
+        if (r.parseWarning) return `${r.label}: ${r.parseWarning}`;
+        return `${r.label}: predicted_class=${s?.predictedClass ?? "n/a"}, completely_generated_prob=${s?.completelyGeneratedProb ?? "n/a"}`;
+      })
+      .join("<br>");
+    block.innerHTML = `<strong>${which} text</strong> (${new Date().toLocaleTimeString()})<br>${summaryLines}
+      <details><summary>raw response</summary><pre>${JSON.stringify(data.results, null, 2)}</pre></details>`;
+    $("detectorResults").prepend(block);
+  } catch (err) {
+    $("detectorStatus").textContent = `Scan failed: ${err.message}`;
+  }
+}
+
+$("scanSourceBtn").addEventListener("click", () => runDetectorScan("source"));
+$("scanRevisedBtn").addEventListener("click", () => runDetectorScan("revised"));
+
 analyseOnlyBtn.addEventListener("click", runAnalyseOnly);
 analyseReviseBtn.addEventListener("click", runAnalyseAndRevise);
 
 loadLlmStatus();
 loadStyleProfiles();
 loadMethodology();
+loadDetectorHealth();
 updateWordCounts();

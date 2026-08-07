@@ -7,6 +7,7 @@ import { styleProfilesRouter } from "./routes/styleProfiles.js";
 import { methodologyRouter } from "./routes/methodology.js";
 import { analyseRouter } from "./routes/analyse.js";
 import { rewriteRouter } from "./routes/rewrite.js";
+import { detectorScanRouter } from "./routes/detectorScan.js";
 import { llmProvider } from "./lib/llmProvider.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -19,6 +20,7 @@ app.use("/api", styleProfilesRouter);
 app.use("/api", methodologyRouter);
 app.use("/api", analyseRouter);
 app.use("/api", rewriteRouter);
+app.use("/api", detectorScanRouter);
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 
