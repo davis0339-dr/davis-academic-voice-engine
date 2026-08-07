@@ -12,6 +12,15 @@ test("extracts parenthetical, narrative and numbered citations", () => {
   assert.ok(spans.citations.includes("[3]"));
 });
 
+test("extracts institutional and multi-word corporate-author citations", () => {
+  const text =
+    "The market expanded rapidly (Market Data Forecast, 2025; Grand View Research, 2025). Financial Reporting Council (2024) reported a similar pattern. A later estimate relied on (Financial Reporting Council, as cited in Bloomberg Tax, 2025; CK Search Global, 2024).";
+  const spans = extractProtectedSpans(text);
+  assert.ok(spans.citations.includes("(Market Data Forecast, 2025; Grand View Research, 2025)"));
+  assert.ok(spans.citations.includes("Financial Reporting Council (2024)"));
+  assert.ok(spans.citations.includes("(Financial Reporting Council, as cited in Bloomberg Tax, 2025; CK Search Global, 2024)"));
+});
+
 test("extracts percentages, decimals and monetary values without double counting citation years", () => {
   const text = "Revenue grew 12.5% to $4.2 million, compared with (Smith, 2020)'s baseline of 214 firms.";
   const spans = extractProtectedSpans(text);
@@ -19,6 +28,14 @@ test("extracts percentages, decimals and monetary values without double counting
   assert.ok(spans.numbers.includes("214"));
   assert.ok(spans.monetary.some((m) => m.includes("4.2")));
   assert.equal(spans.numbers.includes("2020"), false, "citation year must not leak into bare numbers");
+});
+
+test("extracts naira and currency-code monetary spans", () => {
+  const text = "Audit fees increased from ₦17.34 billion to ₦28.2 billion while USD 226.6 billion was reported globally.";
+  const spans = extractProtectedSpans(text);
+  assert.ok(spans.monetary.includes("₦17.34 billion"));
+  assert.ok(spans.monetary.includes("₦28.2 billion"));
+  assert.ok(spans.monetary.includes("USD 226.6 billion"));
 });
 
 test("extracts statistical notation", () => {
