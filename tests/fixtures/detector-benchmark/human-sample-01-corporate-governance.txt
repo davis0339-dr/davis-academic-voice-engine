@@ -1,0 +1,1359 @@
+INTRODUCTION
+
+The emerging markets, in general, and the transitional emerging
+
+markets, in particular, are to examine the most convenient and adaptable path
+
+of development. The conventional modes of corporate governance structures
+
+and mechanisms - as merely mechanisms of corporate finance - may not be
+
+viable to emerging markets as long as their institutional infrastructure is not
+
+well adaptable to accept this mode of governance. This necessitates to extend
+
+the scope of the current practices of corporate governance to explore additional
+
+viable alternatives that can be adaptable to the unique institutional
+
+infrastructure of the emerging and the transitional markets. These alternatives
+
+are to be examined in the developed countries first before recommending any
+
+of them as a viable one(s) to the case of emerging markets.
+
+Accordingly, this study extends the current domain of corporate
+
+governance as equivalent to corporate finance and financial economics to
+
+address related issues drawn from the literature of the social foundation of
+
+business studies. These issues are corporate orientations toward its
+
+stakeholders interests and the influential role of corporate identity as
+
+determinants to corporate relative competitive position in the marketplace.
+
+Finally, this necessitates to explore the approach that can be used to release
+
+relevant information to corporate stakeholders. The approach used in this
+
+study is the Z-Score model as one of the most common approaches used for
+
+monitoring corporate performance.
+
+Corporate orientation towards its stakeholders' interests, including its
+
+shareholders' interests, is important to the emerging markets as long as their
+
+13
+
+unique institutional infrastructure is not well adaptable to accept the
+
+shareholders-driven corporate governance mode.
+
+Concerning the issue of 'Corporate Identity,' the inherent intangibility
+
+of product and service quality, especially in the services and knowledge-based
+
+industries, leads to problems in measurement costs. This necessitates a firm to
+
+depend on its stakeholders as a convenient indices that determine corporate
+
+identity in the marketplace.
+
+Concerning the Z-score model as a monitoring tool, a firm in a
+
+transitional emerging market should determine what information is to be
+
+disclosed to its stakeholders so as to enhance its identity, then its relative
+
+competitive advantage in the marketplace.
+
+OBJECTIVES OF THE STUDY
+
+As this study explores corporate governance issues in emerging
+
+markets, it is to emphasis on some of the distinct aspects that can widen the
+
+current domain of corporate governance practices to include issues that can be
+
+relevant to emerging markets. Therefore, the general outline of the objectives
+
+of this study is to provide some insights drawn from developed and matured
+
+markets to both corporate managers and policy makers in emerging markets.
+
+Specifically, the objectives of this study can be stated as follows.
+
+1. Examine the current scope and practices of corporate governance on the
+
+basis of the underlying institutional path-dependence embedded in running
+
+business enterprises in different business systems.
+
+2. Examine the non-financial aspects of corporate governance. This objective
+
+is necessary for emerging markets, in general, and for transitional
+
+14
+
+emerging markets, in particular, on the basis that the financial aspects of
+
+corporate governance have already been examined extensively in the
+
+developed countries that are characterised by their mature markets. The
+
+study, therefore, provides an extended governance structures that can be
+
+adaptable to the emerging and transitional markets which are characterised
+
+by their immature markets and institutions.
+
+3. This study presents the extended and adaptable corporate governance
+
+structures in an applied form which means that they are to be tested
+
+empirically so that they can be of practical use.
+
+METHODOLOGY OF THE STUDY
+
+The methodology of this study consists of two main sections. The first
+
+section discusses the types of research design used in the study. The second
+
+section discusses the research methods used in the study. From a
+
+methodological point of view, the classification of study types was developed
+
+with reference to research design issues while research methods are concerned
+
+primarily with the researcher's tasks, the work that will have to be done, the
+
+techniques that are to be used and problems that may be encountered
+
+(McBurney, 1998; Hakim, 1997). That is, the research methods focus on the
+
+implementation stage, the procedures and tasks for translating the initial idea
+
+into a plan of action, while the research design focuses on the design stage, so
+
+study types are distinguished with reference to their purpose and intellectual
+
+strategy rather than the methods or techniques used.
+
+15
+
+Strategy of the Research Types: An Overview
+
+1. Theoretical Research and Policy Research
+
+This study outline can be considered a theoretical research as much as
+
+it is a policy research. The former provides knowledge for understanding and
+
+the latter provides knowledge for action (Majchrzak, 1984; Hakim, 1997).
+
+Accordingly, for better understanding of the different corporate governance
+
+structures in the context of international business systems, a theoretical
+
+research approach is adopted in the first part of the thesis. As the theoretical
+
+research is concerned primarily with causal processes and explanation, the
+
+various aspects of international corporate governance modes are discussed on
+
+theoretical basis. These aspects are based primarily on the relevant previous
+
+research findings that highlight the general scope and magnitude of corporate
+
+governance practices in the international context.
+
+Part two follows the approach of policy research as it provides
+
+knowledge for action. As the theoretical research is selective in its nature
+
+(Smelser, 1980), this requires the policy research to encompass a more diverse
+
+variety of research including theoretical research. In this sense, part two
+
+provides an empirical study that contributes to the theoretical and empirical
+
+foundations of international corporate governance modes. Therefore, the
+
+policy approach results in an actionable variables that extend the current
+
+practices of corporate governance to include new perspectives: those that are
+
+referred to as the 'competitiveness phase of corporate governance.' The
+
+resulted actionable variables meet the diversity in interests of the corporate
+
+governance constituencies, hence provide new perspectives that are to be
+
+16
+
+considered catalysts for change in practice. In this sense, chapters 3 and 4
+
+address respondents as role-holders who are responsible for making corporate
+
+decisions.
+
+As the policy research is considered a multi-method or multi-level
+
+study (Majchrzak, 1984), part two of this study is a multi-dimensional where it
+
+investigates empirically three issues (chapters 3, 4, and 5) that broaden the
+
+scope of the current practices of corporate governance. Specifically, chapters 3
+
+and 4 test two issues on the corporate level, while chapter 5 tests an issue on
+
+an international level. In this sense, the multi-dimension approach enhances
+
+the probability of generalisation. As long as the policy research tends to focus
+
+on testing whether a particular antecedent is necessary or sufficient cause of a
+
+known behaviour or result(s), it requires that the dependent variable is
+
+identified and the antecedents, or causes, are assessed (Miller, 1977).
+
+Therefore, the way the research methods are conducted in those three chapters
+
+is based mainly on the premises that the dependent factor - e.g., corporate
+
+competitiveness - is, and should be, the ultimate aim of corporate decisions,
+
+thus the results are to provide robust associations that address the underlying
+
+factors that contribute to corporate competitiveness. In this sense, the policy
+
+research approach tends to be more useful to policy interests as well as being
+
+of greater disciplinary interest: the benefits are not mutually exclusive.
+
+2. Qualitative and Quantitative Research
+
+A qualitative research approach is adopted in this study. In theory,
+
+qualitative research is concerned with individuals' own accounts of their
+
+attitudes, motivations and behaviour. The qualitative research is used for
+
+17
+
+exploratory studies leading to more structured or quantitative studies
+
+(Light and Pillemer, 1984). Moreover, the qualitative research can be
+
+extremely valuable for identifying patterns of associations between the
+
+underlying factors, subjects and issues of the study (Blaxter, 1979; Van
+
+Maanen, 1979; Walker, 1985).
+
+A qualitative research is basically developed in chapter 3 to address the
+
+issue of the corporate stakeholders and its link to corporate performance and
+
+corporate competitiveness. Specifically, qualitative research in conjunction
+
+with quantitative research are carried out to link banks' orientation - as active
+
+corporate monitors - towards the stakeholders theory to banks' performance.
+
+The essence of this link is that the more the corporate monitor is active and
+
+effectual, the higher its influence on corporate orientation, then on corporate
+
+decisions.
+
+A qualitative research approach is undertaken in chapter 4 as well. This
+
+chapter discusses the role of intentional information released by a firm in
+
+determining its identity, therefore, its competitive position in the market.
+
+The quantitative research is carried out in chapter 5 through
+
+undertaking Multivariate Data Analysis to build a Z-score model: a statistical
+
+model that is used to monitor corporate performance (Altman, 1971; Deakin,
+
+1972; Taffler, 1984). Nevertheless, Chapter 5 combines both of the
+
+quantitative and qualitative research approaches since number of the
+
+underlying qualitative issues and/or variables have not been tested
+
+quantitatively before.
+
+18
+
+Types of Research Design used in the Study
+
+The study of corporate governance in international context requires
+
+careful examination of the most convenient research types that are to be
+
+undertaken. In general, the international dimension of the study needs the
+
+researcher to consider the differences between and among the various
+
+international systems under consideration. Therefore, no one type of research
+
+study is inherently inferior or superior to others as each does a particular job
+
+(Hakim, 1997). In this sense, the study types undertaken in this study are as
+
+follows.
+
+1. Literature Reviews
+
+Part one of this study outlines a review of the literature on corporate
+
+governance. It is carried out as a part of ground-clearing and preparatory work
+
+for the empirical part of the study. As long as the literature of corporate
+
+governance itself is a multi-dimensional - as it is related to various
+
+constituencies, hence addresses various issues - the research review is based
+
+on an assessment of the relevant empirical research that highlights the aspects
+
+of corporate governance modes in an international context.
+
+The multi-dimensionality requires the research review to be multidisciplinary. That is, a review of the relevant research done in the literature of
+
+finance, management, law, and economics is considered. In so doing, all of the
+
+relevant journals, text books and reading books are considered. In general,
+
+when reviewing a literature, it is recommended to cover both of the
+
+contemporary and historical situation at the same time (Cooper, 1984).
+
+19
+
+Accordingly, the focus is on the historical and current practices of corporate
+
+governance in an international perspectives.
+
+Specifically, the current practices of corporate governance are
+
+discussed in chapters 1 and 2. Chapter 1 focuses on the current state of
+
+corporate governance including agency problem, the financial structures of
+
+corporate governance, i.e., the interaction between corporate managers and
+
+financiers. In addition, chapter 1 highlights a brief outline of the political-legal
+
+framework of the current state of corporate governance. Chapter 2 focuses on
+
+the mechanisms through which corporate governance practices are undertaken.
+
+The latter includes the role of the main financial institutions (the stock markets
+
+and banks) in addition to the managerial role in corporate governance, that is,
+
+the managers' influences on corporate financial and investment decisions.
+
+The literature review is undertaken as a policy-oriented research review
+
+which summarises the current and historical knowledge on the various phases
+
+of corporate governance to show, then draw out, the relevant policy
+
+implications that are in the interests of, and practical to, various interest groups
+
+on the micro-level, i.e., the corporate managers, and the macro-level, i.e., the
+
+policy makers. An important aspect of the literature review is addressing
+
+issues which have re-emerged in the policy agenda and in the literature as
+
+well.
+
+2. Secondary Analysis
+
+The researcher has carried out a secondary analysis to build a Z-score
+
+model for the Egyptian Textile Sector. The model is used in practise to
+
+monitor corporate performance (Altman, 1971; Deakin, 1972; Taffler, 1984).
+
+20
+
+The detailed statistical methodology used for building the model is described
+
+in chapter 5. As the secondary analysis involves the use of multiple datasets to
+
+provide an overall assessment of findings on a topic (Stewart, 1984; Hakim,
+
+1982, 1997), the Z-score model is built through combining various measures
+
+of corporate performance. These measures, therefore, are considered a multisource dataset that includes those that are commonly used for measuring
+
+corporate financial performance, those used for measuring corporate strategic
+
+performance, basic measures of corporate governance, and those used for
+
+measuring corporate international transitional performance.
+
+Considering Egypt as an emerging country in transition, the Z-score
+
+model developed in this study is to be used to monitor company's transitional
+
+performance. In this sense, the ultimate aim is to make sure whether a
+
+company's transitional performance is, or is not, showing to its stakeholders
+
+those aspects of competitiveness. This is one of the core dimensions of part
+
+two which is the empirical part of the study.
+
+3. Analysis of Administrative Records
+
+Administrative records are collections of documents containing mainly
+
+factual information compiled in a variety of ways and used by organisations to
+
+record the development and implementation of decisions and activities that are
+
+central to their functions (Hakim, 1983, 1997; McBurney, 1998). This type of
+
+research is employed in chapter 5 to build the Z-score model of the Egyptian
+
+Textile Sector. The data was collected from many sources. Firstly, from
+
+companies' annual reports. Secondly, from companies' performance reports
+
+held by many authorities in Egypt. These authorities are the Ministry of
+
+21
+
+Industry, the Public Sector Authority, Information and Decision Support
+
+Center (IDSC), and the annual reports of the Textile Industry held by the three
+
+Holding Companies to which the thirty one textile companies (the population
+
+of this study) report to. In this case, the administrative records are used in their
+
+own right for research on the policy process itself and in evaluation research.
+
+In this sense, the Z-score model is to provide a basis for evaluating the
+
+corporate performance in a transitional country like Egypt.
+
+Theoretically, the analysis of administrative records may be similar to
+
+secondary analysis. That is, any research uses information from administrative
+
+records constitutes secondary analysis given that the primary use of the
+
+records was for administrative purposes. Nevertheless, this similarity does not
+
+exist in chapter 5 of this study considering that the data used to build the Zscore model is not recorded specifically for research purposes rather it is
+
+recorded as a by-product of the organisation's day to day activities. This issue
+
+is to be emphasised because economic studies routinely use data collected by
+
+others, thus raise questions concerning the quality and limitations of the data,
+
+and frequently fail to distinguish between data from records and research data,
+
+treating both as if they were interchangeably valid and appropriate for any
+
+research analysis (Sayer, 1984; Griliches, 1985).
+
+4. Ad Hoc Sample Survey
+
+The development of sampling theory and techniques in the early part of
+
+the twentieth century led to the sample survey becoming one of the most
+
+widely used methods of data collection in social research (Hakim, 1997). In
+
+general, The ad hoc survey is used increasingly for highly focused studies of
+
+22
+
+particular social groups of narrowly defined issues. Procedures for identifying
+
+and sampling minority groups become an integral part of survey design. The
+
+term 'minority group' is used to refer to any target population for a survey
+
+that is relatively rare because it has very specific characteristics or experiences
+
+(Hakim, 1997). Sample surveys allow associations between factors to be
+
+mapped and measured. The type of the ad hoc sample survey used in the study
+
+is the 'Sample Survey on Role and Relationships.' It is discussed as follows.
+
+Sample Survey on Role and Relationships
+
+This type of survey seeks information about the individual
+
+relationships and interactions or activities with other people. Here, the
+
+informant is considered as a role-holder who can supply information about
+
+social units, events and processes. This type of research is employed
+
+particularly in chapter 3 where two roles were examined in the banking
+
+industry. The first role is the one of Corporate Loans Managers as
+
+representatives of, and responsible for, banks' loans and borrowing policy and
+
+their relationships with the borrowers (firms). The second role is the one of the
+
+Finance Directors as representatives of, and responsible for, the bank's
+
+investment policy including investing part of the bank's capital in the stock
+
+market which is considered a significant part of a bank's business.
+
+The essence of these roles and relationships is that the Corporate Loans
+
+Managers have a close relationship with the banks' borrowers (firms).
+
+Furthermore, the former's roles and responsibilities in the banking business
+
+encourage them to be active monitors of their clients performance. The same is
+
+23
+
+true for the Finance Directors where their responsibilities encourage them to
+
+act in the best interests of the shareholders.
+
+As a strategy of the research types, an important advantage of the ad
+
+hoc sample survey is that it offers a multi-purpose research design with many
+
+advantages for both policy research and theoretical research. That is, sample
+
+survey provides transparency or accountability, the fact that the methods and
+
+procedures are visible and accessible to other parties be they professional
+
+colleagues, clients, or the public audience for the study. Regarding the
+
+orientation towards the interests of corporate stakeholders, the transparency of
+
+sample survey is very important aspect when surveying the respondents'
+
+orientations. Therefore, the results of the survey can provide a basis for further
+
+theoretical development and practical considerations for policy research.
+
+It is worth to mention that although the ad hoc surveys are designed
+
+and carried out on a 'one off basis, they can, nevertheless, be repeated at
+
+irregular intervals of time, thus offering some of the advantages of regular
+
+surveys for measuring changes over time. Accordingly, as the issue of
+
+stakeholders theory is still debatable on different international business
+
+systems, the ad hoc surveys can be replicated in other business systems or
+
+other countries, thus provide a very good basis for international comparative
+
+analysis.
+
+The ad hoc survey data of banks' orientation towards the importance of
+
+corporate stakeholders was supplemented by the addition of information from
+
+administrative records that include measures of banks' performance. The aim
+
+24
+
+is to measure the association between the banks' orientation and their
+
+performance.
+
+Multi-Disciplinary Research Design
+
+The multi-disciplinary research is becoming an increasingly arid
+
+acknowledgeable strand of research in the applied science, in general, and in
+
+the social science as well. The multi-disciplinary-oriented research in social
+
+sciences has contributed significantly to much understanding of the
+
+individuals' behaviour and organisations - as social societies - on the ground
+
+that the individuals and organisations are run, and constrained, by a nexus of
+
+economic, political, legal, and social rules and/or norms. This is the underlying
+
+practical contribution of the multi-disciplinary research on social sciences that
+
+benefit the society.
+
+The researcher extends the conventional domain of corporate
+
+governance, as merely an equivalent to corporate finance, to explore additional
+
+issues that stem from socio-economics and from the link between economics,
+
+organisation and management. Specifically, part one reviews the literature on
+
+corporate governance form financial, legal, managerial, and economic
+
+perspectives. Chapter 3 discusses the issue of corporate stakeholders which is
+
+linked to the literature of management and interrelationship between and
+
+among economics, organisations and management. Chapter 4 discusses the
+
+issue of corporate identity which is rooted in the literature of socio-economics.
+
+Finally, chapter 5 discusses monitoring corporate transitional performance and
+
+the underlying governance structures in transitional emerging markets which is
+
+25
+
+closely linked to the international institutional differences that determine
+
+international corporate governance modes.
+
+As the core of this study is multi-disciplinary, it necessitates multidisciplinary research design. Accordingly, as it is mentioned above, the
+
+researcher has followed more than one type of research study: the research
+
+reviews, secondary analysis, qualitative in conjunction with quantitative
+
+analysis, analysis of administrative records, and ad hoc sample survey.
+
+Research Methods used in the Study
+
+1. Research Methods used in Chapter 3
+
+Sampling
+
+The issue of corporate stakeholders versus shareholders orientation is
+
+debatable in the literature of corporate finance, corporate governance, business
+
+organisation, and corporate law. Furthermore, the debate is continued at the
+
+level of the different business systems. This may add complexity regarding
+
+what are the most practical individuals and/or institutions that are to be
+
+targeted to assess the relative magnitude of corporate stakeholders.
+
+Fortunately, this complexity can be mitigated by considering the fact
+
+that banks are considered a very viable financial institutions. That is, banks are
+
+a common factor, e.g., a viable source of finance, in different international
+
+business systems. Banks provide loans to corporations which necessitates the
+
+bank loans managers to play an active role in monitoring their clients
+
+performance. In addition, quite apart from the differences between
+
+international business systems, banks are entitled to invest part of their capital
+
+26
+
+in the stock market and, at the same time, are entitled to provide an advice to
+
+their clients who are willing to invest in the stock market.
+
+Consequently, banks have good expertise in both monitoring corporate
+
+performance and investing in the stock market. This close relationship
+
+between banks and their corporate clients permits the researcher to explore
+
+whether banks are able to support corporate stakeholders orientations. The
+
+population of the study is the British banks and foreign banks located in the
+
+UK. Within banks, as the major population of the study, two groups were
+
+chosen: Corporate Loans Managers in the commercial banks and Finance
+
+Directors in the investment banks. The first group is assumed to represent the
+
+banks' role as corporate creditors. In this sense, the Corporate Loans Managers
+
+are assumed to be a reliable source of information about the borrowing
+
+companies. The second group is assumed to represent the banks' role as an
+
+advisers and dealers in corporate stocks trading. In this sense, the Finance
+
+Directors are assumed to be a reliable source of information about the
+
+shareholders, therefore the stock market, trends of corporate securities trading.
+
+In this regard, both of those two groups should be most knowledgeable about
+
+the full range of measures adopted in the literature of this study (Boyd et al.,
+
+1993). Therefore, the type of sampling used in this study is the 'purposive
+
+sample.' The purposive sample is selected nonrandomly but for the particular
+
+reasons mentioned earlier. In addition, the purposive sample has an advantage
+
+over the other types of sampling that it can be considered to constitute a
+
+population (McBurney, 1998), which is true in this study. The population of
+
+this study, therefore, consists of 86 major commercial and investment banks:
+
+27
+
+the major British and foreign banks operating in the UK. A list of the banks'
+
+names and addresses is provided in the POLK World Banking Profiles (1996).
+
+Questionnaire
+
+The issue of the relative importance of corporate stakeholders and their
+
+effects on corporate performance is examined by a questionnaire which is one
+
+of the most widely methods used to survey people's opinions and attitudes
+
+toward various issues and events (McBurney, 1998).
+
+The objectives of the questionnaire used in the study: It is noted earlier that
+
+the conventional corporate governance structures and practices in the AngloSaxon business systems - as merely practices of corporate finance - stem from
+
+the principal role the stock markets play to provide companies the needed
+
+capital. It follows that the principal investors are shareholders. This is why the
+
+problems of 'economic short-termism' centres around the shareholders' shortterm expectations and, consequently, the management's short-term objectives.
+
+The main objective of the questionnaire, Therefore, is to avoid the
+
+problems of short-termism and to extend the corporate governance time
+
+horizon to address long-term objectives. In so doing, the researcher examines
+
+the effects of corporate stakeholders' orientations, including corporate
+
+shareholders' orientations, on corporate performance. The literature review of
+
+stakeholder issues on corporate governance (Freeman and Reed, 1983;
+
+Freeman and Evan, 1990; Ziegel, 1993; Karmel, 1993), corporate stakeholders
+
+(Freeman, 1984; Cornell and Shapiro, 1987; Barton et al., 1989; Preston and
+
+Sapienza, 1990; Savage eta!., 1991; Hill and Jones, 1992; Clarkson and Deck,
+
+1993; Jones, 1995; Donaldson and Preston, 1995; Greenley and Foxall, 1997;
+
+28
+
+Rowley, 1997; Mitchell et al., 1997), and corporate social responsibility
+
+(Preston et al., 1978; Dierkes, 1980; Rey, 1980; Cochran and Wood, 1984;
+
+Aupperle et al., 1985; McGuire et al., 1988; Clarkson, 1991, 1995) provided
+
+the basis for developing the questionnaire used in this study. The questionnaire
+
+contained 20 variables related to various aspects of those three fields of
+
+research.
+
+The questionnaire design: The questionnaire design encompasses only
+
+closed-ended questions. There are two main reason behind this orientation.
+
+Firstly, as it is cited in research methods textbooks (Fowler, 1988; Hellevik,
+
+1984; Neuman, 1991; McBurney, 1998), the open ended questions are harder
+
+to code. Secondly, as mentioned above, the data was collected from two
+
+different persons in two different, and very important, positions in the banking
+
+industry. In this case, if the open-ended question were included, the
+
+questionnaire would have been long enough for each of them to spare time
+
+answering the open-ended questions. This would have reduced the response
+
+rate. Nevertheless, the closed-ended questions include sufficient options that
+
+cover the wide range of the aspects included in the literature of corporate
+
+governance in conjunction with corporate stakeholders and corporate social
+
+responsibility. The format of the closed-ended questions are mutually
+
+exclusive questions and Likert scale. Finally, the questions were developed in
+
+a format that permits easy coding and using of statistical packages (Gaito,
+
+1980), specially SPSS and STATGRAPHICS Plus 3.1.
+
+The method of administering the questionnaire: The questionnaire was
+
+mailed to the respondents: the Corporate Loans Managers in the commercial
+
+29
+
+banks and the Finance Directors in the investment banks working for the major
+
+British and foreign banks located in the UK (POLK, 1996). The questionnaire
+
+was accompanied with a personal letter explains the nature of the research and
+
+highlights the importance of banks as a viable source of financing, then
+
+contributing significantly to economic development. The questionnaire was
+
+sent to each bank's Corporate Loans Manager and Finance Director by mail.
+
+Of the 86 major commercial and investment banks a total of 48 banks
+
+responded representing a response rate of 55.8 per cent [Appendix (3-2)]. To
+
+test for non-respondent bias, the results from the later respondents were
+
+compared to those of the early respondents. (Filion, 1976; Armstrong and
+
+Overton, 1977). The differences between respondents and non-respondents
+
+were not statistically significant.
+
+Statistical Analysis
+
+The statistical tools used in chapter 3 are as follows (Daniel and
+
+Terrell, 1995; Newbold, 1995; Berenson and Levine, 1996).
+
+A) Simple Factorial ANOVA Analysis is carried out to test the sample
+
+consistency. That is, to test whether there is a significant difference
+
+between the two respondents (the Corporate Loans Mangers and the
+
+Finance Directors), it requires to test whether their answers are relatively
+
+drawn from the same work background.
+
+B) `Chi-square test of goodness of fit' (x 2 ) is carried out to test data
+
+normality. This test determines whether the sample data are compatible
+
+with the hypothesis that they are drawn from a population that follows
+
+some specified functional form, the uniform distribution or the normal
+
+30
+
+distribution. The purpose of this test is to determine whether parametric or
+
+non-parametric statistical methods are to be used.
+
+C) Analysis of variance 'ANOVA' is carried out to test hypotheses about the
+
+equality of two or more than population means. The type of the ANOVA
+
+that is used is the one-way analysis of variance. The term one-way refers
+
+to the fact that the classification of each survey unit ( and consequently the
+
+measurement obtained) is done according to one criterion, i.e., the group to
+
+which they belong to. In the case of this research population study, the
+
+Corporate Loans Manager belongs to only one group in each bank, so does
+
+the Finance Director. From the point of view of the assumptions
+
+underlying ANOVA models, the researcher is using the random-effect
+
+model on the basis that the respondents who returned the questionnaire
+
+back represent a sample of the population. Here, the random-effect model
+
+is to use the sample results to make an inference about the entire
+
+population.
+
+D) Principal Component Factor Analysis (varimax rotation) is carried out to
+
+test the discriminant validity of the variables included in the study
+
+(Podsakoff, and Organ, 1986). The object of the PCA analysis is to take a
+
+number of variables and find combinations of these to produce indices, i.e.,
+
+factors that are uncorrelated . The lack of correlation is a useful property
+
+because it means that the factors are measuring different dimensions in the
+
+data (Manly, 1998; Hair et al., 1995). Therefore, PCA is used to reduce the
+
+dimensionality of the data set by appropriate transformation of the original
+
+data. The original data variables are projected into new axes such that the
+
+31
+
+new variables, orthogonal to each other and thus uncorrelated, are linear
+
+combinations of the old (Taffler, 1981). The decision to include a variable
+
+in a factor was based on factor loadings greater than 0.50 and all factors
+
+whose eigenvalue was greater than one were retained in the factor solution
+
+(Tabachnick and Fidel!, 1989; Hair et al., 1995).
+
+E) Data reliability is tested by carrying out a Reliability Analysis (Alpha) to
+
+determine the extent of the consistency and reliability of the data.
+
+F) Stepwise Regression Analysis between banks performance measures and
+
+their stakeholding orientation.
+
+2. Research Methods used in Chapter 4
+
+Sampling
+
+The researcher is examining the issue of corporate identity in the
+
+banking industry. As corporate identity is intangible on the basis that it is
+
+related to the quality and content of a company's products and services, this
+
+necessitates to look at an industry where knowledge is the primary assets. This
+
+is true in the banking industry where banks' identity is determined by the
+
+external intermediaries' assessment of the quality and content of the banks'
+
+products and services which, in turn, depend upon the bankers' experience and
+
+banking knowledge. Therefore, the central issue in examining banks identity is
+
+related to what information a bank releases which can help external
+
+intermediaries to do good assessment to the quality of the banks services, thus
+
+can help in determining the bank's competitive advantage in the market place.
+
+On that basis, the researcher has targeted the advertisements made by
+
+banks in the Economist magazine during the year 1995. As the Economist
+
+32
+
+magazine is issued on a weekly basis, banks advertisements are considered a
+
+good source of the content and extent of information released about banks.
+
+The type of sampling is random selection as long as most of the international
+
+banks advertise regularly on this magazine, thus each bank advertisement has
+
+the same probability to show up on each weekly issue.
+
+Content Analysis
+
+A content analysis is carried out to measure banks' drivers of identity
+
+and their association with banks' performance. The sample survey is basically
+
+carried out through analysing the content of the information mentioned in
+
+banks' advertisements in the Economist magazine during the year 1995.
+
+Considering intangibility is the central characteristics of banks, and most other
+
+financial services industries, banks' advertisements provide a reliable source
+
+of information about banks' indices of identity. In this case, the content of
+
+banks' advertisements includes an indices (Jervis, 1985; Choi and Lee, 1996)
+
+that can be used as drivers of banks' identity.
+
+The researcher used the two types of content analysis, manifest content
+
+and latent content (McBurney, 1998). The former is based on counting the
+
+frequency of the indices of identity, and the latter is based on the assessment,
+
+rather than only counting, of the magnitude of the indices of identity
+
+mentioned in each advertisement. The manifest content provides the advantage
+
+of easy coding the content, thus turns out to be more reliable. But the
+
+frequency itself may not indicate the extent of emphasis if it is not mentioned
+
+in the proper context. Therefore, one has to examine the magnitude of the
+
+frequency by further undertaking latent content analysis in order to increase
+
+33
+
+the reliability of the content analysis. A Reliability Analysis for the collected
+
+data is undertaken. More details about this test are mentioned below.
+
+Statistical Analysis
+
+The statistical tools used in chapter 4 are as follows (Daniel and
+
+Terrell, 1995; Newbold, 1995; Berenson and Levine, 1996).
+
+A) `Chi-square test of goodness of fit' (x 2 ) is carried out to test data
+
+normality.
+
+B) Data reliability is tested by carrying out a Reliability Analysis (Alpha) to
+
+determine the consistency of the data.
+
+C) Stepwise Regression Analysis is carried out to determine which of the
+
+independent variables (banks indices of identity) account(s) more for
+
+variations in the dependent variable (performance measures). As this type
+
+of the linear regression analysis is very useful for undertaking pure
+
+description and extrapolations for examining new issues and relationships
+
+(Hocking, 1976), it is, therefore, convenient to use for exploring the
+
+importance of corporate identity as a determinant of the corporate relative
+
+position both in the its local market and in international context.
+
+D) TUKEY'S HSD (Honestly Significant Difference) test is used to carry out
+
+pairwise comparisons between the three basic business systems: the
+
+Anglo-Saxon, the Communitarian, and the Asian/emerging business
+
+systems. The purpose of this test is to explore the extent to which banks in
+
+two business systems converge in terms of their orientation towards the
+
+emphasis on indices of identity. In this sense, the pairwise comparisons are
+
+more helpful than the comparisons among the three systems at a time
+
+34
+
+because the latter do not show specifically which business system is more
+
+oriented towards each of the indices of identity.
+
+3. Research Methods used in Chapter 5
+
+Sampling
+
+The issue of monitoring the transitional corporate performance in
+
+Egypt as an emerging country is examined by building a Z-score model for
+
+monitoring the transitional performance in the Textile Sector in Egypt. The
+
+Textile Sector comprises thirty one companies of which seven companies were
+
+privatised since the privatisation of the Egyptian public sector has formally
+
+been undertaken by late 1991.
+
+Archival Data
+
+The data used in this study cover the period from 1992 to 1997. The
+
+data was collected from many sources. Firstly, from companies' annual reports
+
+and financial accounts. Secondly, from companies' performance reports held
+
+by many authorities in Egypt. These authorities are the Ministry of Industry,
+
+The Public Sector Authority, Information and Decision Support Center
+
+(IDSC), and the annual reports of the Textile Industry held by the three
+
+Holding Companies to which the thirty one textile companies (the population
+
+of this study) report to.
+
+The data needed to build the Z-score model is basically to be in the
+
+form of ratios with different time and scale dimensions. The data available
+
+from the records of the Egyptian Textile Sector were neither in the required
+
+form nor classified to be compatible with those ratios required to build the Zscore model. Therefore, the researcher has undertaken numerous of
+
+35
+
+calculations to put the available data in the required forms. Nevertheless, all of
+
+the data is formal data which means that it complies with the Egyptian
+
+regulations and legislation. In addition, in terms of consistency and
+
+completeness, the data is very relevant to the nature and the use of the model
+
+in practise, e.g., monitoring corporate performance in a transitional country.
+
+Statistical Analysis
+
+The three main statistical tools used in chapter 5 are as follows.
+
+1. 'Chi-square test of goodness of fit' (x 2 ) is carried out to test data
+
+normality.
+
+2. Principal Component Analysis (PCA-varimax rotated) is carried out to test
+
+the discriminant validity of the variables included in the study (Podsakoff,
+
+and Organ, 1986).
+
+3. Discriminant analysis, which is the most common technique used to
+
+develop Z-score models, is carried out. The problem that is addressed with
+
+discriminant analysis is how well it is possible to separate two or more
+
+groups of observations (i.e., individuals, companies, ...etc.), given
+
+measurements for these observations on several variables (Manly, 1998;
+
+Hair et al., 1995). Therefore, the discriminant analysis is a statistical
+
+technique used to classify an observation into one of several a periori
+
+groupings dependent upon the observation's individual characteristics. It is
+
+used primarily to classify and/or make predictions in problems where the
+
+dependent variable appears in qualitative form, e.g., male or female,
+
+bankrupt or non-bankrupt, privatised, non-privatised,...etc.
+
+36
+
+The discrimainant analysis has been initially utilised by Altman (1968,
+
+1971, 1977; 1981) by building a Z-Score model to discriminate between
+
+bankrupt and non-bankrupt firms. In the literature of finance, interests in this
+
+model, and the methodology itself, have continued in the work of Wilcox
+
+(1971), Edmister (1972), Deakin (1972), Blum (1974), Sinkey (1975), Taffler
+
+(1978, 1982, 1983), and Sudarsanam (1981).
+
+Discriminant Function Analysis
+
+It is sometimes useful to be able to determine functions of the variables
+
+X 1 , X 2 , ...,X p that in some sense separate the m groups as well as is
+
+possible. The simplest approach involves taking a linear combination of the X
+
+variables
+
+Z=a, X I +a2X2+...+apXp
+
+for this purpose, in such a way that Z reflects group differences as much as
+
+possible. Groups can be well separated using Z if the mean value changes
+
+considerably from group to group, with the values within a group being fairly
+
+constant. One way to choose the discriminant coefficients a 1 , a 2 ,..., a p in
+
+the index is therefore so as to maximise the F ratio for a one-way analysis of
+
+variance. Hence a suitable function for separating the groups can be defined as
+
+the linear combination for which the F ratio is as large as possible. When this
+
+approach is used, it turns out that it may be possible to determine several linear
+
+combinations for separating groups. In general, the number available is the
+
+smaller of and m-1. This is one of the advantages of the linear discriminant
+
+P
+
+analysis: that is the reduction of the analyst's space dimensionality, i.e., from
+
+37
+
+the number of different independent variables X to m-1 dimension (s). As this
+
+study is concerned with only two groups, consisting of privatised companies
+
+on one hand, and non-privatised companies on the other hand, the resulted Z
+
+function is only one function (i.e., one-dimension analysis).
+
+When the discriminant coefficients are applied to the actual ratio, a
+
+basis for classification into one of the mutually exclusive groupings exists. In
+
+this regard, the discriminant analysis technique has the advantage of
+
+considering an entire profile of characteristics common to the relevant
+
+observations (i.e., companies), as well as the interaction of these
+
+characteristics. The linear discriminant analysis has also the advantage of
+
+yielding a model with a relatively small number of selected measurements
+
+which have the potential of conveying a great deal of information (Altman,
+
+1968, 1971, 1977).
+
+The Z-score Model
+
+The linear discriminant function with its Z index (Z model) is derived
+
+by using a Stepwise Linear Discriminant Analysis provided on the
+
+STATGRAPHICS Plus 3.1 package and SPSS package. This procedure, using
+
+a stepwise selection algorithm, is designed to develop a set of discriminating
+
+functions which can help predict grouping based on the values of other
+
+quantitative variables. As the total number of companies under consideration
+
+is thirty one companies, thirty one cases are used to develop a model to
+
+discriminate among the two levels of grouping, the privatised companies and
+
+non-privatised companies.
+
+38
+
+CONTRIBUTION OF THE STUDY
+
+This study contributes to the literature of corporate governance through
+
+extending the current practices of corporate governance to address some of the
+
+non-financial aspects. Specifically, the contribution of this study can be stated
+
+as follows.
+
+1. This study extends the domain of corporate governance by addressing
+
+some of the non-financial aspects of corporate governance such as
+
+corporate stakeholders orientation and corporate identity which are
+
+empirically examined. Therefore, they provide alternatives governance
+
+structures that are drawn from the literature of international business,
+
+sociology and economics. These issues are important to emerging markets,
+
+particularly at the level of public policy, considering that the institutional
+
+infrastructure in these markets is not relatively as strong as those of the
+
+developed countries.
+
+2. This study contributes to doing business in emerging markets, particularly
+
+transitional emerging markets by building a statistical tool (Z-score model)
+
+for monitoring corporate transitional performance. Once again, this
+
+approach is very important to emerging market in transition considering
+
+that any institutional change requires monitoring the path of change in the
+
+first place.
+
+LIMITATIONS OF THE STUDY
+
+In general, this study is primarily concerned of examining nonfinancial aspects of corporate governance. As it is mentioned above this study
+
+39
+
+has considered three basic issues that present alternatives governance
+
+structures, e.g., corporate stakeholders orientation, corporate identity, and
+
+monitoring corporate performance in transitional emerging market.
+
+Accordingly, the limitations of this study can be stated as follows.
+
+1. This study does not examine the financial aspects of corporate governance.
+
+But the literature review is to draw some lessons from the financial aspects
+
+of corporate governance in international context.
+
+2. Concerning the international perspectives of corporate governance
+
+structures, this study focuses on the U.S. and the UK as an examples of the
+
+Anglo-Saxon business system, Germany as an example of the
+
+Communitarian business system, and Japan as an example of the Asian
+
+business system. This classification is mot mutually exclusive considering
+
+that other countries have business aspects similar to those considered in
+
+this study. Nevertheless, the countries considered in this study show three
+
+distinct corporate governance aspects that exist in many other countries or
+
+may alternatively be adopted by other countries.
+
+3. The three issues examined in this study are three alternative governance
+
+orientations out of other non-financial governance structures such as the
+
+internal aspects of corporate governance.
+
+4. The Z-score model, as an approach used for monitoring corporate
+
+transitional performance in transitional emerging market, is applied to the
+
+Textile Sector in Egypt, which is basically a manufacturing sector.
+
+Nevertheless, this approach can be adopted in other business sectors such
+
+as the service industries.

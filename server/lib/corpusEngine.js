@@ -63,20 +63,28 @@ export function computeStrength(count) {
 function summarizeMatches(matches) {
   const provenanceMix = {};
   const qualityMix = {};
-  const cadenceValues = [];
+  const cadenceMeans = [];
+  const cadencePctLong = [];
   for (const doc of matches) {
     provenanceMix[doc.provenanceTier] = (provenanceMix[doc.provenanceTier] || 0) + 1;
     qualityMix[doc.quality] = (qualityMix[doc.quality] || 0) + 1;
-    if (doc.cadence) cadenceValues.push(doc.cadence.mean);
+    if (doc.cadence) {
+      cadenceMeans.push(doc.cadence.mean);
+      // pctLong is >=30-word sentences, matching the corpus note's own
+      // measurement methodology (Batches 1-7 quantitative tables).
+      if (typeof doc.cadence.pctLong === "number") cadencePctLong.push(doc.cadence.pctLong);
+    }
   }
   const cadence =
-    cadenceValues.length > 0
+    cadenceMeans.length > 0
       ? {
-          measuredSources: cadenceValues.length,
-          meanSentenceLengthMin: Math.min(...cadenceValues),
-          meanSentenceLengthMax: Math.max(...cadenceValues),
+          measuredSources: cadenceMeans.length,
+          meanSentenceLengthMin: Math.min(...cadenceMeans),
+          meanSentenceLengthMax: Math.max(...cadenceMeans),
+          pctLongMin: cadencePctLong.length > 0 ? Math.min(...cadencePctLong) : null,
+          pctLongMax: cadencePctLong.length > 0 ? Math.max(...cadencePctLong) : null,
         }
-      : { measuredSources: 0, meanSentenceLengthMin: null, meanSentenceLengthMax: null };
+      : { measuredSources: 0, meanSentenceLengthMin: null, meanSentenceLengthMax: null, pctLongMin: null, pctLongMax: null };
   return { provenanceMix, qualityMix, cadence };
 }
 

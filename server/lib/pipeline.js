@@ -10,12 +10,14 @@ import { resolveProfile } from "./styleProfileStore.js";
 import { buildSystemPrompt } from "./promptContract.js";
 import { auditPreservation } from "./preservation.js";
 import { llmProvider } from "./llmProvider.js";
+import { assessCadenceDeviation } from "./cadenceDeviation.js";
 
 export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference }) {
   const protectedSpans = extractProtectedSpans(sourceText);
   const diagnostics = diagnose(sourceText);
   const plan = buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPreference });
   const profileResolution = resolveProfile(styleFilters);
+  const cadenceDeviation = assessCadenceDeviation(sourceText, styleFilters);
 
   return {
     protectedSpans,
@@ -24,6 +26,7 @@ export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarInt
       structural_monotony: diagnostics.structural_monotony,
       cohesion: diagnostics.cohesion,
       evidence_alignment: diagnostics.evidence_alignment,
+      cadence_deviation: cadenceDeviation,
     },
     plan,
     style_profile_used: {

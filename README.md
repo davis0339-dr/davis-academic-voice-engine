@@ -1,4 +1,4 @@
-# Davis Academic Voice Engine — Phase 3 + Detector QA
+# Davis Academic Voice Engine — Phase 3/4 seed + Detector QA
 
 Real build against the *Academic Writing & Research Style Engine — Master
 Build Handoff* (7 Aug 2026). Phase 1 built the multi-pass rewrite pipeline;
@@ -6,9 +6,12 @@ Phase 2 replaced the two hand-typed "style family" rows from Phase 1 with a
 real coverage-density engine computed over an actual 52-document evidence
 dataset transcribed from `Davis_Academic_Language_Corpus_v0.1.md` (Baseline
 v0.9, Batches 1-9); an interim update added a measurement-only **Detector
-QA module** (Section 15.4); this update adds **Phase 3: long-document
+QA module** (Section 15.4); a further update added **Phase 3: long-document
 processing** (Section 14/25) — chapter/thesis-length documents processed
-as a chunked background job instead of one request.
+as a chunked background job instead of one request. This update adds the
+**first real Phase 4 diagnostic** (Section 15) — a cadence-deviation flag
+grounded in one labeled document pair the product owner supplied, explicitly
+NOT a calibrated score (see "What this update added (Phase 4 seed)" below).
 
 ## On detector scores — read this before using the Detector QA tab
 
@@ -50,10 +53,11 @@ embedded in any client-visible file.
 npm test
 ```
 
-25 tests pass, covering everything that doesn't require a live model call:
+48 tests pass, covering everything that doesn't require a live model call:
 protected-span extraction, the preservation audit, the intervention
-planner, and — new in Phase 2 — the coverage-density engine and the
-hierarchical fallback ladder over the real corpus dataset.
+planner, the coverage-density engine and fallback ladder, the Detector QA
+plumbing, document-map/chunking/job-store logic, and the cadence-deviation
+diagnostic regression-tested against the two real labeled fixtures.
 
 ## What Phase 2 added
 
@@ -183,6 +187,69 @@ queue/worker), not something Phase 3 was scoped to build; see Section
 boundary for exactly this reason. Chunks also process sequentially, not
 concurrently, to keep rate-limit behavior simple and predictable.
 
+## What this update added (Phase 4 seed)
+
+On 2026-08-07 the product owner supplied two documents: one described as
+purely AI-generated (an audit-firm-performance thesis chapter), one
+described as human-written (a corporate-governance thesis introduction).
+Both are saved, clearly labeled, in
+`tests/fixtures/detector-benchmark/`. This is **one labeled pair, not a
+calibration set** — Section 21.2 specifies what a real evaluation set
+needs (historical human corpus, recent authenticated human writing,
+multiple LLM outputs, human-edited AI text, polished human writing,
+second-language writers, short and long texts, multiple disciplines), and
+a pair of two documents does not clear that bar. Nothing here is presented
+as calibrated, and no 0-100 score was added.
+
+What the pair *did* make possible: running the existing keyword-based
+diagnostics (Pass B — generic phrasing, transition stacking) against both
+found **zero hits in either document**, which is itself a useful, honest
+result — it shows word-list detection alone would miss this kind of
+AI-generated text entirely. What produced a sharp, real difference was
+sentence-length distribution:
+
+| | AI-described sample | Human-described sample |
+|---|---:|---:|
+| Sentences | 96 | 285 |
+| Mean sentence length | 41.7 words | 24.5 words |
+| Sentences ≥30 words | 79.2% | 30.2% |
+
+For context: across the entire 45-document thesis core already in
+`corpusDocuments.js`, the most extreme single document (Chapman, 2016)
+averages 32.1 words/sentence. The AI-described sample runs past even that.
+The human-described sample sits comfortably inside the historical range.
+
+- **`server/lib/cadenceDeviation.js`** — compares a submitted document's
+  own sentence-length distribution against the ACTUAL measured range of
+  its resolved corpus family (real per-document numbers from
+  `corpusDocuments.js` via `corpusEngine.compileFamily`, not a guessed
+  constant), and flags when the document falls outside that range on
+  either mean sentence length or proportion of long (30+ word) sentences.
+  It refuses to compare at all when the resolved family has fewer than 3
+  measured sources (`MIN_FAMILY_SAMPLE`), rather than compare against
+  noise — a real case of this firing exists in the corpus today
+  (`document_type=journal_article` matches 3 documents but only 1 has
+  cadence data measured, covered by `tests/cadenceDeviation.test.js`).
+- **Explicitly not an authorship claim.** The module's own `note` field
+  says so on every response, and Section 9.1 is blunt about why: "long
+  sentences are not automatically AI." This flags a document as sitting
+  outside an evidence-based range, nothing more — the same posture as
+  every other diagnostic in this codebase.
+- Wired into `pipeline.analyse()` as `diagnostics.cadence_deviation`, so
+  it appears in both `/api/analyse` and `/api/rewrite` responses and in
+  the "Writing Quality" tab, labeled "experimental, Phase 4 seed" in the UI.
+- 5 new tests (48 total, all passing), including a direct regression
+  check against both real fixtures: the AI-described sample must trigger
+  both flags, the human-described sample must trigger neither.
+
+**This is a starting mechanism, not Phase 4 complete.** Section 25 Phase 4
+still calls for feature extraction beyond cadence, sentence-level UI
+highlighting, a real labelled benchmark (Section 21.2), and calibration
+before anything resembling a score is shown (Section 15.2). Growing
+`tests/fixtures/detector-benchmark/` with more labeled pairs — more
+disciplines, more authors, edited AI text, second-language human writers
+— is the direct next step toward that, not a rebuild.
+
 ## Architecture
 
 ```
@@ -211,10 +278,13 @@ server/
     documentMap.js                        Heading/glossary/citation map for a whole document   (Phase 3)
     chunker.js                              Heading- or paragraph-boundary chunking               (Phase 3)
     jobStore.js                               In-memory background job store + reassembly            (Phase 3)
+    cadenceDeviation.js                         Sentence-rhythm vs. corpus-family range   (Phase 4 seed)
   data/
     corpusDocuments.js       52 real per-document evidence records         (Phase 2)
 public/                    Editor UI + Methodology / Detector QA / Long Document tabs (plain HTML/CSS/JS)
-tests/                     node:test suite, runs without any API key
+tests/
+  fixtures/detector-benchmark/  2 labeled documents (AI-described, human-described)   (Phase 4 seed)
+                             node:test suite, runs without any API key
 ```
 
 `pipeline.js` remains the only entry point into generation — no separate
@@ -233,7 +303,7 @@ tests/                     node:test suite, runs without any API key
 | 5 — intensity differentiation | Minor/Moderate/Deep must genuinely differ | **Passes**, verified live: the same formulaic passage produced different edit summaries and different prose in Minor vs. Deep mode (Minor kept 2 sentences unchanged; Deep restructured all but the numeric sentence). |
 | 6 — evidence-backed styles | Selectors load from a real store; sparse narrow request triggers visible fallback, not a fabricated profile | **Passes**, verified live: a UK/PhD/Finance/quantitative/discussion request correctly resolved against 12 real sources with an honest fallback message (see "What Phase 2 added" above). |
 | 7 — long document | Chunked jobs, progress, retry | **Passes**, verified live: a 3-section document processed as 4 chunks, one failed-chunk retry path is unit-tested (`tests/jobStore.test.js`), and terminology/citations stayed consistent across chunks (document-level audit, zero warnings). |
-| 8 — diagnostics | Writing-quality flags hit real spans, no invented detector score | **Passes for what's built.** No 0-100 "AI score" anywhere in this codebase (a calibrated internal score is Phase 4 territory, requires calibration this build doesn't have). The Detector QA module reports raw third-party outputs, unedited, never a synthesized score of our own. |
+| 8 — diagnostics | Writing-quality flags hit real spans, no invented detector score | **Passes for what's built.** No 0-100 "AI score" anywhere in this codebase. A first real evidence-grounded flag exists (cadence deviation, verified against 2 labeled fixtures — see "What this update added" above), explicitly labeled experimental and not a score. Full calibration is still Phase 4 territory requiring a real benchmark this build doesn't have (Section 21.2). The Detector QA module separately reports raw third-party outputs, unedited, never a synthesized score of our own. |
 | 9 — similarity | Real matches on a copied fixture, no fabricated matches on a clean one | **Not built.** Explicitly Phase 5; needs a licensed/indexed provider. |
 | 10 — failure UX | Timeout/error/rate-limit handled gracefully, source text never lost, no infinite spinner | **Passes.** Bounded backoff on transient errors only, `AUTH_FAILED` never retried, specific error shown, source pane never cleared. Same discipline now applies to the detector adapter (`NOT_CONFIGURED`/`AUTH_FAILED`/etc., no indefinite spinner on a scan). |
 
@@ -246,17 +316,20 @@ tests/                     node:test suite, runs without any API key
 - Preservation audit logic (per-chunk and whole-document)
 - Detector QA request/response plumbing, defensive response parsing, and the hard boundary keeping it out of the generation path
 - Document map extraction, chunking, and job-store state machine (job creation gracefully fails every chunk with a clear `NOT_CONFIGURED` error and still reassembles losing nothing, when no LLM key is present — `tests/jobStore.test.js`)
-- 44 automated tests, all passing
+- Cadence-deviation diagnostic, regression-tested against 2 real labeled fixtures
+- 48 automated tests, all passing
 
 **Real code, confirmed working live with a real `ANTHROPIC_API_KEY`:**
 - `/api/rewrite` end to end — Gates 1, 2, 3, 5, 6 above were run against a live Anthropic account during this build, not just unit-tested
 - `/api/jobs` end to end (Phase 3) — a real 3-section, multi-citation, abbreviation-carrying document was processed, polled to completion, and its reassembled output and document-level preservation audit inspected (see "What Phase 3 added" above)
+- `/api/analyse`'s `cadence_deviation` field — confirmed live against the AI-described fixture through a running server
 
 **Real code, not yet exercised against a live account:**
 - `/api/detector-scan` and the GPTZero adapter — logic is implemented and unit-tested against fixture responses (`tests/detectorQA.test.js`), but this build has not been run against a real `GPTZERO_API_KEY`. The response normalizer is intentionally defensive (see above) precisely because that live check hasn't happened yet.
 
-**Not implemented — explicitly out of scope for Phases 1-3:**
-- Calibrated AI-pattern/formulaicity score (Phase 4)
+**Not implemented — explicitly out of scope for Phases 1-3, only seeded for Phase 4:**
+- Calibrated AI-pattern/formulaicity score — cadence deviation is a first real flag, not a score, and not calibrated (needs the Section 21.2 benchmark)
+- Sentence-level UI highlighting of flagged spans (Phase 4)
 - Similarity/plagiarism checker (Phase 5)
 - Citation/reference reconciliation and DOI verification (Phase 6)
 - Auth, billing, rate limiting, monitoring, backups (Phase 7) — including a real persistent job queue; the current job store is in-memory/single-process
@@ -288,15 +361,25 @@ tests/                     node:test suite, runs without any API key
 - Heading detection is regex-based (Markdown, numbered, ALL-CAPS) and will miss non-standard heading styles; those documents fall back to paragraph-group chunking, which still works but doesn't get heading-verbatim preservation or section-scoped context.
 - The document-level consistency pass checks that protected spans (citations/numbers/quotes/acronyms) survive across chunk boundaries. It does not check for more subtle cross-chunk issues, like the same acronym being expanded two different ways in two different chunks — that would need a stronger terminology-consistency checker than currently exists.
 
+## Known limitations (Phase 4 seed)
+
+- **The benchmark is 2 documents.** Every number in "What this update added" is descriptive of this one pair, not a statistically validated finding. Do not present the 15%/margin constants in `cadenceDeviation.js` as calibrated — they are reasonable starting margins, explicitly not fit to data (Section 10.2's warning applies here too).
+- **Both fixtures are unverified self-reports.** This build has no independent way to confirm the AI-described sample was actually AI-generated or that the human-described sample had no AI assistance — they're labeled as the product owner described them, and that provenance is recorded, not hidden.
+- **Only sentence-length cadence is covered.** Section 15.1's fuller list (repeated structural templates, vague evidence claims, citation anomalies, low local syntactic variation) is untouched. The AI sample's most distinctive tell noticed during this build — every subsection following an identical developed-economies → Asia → Africa → Nigeria template — is exactly the kind of structural-repetition signal this module does NOT yet catch.
+- **One discipline, one register.** Both fixtures are business/finance thesis chapters. Section 21.2's requirement for multiple disciplines and both short and long texts is still open.
+
 ## Next phase
 
-Phase 4 (Section 25): calibrated AI-pattern/formulaicity diagnostics —
-feature extraction, sentence-level flags, a labelled benchmark set, and a
-score shown only after calibration supports it (Section 15.2). This needs
-a labelled evaluation set this build does not have (Section 21.2); do not
-build a scoring UI ahead of having one. Do not start Phase 5/6 (similarity,
-citations) before that. Do not expand corpus coverage claims without adding
-real new source documents to `corpusDocuments.js`. Do not, at any phase,
-add a code path that feeds a Detector QA result back into `/api/rewrite`'s
-generation loop, or a long-document job's per-chunk generation loop — that
-boundary is load-bearing for the reasons in Section 15.4.
+Continue Phase 4 (Section 25): the most valuable next step is growing
+`tests/fixtures/detector-benchmark/` — more labeled pairs, more
+disciplines, human-edited AI text, second-language human writers, short
+texts — toward the real benchmark Section 21.2 describes, followed by a
+structural-template-repetition diagnostic (the gap this build's own
+analysis surfaced) and eventually calibration. Do not build a scoring UI
+ahead of having a real benchmark (Section 15.2). Do not start Phase 5/6
+(similarity, citations) before that. Do not expand corpus coverage claims
+without adding real new source documents to `corpusDocuments.js`. Do not,
+at any phase, add a code path that feeds a Detector QA result, or a
+cadence-deviation flag, back into `/api/rewrite`'s generation loop, or a
+long-document job's per-chunk generation loop — that boundary is
+load-bearing for the reasons in Section 15.4.

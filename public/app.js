@@ -132,10 +132,29 @@ function renderDiagnostics(diagnostics) {
     .map((c) => `<div class="warning-item">Sentence ${c.sentenceIndex}: ${c.detail}</div>`)
     .join("") || '<p class="muted">No transition-stacking flagged.</p>';
 
+  const cd = diagnostics.cadence_deviation;
+  let cadenceHtml;
+  if (!cd) {
+    cadenceHtml = '<p class="muted">Not available.</p>';
+  } else if (!cd.available) {
+    cadenceHtml = `<p class="muted">${cd.reason}</p>`;
+  } else {
+    const flagsHtml = cd.flags.length
+      ? cd.flags.map((f) => `<div class="warning-item bad">${f.type}: ${f.detail}</div>`).join("")
+      : '<p class="muted">Within the observed range for this family.</p>';
+    cadenceHtml = `
+      <p>This document: ${cd.doc.mean.toFixed(1)} words/sentence mean, ${cd.doc.pctLong.toFixed(1)}% sentences &ge;30 words (${cd.doc.sentenceCount} sentences).</p>
+      <p class="muted">Family range (${cd.family.measuredSources} measured sources): ${cd.family.meanSentenceLengthMin.toFixed(1)}&ndash;${cd.family.meanSentenceLengthMax.toFixed(1)} words/sentence mean.</p>
+      ${flagsHtml}
+      <p class="muted" style="margin-top:0.5rem">${cd.note || ""}</p>
+    `;
+  }
+
   $("tab-diagnostics").innerHTML = `
     <h4>Generic / formulaic phrasing</h4>${genericList}
     <h4>Structural monotony</h4>${monotonyList}
     <h4>Cohesion (transition stacking)</h4>${cohesionList}
+    <h4>Cadence deviation from corpus family (experimental, Phase 4 seed)</h4>${cadenceHtml}
   `;
 }
 
