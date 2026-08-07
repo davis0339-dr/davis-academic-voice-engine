@@ -8,71 +8,75 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">Academic Voice Engine <span class="tag">Phase 3</span></div>
+  <div class="brand">Academic Voice Engine <span class="tag">Beta</span></div>
   <div id="llmStatus" class="llm-status">checking service status…</div>
   <a id="buildBadge" class="build-badge" href="#" target="_blank" rel="noopener" title="Click to view this exact deployed commit on GitHub">build: checking…</a>
 </header>
 
 <main class="layout">
-  <section class="control-rail">
-    <h2>Controls</h2>
+  <section id="controlRail" class="control-rail">
+    <div class="control-title-row">
+      <h2>Controls</h2>
+      <button id="toggleControlsBtn" class="control-toggle" type="button" aria-expanded="true">Hide</button>
+    </div>
+    <div id="controlBody">
+      <label>Document type
+        <select id="documentType"></select>
+      </label>
+      <label>Region
+        <select id="region"></select>
+      </label>
+      <label>Degree
+        <select id="degree"></select>
+      </label>
+      <label>Discipline
+        <select id="discipline"></select>
+      </label>
+      <label>Research mode
+        <select id="researchMode"></select>
+      </label>
+      <label>Section
+        <select id="section"></select>
+      </label>
 
-    <label>Document type
-      <select id="documentType"></select>
-    </label>
-    <label>Region
-      <select id="region"></select>
-    </label>
-    <label>Degree
-      <select id="degree"></select>
-    </label>
-    <label>Discipline
-      <select id="discipline"></select>
-    </label>
-    <label>Research mode
-      <select id="researchMode"></select>
-    </label>
-    <label>Section
-      <select id="section"></select>
-    </label>
+      <hr />
 
-    <hr />
+      <label>Rewrite intensity
+        <select id="rewriteIntensity">
+          <option value="auto" selected>Auto / Smart</option>
+          <option value="minor">Minor / Targeted</option>
+          <option value="moderate">Moderate</option>
+          <option value="deep">Deep / Structural</option>
+        </select>
+      </label>
 
-    <label>Rewrite intensity
-      <select id="rewriteIntensity">
-        <option value="auto" selected>Auto / Smart</option>
-        <option value="minor">Minor / Targeted</option>
-        <option value="moderate">Moderate</option>
-        <option value="deep">Deep / Structural</option>
-      </select>
-    </label>
+      <label>Grammar intensity
+        <select id="grammarIntensity">
+          <option value="light">Light</option>
+          <option value="standard" selected>Standard</option>
+          <option value="strict">Strict</option>
+        </select>
+      </label>
 
-    <label>Grammar intensity
-      <select id="grammarIntensity">
-        <option value="light">Light</option>
-        <option value="standard" selected>Standard</option>
-        <option value="strict">Strict</option>
-      </select>
-    </label>
+      <label>Length preference
+        <select id="lengthPreference">
+          <option value="auto" selected>Auto</option>
+          <option value="concise">Concise</option>
+          <option value="maintain">Maintain</option>
+          <option value="expand">Expand</option>
+        </select>
+      </label>
 
-    <label>Length preference
-      <select id="lengthPreference">
-        <option value="auto" selected>Auto</option>
-        <option value="concise">Concise</option>
-        <option value="maintain">Maintain</option>
-        <option value="expand">Expand</option>
-      </select>
-    </label>
+      <label>Naturalise toward corpus cadence
+        <select id="naturalisation">
+          <option value="off">Off (clarity only)</option>
+          <option value="faithful" selected>Faithful (keep my wording)</option>
+          <option value="aggressive">Aggressive (rewrite freely, keep facts)</option>
+        </select>
+      </label>
 
-    <label>Naturalise toward human cadence
-      <select id="naturalisation">
-        <option value="off">Off (clarity only)</option>
-        <option value="faithful" selected>Faithful (keep my wording)</option>
-        <option value="aggressive">Aggressive (rewrite freely, keep facts)</option>
-      </select>
-    </label>
-
-    <div id="profileEvidence" class="evidence-box">Evidence strength: —</div>
+      <div id="profileEvidence" class="evidence-box">Evidence strength: —</div>
+    </div>
   </section>
 
   <section class="editor-panes">
@@ -80,7 +84,13 @@
       <div class="pane-header">Source
         <span id="sourceWordCount" class="wordcount">0 words</span>
       </div>
-      <textarea id="sourceText" placeholder="Paste your academic text here…"></textarea>
+      <div class="file-toolbar">
+        <label class="file-button" for="sourceFileInput">Upload TXT, DOCX or PDF</label>
+        <input id="sourceFileInput" class="visually-hidden" type="file" accept=".txt,.md,.markdown,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        <span id="sourceFileStatus" class="file-status">or paste text below</span>
+      </div>
+      <div id="sourceLimitHint" class="limit-hint">Single editor capacity: loading…</div>
+      <textarea id="sourceText" placeholder="Paste academic text here, or upload a document above…"></textarea>
     </div>
     <div class="pane">
       <div class="pane-header">Revised
@@ -94,7 +104,7 @@
 <div class="action-bar">
   <button id="analyseOnlyBtn">Analyse Only</button>
   <button id="analyseReviseBtn" class="primary">Analyse &amp; Revise</button>
-  <span id="statusMessage" class="status-message"></span>
+  <span id="statusMessage" class="status-message" aria-live="polite"></span>
 </div>
 
 <section class="tabs">
@@ -115,7 +125,7 @@
     <p class="muted">Run Analyse Only or Analyse &amp; Revise to see writing-quality diagnostics.</p>
   </div>
   <div id="tab-preservation" class="tab-panel">
-    <p class="muted">Run Analyse &amp; Revise to see the preservation audit (numbers, citations, quotes, technical terms).</p>
+    <p class="muted">Run Analyse &amp; Revise to see the preservation audit (numbers, citations, quotes, technical terms and study-stage fidelity).</p>
   </div>
   <div id="tab-profile" class="tab-panel">
     <p class="muted">Select controls above to see which evidence-backed style family is actually being used.</p>
@@ -133,17 +143,29 @@
     <div id="detectorResults"></div>
   </div>
   <div id="tab-longdoc" class="tab-panel">
-    <p class="muted">For a full chapter/thesis-length document. Uses the same style/intensity/grammar/length controls above. Processes as a background job, chunk by chunk, so one failed chunk never loses the whole document.</p>
-    <textarea id="longdocSource" placeholder="Paste a full chapter or document here…" rows="8"></textarea>
+    <p class="muted">For chapter-scale material that exceeds the single-editor limit. It uses the same rewrite controls above and processes text chunk by chunk. The current beta is explicitly capacity-bounded because jobs are still held in server memory.</p>
+    <div class="file-toolbar longdoc-file-toolbar">
+      <label class="file-button" for="longdocFileInput">Upload chapter/document</label>
+      <input id="longdocFileInput" class="visually-hidden" type="file" accept=".txt,.md,.markdown,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+      <span id="longdocFileStatus" class="file-status">TXT, DOCX or text-based PDF</span>
+    </div>
+    <div class="longdoc-meta">
+      <span id="longdocWordCount" class="wordcount">0 words</span>
+      <span id="longdocLimitHint" class="limit-hint">Long-document capacity: loading…</span>
+    </div>
+    <textarea id="longdocSource" placeholder="Paste a chapter or upload a document above…" rows="8"></textarea>
     <div class="action-row">
       <button id="startJobBtn" class="primary">Start Long-Document Job</button>
-      <span id="longdocStatus" class="status-message"></span>
+      <span id="longdocStatus" class="status-message" aria-live="polite"></span>
     </div>
     <div id="longdocProgress"></div>
     <div id="longdocOutput"></div>
   </div>
 </section>
 
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="/fileImport.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
