@@ -4,8 +4,11 @@ const SECTION_PATTERNS = [
   ["literature_review", /\b(literature\s+review|review\s+of\s+literature|empirical\s+review|conceptual\s+review)\b/i],
   ["theory", /\b(theoretical\s+review|theoretical\s+framework|theory|theories)\b/i],
   ["methodology", /\b(methodology|research\s+method|methods|research\s+design|methodological)\b/i],
+  // Specific composite headings must be checked before the generic word
+  // "findings"; otherwise "Discussion of Findings" is misclassified as a
+  // results section merely because it contains that noun.
+  ["discussion", /\b(discussion\s+of\s+findings|interpretation\s+of\s+findings|discussion)\b/i],
   ["results", /\b(results?|findings?|data\s+analysis|analysis\s+of\s+data)\b/i],
-  ["discussion", /\b(discussion|discussion\s+of\s+findings|interpretation\s+of\s+findings)\b/i],
   ["limitations", /\b(limitations?|study\s+limitations?|limitations?\s+of\s+(?:the\s+)?study)\b/i],
   ["conclusion", /\b(conclusion|conclusions|summary\s+and\s+conclusion|concluding)\b/i],
   ["abstract", /\babstract\b/i],
