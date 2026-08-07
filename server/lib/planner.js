@@ -75,9 +75,6 @@ function planSentence(sentence, index, diagnostics, intensity, lengthPreference,
     return { level: LEVELS.SPLIT_OR_MERGE, reasons };
   }
 
-  // Critical interaction rule: aggressive naturalisation cannot coexist with
-  // a KEEP-heavy plan. Protected facts are preserved separately by Pass A/E;
-  // here the user has explicitly authorised structural restyling.
   if (naturalisation === "aggressive") {
     if (lengthPreference === "concise" && s.hasGenericPhrase) {
       reasons.push("Aggressive naturalisation plus Concise preference: compress formulaic padding and rebuild the sentence.");
@@ -154,11 +151,13 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
     return { sentenceIndex: index, sentence, level, reasons };
   });
 
-  const paragraphReorderSuggested =
-    naturalisationLevel === "aggressive" ||
-    diagnostics.structural_monotony.some(
-      (m) => m.issue === "low_sentence_length_variation" || m.issue === "uniform_paragraph_length" || m.issue === "repeated_paragraph_opening_frame" || m.issue === "gap_label_scaffolding"
-    );
+  // Aggressive rewriting authorises sentence-level reconstruction; it does
+  // NOT by itself authorise reshuffling the author's rhetorical sequence.
+  // Paragraph reordering is suggested only when a paragraph-level pattern was
+  // actually diagnosed. This protects funnel logic and claim-evidence order.
+  const paragraphReorderSuggested = diagnostics.structural_monotony.some(
+    (m) => m.issue === "uniform_paragraph_length" || m.issue === "repeated_paragraph_opening_frame" || m.issue === "gap_label_scaffolding"
+  );
 
   const summary = items.reduce((acc, item) => {
     acc[item.level] = (acc[item.level] || 0) + 1;
