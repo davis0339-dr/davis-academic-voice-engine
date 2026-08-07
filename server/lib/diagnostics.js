@@ -1,12 +1,5 @@
-// Pass B (quality diagnostics): rule-based, deterministic, and runnable
-// without any LLM call. This is what the intervention planner (Pass C)
-// conditions on, and it maps directly onto the "diagnostics" block of the
-// response schema in Section 13 of the build handoff.
-//
-// This is intentionally NOT an AI-authorship detector. It flags writing
-// quality patterns (generic phrasing, repetition, monotony) -- see
-// Section 15 for why a separate, calibrated module is required before any
-// authorship-style score can be shown.
+// Pass B writing-quality diagnostics. Deterministic and runnable without an
+// LLM. These are revision signals, not claims about authorship.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -34,9 +27,7 @@ function findGenericPhrasing(sentences) {
   sentences.forEach((sentence, index) => {
     const lower = sentence.toLowerCase();
     for (const phrase of GENERIC_PHRASES) {
-      if (lower.includes(phrase)) {
-        hits.push({ sentenceIndex: index, phrase, sentence });
-      }
+      if (lower.includes(phrase)) hits.push({ sentenceIndex: index, phrase, sentence });
     }
   });
   return hits;
@@ -70,11 +61,7 @@ function findRepeatedOpenings(sentences) {
   const hits = [];
   const openings = sentences.map((s) => (s.trim().split(/\s+/)[0] || "").toLowerCase());
   for (let i = 2; i < openings.length; i++) {
-    if (
-      openings[i] &&
-      openings[i] === openings[i - 1] &&
-      openings[i] === openings[i - 2]
-    ) {
+    if (openings[i] && openings[i] === openings[i - 1] && openings[i] === openings[i - 2]) {
       hits.push({
         sentenceIndex: i,
         issue: "repeated_opening",
@@ -82,6 +69,74 @@ function findRepeatedOpenings(sentences) {
       });
     }
   }
+  return hits;
+}
+
+function paragraphOpeningFrame(sentence) {
+  const s = sentence.trim().toLowerCase();
+  if (/^(conceptually|theoretically|methodologically|empirically|contextually)\b/.test(s)) return "disciplinary_label_adverb";
+  if (/^(however|moreover|furthermore|therefore|additionally|consequently|similarly|conversely)\b/.test(s)) return "explicit_transition";
+  if (/^in\s+/.test(s)) return "in_prepositional_opening";
+  if (/^(within|across|among|from|under|through|despite|although|while)\s+/.test(s)) return "prepositional_or_subordinate_opening";
+  if (/^(this|the)\s+(study|research|finding|findings|evidence|literature|result|results|analysis)\b/.test(s)) return "research_noun_opening";
+  return null;
+}
+
+function findParagraphPatterning(text, sentences) {
+  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  if (paragraphs.length < 3) return [];
+
+  const rows = [];
+  let sentenceSearchStart = 0;
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    const firstSentence = splitSentences(paragraph)[0] || paragraph;
+    let sentenceIndex = sentences.indexOf(firstSentence, sentenceSearchStart);
+    if (sentenceIndex < 0) sentenceIndex = sentences.findIndex((s) => paragraph.startsWith(s));
+    if (sentenceIndex >= 0) sentenceSearchStart = sentenceIndex + 1;
+    rows.push({
+      paragraphIndex,
+      sentenceIndex: sentenceIndex >= 0 ? sentenceIndex : null,
+      frame: paragraphOpeningFrame(firstSentence),
+      wordCount: wordCount(paragraph),
+      firstSentence,
+    });
+  });
+
+  const hits = [];
+  const frameCounts = new Map();
+  for (const row of rows) {
+    if (!row.frame) continue;
+    if (!frameCounts.has(row.frame)) frameCounts.set(row.frame, []);
+    frameCounts.get(row.frame).push(row);
+  }
+
+  for (const [frame, members] of frameCounts.entries()) {
+    if (members.length >= 3) {
+      members.forEach((row) => hits.push({
+        paragraphIndex: row.paragraphIndex,
+        sentenceIndex: row.sentenceIndex,
+        issue: "repeated_paragraph_opening_frame",
+        frame,
+        detail: `${members.length} paragraphs reuse the same opening frame (${frame}).`,
+      }));
+    }
+  }
+
+  const lengths = rows.map((r) => r.wordCount).filter((n) => n > 0);
+  if (lengths.length >= 4) {
+    const mean = lengths.reduce((a, b) => a + b, 0) / lengths.length;
+    const sd = stddev(lengths);
+    const cv = mean ? sd / mean : 0;
+    if (mean >= 40 && cv < 0.16) {
+      hits.push({
+        paragraphIndex: null,
+        sentenceIndex: null,
+        issue: "uniform_paragraph_length",
+        detail: `Paragraph lengths are unusually even (CV ${cv.toFixed(2)} across ${lengths.length} paragraphs).`,
+      });
+    }
+  }
+
   return hits;
 }
 
@@ -106,10 +161,12 @@ export function diagnose(text) {
   const genericPhrasing = findGenericPhrasing(sentences);
   const transitionStacking = findTransitionStacking(sentences);
   const repeatedOpenings = findRepeatedOpenings(sentences);
+  const paragraphPatterns = findParagraphPatterning(text, sentences);
   const monotony = findMonotony(sentences);
 
   const structuralMonotony = [
     ...repeatedOpenings,
+    ...paragraphPatterns,
     ...monotony.overloaded.map((o) => ({
       sentenceIndex: o.sentenceIndex,
       issue: "overloaded_sentence",
@@ -128,8 +185,9 @@ export function diagnose(text) {
     sentences,
     generic_phrasing: genericPhrasing,
     structural_monotony: structuralMonotony,
+    paragraph_patterns: paragraphPatterns,
     cohesion: transitionStacking,
-    evidence_alignment: [], // requires citation-to-claim linking; see README limitations
+    evidence_alignment: [],
     monotony,
   };
 }
