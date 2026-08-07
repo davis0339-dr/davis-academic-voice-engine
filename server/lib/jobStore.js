@@ -6,6 +6,7 @@ import { buildDocumentMap } from "./documentMap.js";
 import { chunkDocument } from "./chunker.js";
 import { rewrite } from "./pipeline.js";
 import { auditPreservation } from "./preservation.js";
+import { inferSectionFromHeading } from "./sectionLanguageGuide.js";
 
 const jobs = new Map();
 const MAX_TRANSIENT_ATTEMPTS = 4;
@@ -73,12 +74,17 @@ async function processChunk(job, chunk) {
   chunk.error = null;
   chunk.attempts = chunk.attempts || 0;
 
+  const inferredSection = inferSectionFromHeading(chunk.heading);
+  const chunkStyleFilters = { ...(job.options.styleFilters || {}) };
+  if (inferredSection) chunkStyleFilters.section = inferredSection;
+  chunk.inferredSection = inferredSection || chunkStyleFilters.section || null;
+
   for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt++) {
     chunk.attempts += 1;
     try {
       const result = await rewrite({
         sourceText: chunk.sourceText,
-        styleFilters: job.options.styleFilters,
+        styleFilters: chunkStyleFilters,
         rewriteIntensity: job.options.rewriteIntensity,
         grammarIntensity: job.options.grammarIntensity,
         lengthPreference: job.options.lengthPreference,
@@ -100,6 +106,7 @@ async function processChunk(job, chunk) {
       chunk.editSummary = result.edit_summary;
       chunk.preservation = auditPreservation(chunk.sourceText, revisedText);
       chunk.transformationQuality = result.transformation_quality || null;
+      chunk.languageQuality = result.language_quality || null;
       chunk.status = "done";
       chunk.error = null;
       return;
@@ -155,6 +162,8 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
       editSummary: null,
       preservation: null,
       transformationQuality: null,
+      languageQuality: null,
+      inferredSection: inferSectionFromHeading(c.heading),
       error: null,
       attempts: 0,
     })),
@@ -184,6 +193,7 @@ export async function retryChunk(jobId, chunkIndex) {
   chunk.status = "queued";
   chunk.error = null;
   chunk.transformationQuality = null;
+  chunk.languageQuality = null;
   job.status = "processing";
   job.reassembledText = null;
   job.documentPreservation = null;
@@ -213,6 +223,7 @@ export function summarizeJob(job) {
     chunks: job.chunks.map((c) => ({
       index: c.index,
       heading: c.heading,
+      inferredSection: c.inferredSection,
       wordCount: c.wordCount,
       status: c.status,
       attempts: c.attempts,
@@ -220,6 +231,7 @@ export function summarizeJob(job) {
       editSummary: c.editSummary,
       preservation: c.preservation,
       transformationQuality: c.transformationQuality,
+      languageQuality: c.languageQuality,
     })),
     reassembledText: job.reassembledText,
     documentPreservation: job.documentPreservation,
