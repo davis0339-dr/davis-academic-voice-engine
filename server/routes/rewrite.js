@@ -2,6 +2,7 @@ import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { rewrite } from "../lib/pipeline.js";
 import { llmProvider } from "../lib/llmProvider.js";
+import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 
 export const rewriteRouter = Router();
 
@@ -24,6 +25,18 @@ rewriteRouter.post("/rewrite", async (req, res) => {
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string.", requestId });
+  }
+
+  try {
+    enforceWordLimit(text, SINGLE_EDITOR_WORD_LIMIT, "Single-text editor");
+  } catch (err) {
+    return res.status(413).json({
+      error: err.code,
+      message: `${err.message} Use Long Document for larger material.`,
+      wordCount: err.wordCount,
+      wordLimit: err.wordLimit,
+      requestId,
+    });
   }
 
   if (!llmProvider.isConfigured()) {
