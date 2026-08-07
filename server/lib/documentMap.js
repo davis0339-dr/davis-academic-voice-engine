@@ -1,26 +1,24 @@
-// Phase 3 (Section 14, point 2): "build document map: title/section
-// hierarchy, abbreviations, terminology, variables, citation list and key
-// claims." This build implements the structural/terminology parts with
-// regex heuristics (heading detection, acronym-expansion pairs) and reuses
-// Pass A's span extraction for the document-wide citation/number/quote
-// list. "Key claims" extraction (semantic, not structural) is out of scope
-// for this pass -- see README limitations.
-
 import { extractProtectedSpans } from "./protect.js";
 
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+)$/;
 const NUMBERED_HEADING = /^(\d+(?:\.\d+)*)\s+([A-Z][^.!?]{2,80})$/;
 const ALLCAPS_HEADING = /^[A-Z][A-Z0-9 ,'&\-:]{2,79}$/;
+const SMALL_TITLE_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "vs", "with"]);
 
-// "Full Term (ACR)" or "ACR (Full Term)". Two constraints keep this from
-// over-matching into surrounding prose: (1) word separators are restricted
-// to spaces/tabs (not \s, which also matches newlines), so a match can
-// never span a paragraph/heading break; (2) EVERY word of the term must be
-// Title Case, matching how academic writing actually defines an
-// abbreviation ("Board Independence (BI)", not "board independence (BI)")
-// -- allowing lowercase continuation words let the match run backward into
-// an unrelated sentence-initial capital. See tests/documentMap.test.js for
-// the regressions these two constraints guard against.
+function isShortTitleCaseHeading(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length > 60 || /[.!?;,]$/.test(trimmed)) return false;
+  const words = trimmed.split(/\s+/);
+  if (words.length < 1 || words.length > 6) return false;
+
+  return words.every((word, index) => {
+    const bare = word.replace(/^[('"“]+|[)'"”:]$/g, "");
+    if (!bare) return false;
+    if (index > 0 && SMALL_TITLE_WORDS.has(bare.toLowerCase())) return true;
+    return /^[A-Z][A-Za-z0-9&/'-]*$/.test(bare) || /^[A-Z]{2,6}$/.test(bare);
+  });
+}
+
 const ACRONYM_EXPANSION_A = /\b([A-Z][a-zA-Z'-]*(?:[ \t]+[A-Z][a-zA-Z'-]*){0,5})[ \t]+\(([A-Z]{2,6})\)/g;
 const ACRONYM_EXPANSION_B = /\b([A-Z]{2,6})[ \t]+\(([A-Z][a-zA-Z'-]*(?:[ \t]+[A-Z][a-zA-Z'-]*){0,5})\)/g;
 
@@ -38,6 +36,10 @@ function headingLevel(line) {
     return { level: 1, text: line.trim(), style: "allcaps" };
   }
 
+  if (isShortTitleCaseHeading(line)) {
+    return { level: 3, text: line.trim(), style: "titlecase" };
+  }
+
   return null;
 }
 
@@ -49,11 +51,9 @@ function detectHeadings(fullText) {
     const trimmed = line.trim();
     if (trimmed.length > 0) {
       const detected = headingLevel(trimmed);
-      if (detected) {
-        headings.push({ offset, lineText: line, ...detected });
-      }
+      if (detected) headings.push({ offset, lineText: line, ...detected });
     }
-    offset += line.length + 1; // +1 for the '\n' removed by split
+    offset += line.length + 1;
   }
   return headings;
 }
