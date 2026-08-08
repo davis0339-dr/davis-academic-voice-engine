@@ -48,7 +48,6 @@ export function securityHeaders(req, res, next) {
       "connect-src 'self' https://cdn.jsdelivr.net",
       "worker-src 'self' blob: https://cdn.jsdelivr.net",
       "manifest-src 'self'",
-      "upgrade-insecure-requests",
     ].join("; ")
   );
 
