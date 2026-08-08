@@ -102,14 +102,24 @@
   document.head.appendChild(style);
 })();
 
-// Load the research-only detector comparison layer after all existing fetch
-// wrappers have installed so it can observe configured detector scans without
-// changing the rewrite pipeline itself.
+// Load the detector research comparison layer. Live third-party scanning is
+// disabled server-side; this UI only supports first-party pattern analysis and
+// manually recorded external observations.
 (() => {
   if (document.querySelector('script[data-detector-research-ui="true"]')) return;
   const script = document.createElement("script");
   script.src = "/detectorResearchUI.js";
   script.dataset.detectorResearchUi = "true";
+  script.defer = true;
+  document.head.appendChild(script);
+})();
+
+// Load the researcher-led reasoning workspace after the existing editor shell.
+(() => {
+  if (document.querySelector('script[data-research-studio-ui="true"]')) return;
+  const script = document.createElement("script");
+  script.src = "/researchStudioUI.js";
+  script.dataset.researchStudioUi = "true";
   script.defer = true;
   document.head.appendChild(script);
 })();
