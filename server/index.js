@@ -34,10 +34,12 @@ app.use(securityHeaders);
 // Apply abuse controls before reading potentially expensive request bodies.
 app.use("/api", generalApiLimiter, enforceSameOrigin, protectExpensiveApi, expensiveConcurrencyGate);
 
-// Long-document jobs need more room than the single editor, but neither surface
-// accepts the previous unrestricted 10 MB JSON body. Word-count limits still apply
-// inside the routes after parsing.
+// Long-document jobs need more room than the single editor. A detector-result
+// screenshot is separately bounded to one PNG/JPEG with a 2 MB decoded image
+// limit; base64 expansion requires a slightly larger JSON envelope. All other
+// API surfaces retain the smaller generic JSON limit.
 app.use("/api/jobs", express.json({ limit: "1mb", strict: true, type: "application/json" }));
+app.use("/api/detector-screenshot", express.json({ limit: "3mb", strict: true, type: "application/json" }));
 app.use("/api", express.json({ limit: "512kb", strict: true, type: "application/json" }));
 app.use(jsonBodyErrorHandler);
 app.use("/api", validateApiPayload);
