@@ -13,6 +13,7 @@ import { assessTransformationQuality } from "./transformationQuality.js";
 import { measureLanguageFingerprint } from "./languageFingerprint.js";
 import { assessLanguageDeviation } from "./languageFamilyEngine.js";
 import { getBuildInfo } from "./buildInfo.js";
+import { parseStructuredResponseText, buildJsonRepairSystemPrompt } from "./modelResponse.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
 
@@ -53,6 +54,12 @@ export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarInt
     diagnostics: {
       generic_phrasing: diagnostics.generic_phrasing,
       structural_monotony: diagnostics.structural_monotony,
+      paragraph_patterns: diagnostics.paragraph_patterns,
+      rhetorical_scaffolding: diagnostics.rhetorical_scaffolding,
+      text_structure: diagnostics.text_structure,
+      discourse_architecture: diagnostics.discourse_architecture,
+      qualitative_human_discourse: diagnostics.qualitative_human_discourse,
+      contrastive_language: diagnostics.contrastive_language,
       cohesion: diagnostics.cohesion,
       evidence_alignment: diagnostics.evidence_alignment,
       cadence_deviation: cadenceDeviation,
@@ -69,12 +76,6 @@ export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarInt
       message: profileResolution.message,
     },
   };
-}
-
-function stripCodeFence(text) {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-  return fenced ? fenced[1] : trimmed;
 }
 
 export function sanitiseProse(text) {
@@ -106,16 +107,42 @@ async function runModelPass({ systemPrompt, sourceText }) {
     maxTokens: 4096,
   });
 
-  let parsed;
-  try {
-    parsed = JSON.parse(stripCodeFence(llmResult.text));
-  } catch (e) {
-    const err = new Error(`Model did not return valid JSON: ${e.message}`);
+  if (llmResult.raw?.stop_reason === "max_tokens") {
+    const err = new Error("Model response was truncated before the structured revision completed.");
+    err.code = "MODEL_RESPONSE_TRUNCATED";
+    throw err;
+  }
+
+  let parseResult = parseStructuredResponseText(llmResult.text);
+  let responseRepairUsed = false;
+
+  if (!parseResult.ok) {
+    // One syntax-only recovery attempt. This is intentionally separate from the
+    // writing/rewrite retries: it repairs JSON transport syntax, not prose.
+    const repairResult = await llmProvider.callAnthropic({
+      system: buildJsonRepairSystemPrompt(),
+      messages: [{ role: "user", content: llmResult.text }],
+      maxTokens: 4096,
+    });
+    if (repairResult.raw?.stop_reason === "max_tokens") {
+      const err = new Error("JSON syntax recovery was truncated before completion.");
+      err.code = "MODEL_RESPONSE_REPAIR_TRUNCATED";
+      throw err;
+    }
+    parseResult = parseStructuredResponseText(repairResult.text);
+    responseRepairUsed = true;
+  }
+
+  if (!parseResult.ok) {
+    const err = new Error(`Model did not return valid JSON after one syntax-recovery attempt: ${parseResult.error?.message || "unknown parse error"}`);
+    // Keep raw provider text available to server-side error handling/debugging;
+    // normal UI should surface only the concise error message/code.
     err.rawResponse = llmResult.text;
     err.code = "INVALID_MODEL_RESPONSE";
     throw err;
   }
 
+  const parsed = parseResult.parsed;
   const shapeErrors = validateShape(parsed);
   if (shapeErrors.length > 0) {
     const err = new Error(`Model response failed schema validation: ${shapeErrors.join("; ")}`);
@@ -125,6 +152,8 @@ async function runModelPass({ systemPrompt, sourceText }) {
   }
 
   parsed.revised_text = sanitiseProse(parsed.revised_text);
+  parsed.__response_repair_used = responseRepairUsed;
+  parsed.__response_envelope_recovered = parseResult.recovered;
   return parsed;
 }
 
@@ -150,7 +179,7 @@ function qualityCorrectionBlock(quality) {
     "Change information packaging: vary which idea becomes the grammatical subject, move causes/conditions/qualifications to different positions, combine evidence and interpretation differently, and use genuinely different clause architecture.",
     "Keep the substantive transformation, but repair any overcorrection. Do not solve structural similarity by chopping the prose into strings of very short sentences.",
     "Use sustained postgraduate academic prose: formal but readable, with mostly medium and long sentences and occasional short emphasis. Merge neighbouring short statements where they express one analytical idea.",
-    "Do not introduce second-person address, contractions, idioms, journalistic phrasing, slang, or conversational metaphors.",
+    "Do not introduce second-person address, contractions, decorative idioms, journalistic phrasing, slang, or conversational metaphors.",
     "Preserve the argument and broad-to-narrow academic progression, but not the source's sentence-by-sentence wording or clause sequence.",
     "No complete source sentence should survive verbatim unless it is a protected quotation or cannot be safely changed without altering a protected claim.",
     "Preserve every citation, number, quotation, technical term and factual relationship exactly. Do not add any fact or citation.",
@@ -245,6 +274,8 @@ export async function rewrite({
   let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
   let qualityRetryUsed = false;
   let rescueRetryUsed = false;
+  let responseRepairUsed = Boolean(parsed.__response_repair_used);
+  let responseEnvelopeRecovered = Boolean(parsed.__response_envelope_recovered);
   let firstAttemptQuality = null;
   let preRescueQuality = null;
 
@@ -256,6 +287,8 @@ export async function rewrite({
     });
     const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, qOptions);
     qualityRetryUsed = true;
+    responseRepairUsed = responseRepairUsed || Boolean(corrected.__response_repair_used);
+    responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(corrected.__response_envelope_recovered);
 
     const correctedIsBetter = correctedQuality.passed || candidateScore(correctedQuality, corrected.revised_text, measuredLanguageFamily) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily);
     if (correctedIsBetter) {
@@ -281,6 +314,8 @@ export async function rewrite({
     });
     const rescuedQuality = assessTransformationQuality(sourceText, rescued.revised_text, naturalisationLevel, qOptions);
     rescueRetryUsed = true;
+    responseRepairUsed = responseRepairUsed || Boolean(rescued.__response_repair_used);
+    responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(rescued.__response_envelope_recovered);
 
     if (rescuedQuality.passed || candidateScore(rescuedQuality, rescued.revised_text, measuredLanguageFamily) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily)) {
       parsed = rescued;
@@ -302,6 +337,10 @@ export async function rewrite({
     style_profile_used: analysis.style_profile_used,
     edit_summary: parsed.edit_summary,
     intervention_plan_summary: analysis.plan.summary,
+    intervention_intent: analysis.plan.intent,
+    paragraph_plan_summary: analysis.plan.paragraphSummary,
+    planner_version: analysis.plan.plannerVersion,
+    planner_sequence: analysis.plan.sequence,
     preservation,
     transformation_quality: {
       ...transformationQuality,
@@ -309,6 +348,11 @@ export async function rewrite({
       rescue_retry_used: rescueRetryUsed,
       first_attempt: firstAttemptQuality,
       pre_rescue_attempt: preRescueQuality,
+    },
+    model_response_recovery: {
+      syntax_repair_used: responseRepairUsed,
+      envelope_recovery_used: responseEnvelopeRecovered,
+      max_syntax_repair_attempts: 1,
     },
     language_quality: {
       measurement_version: revisedLanguageFingerprint.measurement_version,
@@ -337,6 +381,13 @@ export async function rewrite({
       measured_language_family_guidance: naturalisationLevel !== "off",
       measured_language_soft_candidate_selection: naturalisationLevel === "aggressive",
       final_academic_rescue: naturalisationLevel === "aggressive",
+      hierarchical_intent_planning: true,
+      paragraph_discourse_planning: true,
+      discourse_architecture_diagnostics: true,
+      semantic_text_structure: true,
+      scholarly_trace_preservation: true,
+      evidence_assembled_reasoning_guidance: true,
+      response_syntax_recovery: true,
       human_family_measured_sources: humanCadence?.measuredSources ?? 0,
       measured_language_pilot_sources: measuredLanguageFamily?.measured_document_count ?? 0,
     },
