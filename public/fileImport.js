@@ -28,17 +28,94 @@
     return promise;
   }
 
+  function cleanInlineText(value) {
+    return String(value || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\s+([,.;:!?])/g, "$1")
+      .trim();
+  }
+
+  // Mammoth's extractRawText is convenient but discards too much document
+  // structure for academic long-form editing: Word headings lose their role
+  // and table cells become ambiguous loose lines. Convert to HTML first, then
+  // serialize academic block structure deliberately. This keeps headings and
+  // table rows distinct while preserving the exact text inside cells (including
+  // numeric ranges such as 2015-2024 and NAICS 31-33).
+  function htmlToAcademicText(html) {
+    const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+    const out = [];
+
+    function emitBlock(text) {
+      const cleaned = cleanInlineText(text);
+      if (cleaned) out.push(cleaned, "");
+    }
+
+    function visit(node) {
+      if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
+      const tag = node.tagName.toLowerCase();
+
+      if (/^h[1-6]$/.test(tag)) {
+        emitBlock(node.textContent);
+        return;
+      }
+
+      if (tag === "table") {
+        const rows = Array.from(node.querySelectorAll(":scope > tbody > tr, :scope > thead > tr, :scope > tr"));
+        const usableRows = rows.length ? rows : Array.from(node.querySelectorAll("tr"));
+        for (const row of usableRows) {
+          const cells = Array.from(row.children)
+            .filter((cell) => /^(td|th)$/i.test(cell.tagName))
+            .map((cell) => cleanInlineText(cell.textContent));
+          if (cells.some(Boolean)) out.push(cells.join("\t"));
+        }
+        out.push("");
+        return;
+      }
+
+      if (tag === "p" || tag === "blockquote") {
+        emitBlock(node.textContent);
+        return;
+      }
+
+      if (tag === "ul" || tag === "ol") {
+        for (const li of Array.from(node.children).filter((child) => child.tagName?.toLowerCase() === "li")) {
+          const text = cleanInlineText(li.textContent);
+          if (text) out.push(`- ${text}`);
+        }
+        out.push("");
+        return;
+      }
+
+      // Mammoth can wrap blocks in div/section-like containers. Traverse those
+      // without flattening their descendants into one line.
+      for (const child of Array.from(node.children || [])) visit(child);
+    }
+
+    for (const child of Array.from(doc.body.children)) visit(child);
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
   async function readPlain(file) {
     return (await file.text()).replace(/\r\n/g, "\n").trim();
   }
 
   async function readDocx(file) {
-    await loadScript(MAMMOTH_SRC, () => Boolean(window.mammoth?.extractRawText));
+    await loadScript(MAMMOTH_SRC, () => Boolean(window.mammoth?.convertToHtml || window.mammoth?.extractRawText));
     const arrayBuffer = await file.arrayBuffer();
-    const result = await window.mammoth.extractRawText({ arrayBuffer });
-    const text = String(result.value || "").replace(/\r\n/g, "\n").trim();
+
+    if (window.mammoth?.convertToHtml) {
+      const result = await window.mammoth.convertToHtml({ arrayBuffer });
+      const text = htmlToAcademicText(result.value);
+      if (text) return { text, warnings: result.messages || [] };
+    }
+
+    // Conservative fallback for unusual DOCX files where HTML conversion
+    // yields no usable content.
+    const fallback = await window.mammoth.extractRawText({ arrayBuffer });
+    const text = String(fallback.value || "").replace(/\r\n/g, "\n").trim();
     if (!text) throw new Error("No readable text was found in this Word document.");
-    return { text, warnings: result.messages || [] };
+    return { text, warnings: fallback.messages || [] };
   }
 
   async function readPdf(file) {
