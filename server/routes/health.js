@@ -18,13 +18,18 @@ healthRouter.get("/health", (_req, res) => {
       singleEditorWordLimit: SINGLE_EDITOR_WORD_LIMIT,
       longDocumentWordLimit: LONG_DOCUMENT_WORD_LIMIT,
       uploadFileSizeLimitBytes: UPLOAD_FILE_SIZE_LIMIT_BYTES,
-      uploadFormats: ["txt", "md", "docx", "pdf"],
+      uploadFormats: ["txt", "md", "docx", "pdf", "csv", "xlsx"],
+      evidenceWorkspaceSourceLimit: 8,
+      evidenceWorkspaceSourceTextCapCharacters: 40000,
+      researcherStudio: true,
+      argumentIntegrityCheck: true,
+      liveThirdPartyDetectors: false,
       longDocumentPersistence: "in_memory",
     },
   });
 });
 
-// Section 19.3: fail fast, small enumerated state set, no indefinite spinner.
+// Fail fast, small enumerated state set, no indefinite spinner.
 healthRouter.get("/health/llm", async (_req, res) => {
   const result = await llmProvider.checkHealth();
   const httpStatus = result.state === "READY" ? 200 : result.state === "NOT_CONFIGURED" ? 200 : 502;
