@@ -4,7 +4,7 @@ import { createJob, getJob, summarizeJob } from "../server/lib/jobStore.js";
 
 const DOC = `Title\n\n1 Introduction\n\nSome introductory text about firms (Smith, 2020).\n\n2 Conclusion\n\nA short concluding paragraph with 42% and 187 firms.\n`;
 
-function waitForCompletion(jobId, timeoutMs = 5000) {
+function waitForStop(jobId, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const poll = () => {
@@ -19,51 +19,50 @@ function waitForCompletion(jobId, timeoutMs = 5000) {
   });
 }
 
-test("a job created with no ANTHROPIC_API_KEY configured fails every chunk but still reassembles, losing nothing", async () => {
+test("a job with no provider configuration stops after the first blocking error instead of failing every queued chunk", async () => {
   const originalKey = process.env.ANTHROPIC_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
   try {
     const job = createJob({ text: DOC, styleFilters: {}, rewriteIntensity: "auto", grammarIntensity: "standard", lengthPreference: "auto" });
-    const finished = await waitForCompletion(job.id);
+    const stopped = await waitForStop(job.id);
 
-    assert.equal(finished.status, "completed_with_errors");
-    assert.ok(finished.chunks.every((c) => c.status === "failed"));
-    assert.ok(finished.chunks.every((c) => c.error && c.error.code === "NOT_CONFIGURED"));
-
-    for (const citation of finished.documentMap.protectedSpans.citations) {
-      assert.ok(finished.reassembledText.includes(citation), `expected reassembled text to still contain ${citation}`);
-    }
+    assert.equal(stopped.status, "failed");
+    assert.equal(stopped.providerBlock?.code, "NOT_CONFIGURED");
+    assert.equal(stopped.chunks.filter((c) => c.status === "failed").length, 1);
+    assert.ok(stopped.chunks.some((c) => c.status === "queued"));
+    assert.equal(stopped.reassembledText, null);
+    assert.equal(stopped.documentPreservation, null);
   } finally {
     if (originalKey !== undefined) process.env.ANTHROPIC_API_KEY = originalKey;
   }
 });
 
-test("fallback markers do not inject numeric chunk indexes that create false preservation warnings", async () => {
+test("a provider-blocked job does not fabricate fallback markers or a misleading document-level preservation audit", async () => {
   const originalKey = process.env.ANTHROPIC_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
   try {
     const job = createJob({ text: DOC, styleFilters: {}, rewriteIntensity: "auto", grammarIntensity: "standard", lengthPreference: "auto" });
-    const finished = await waitForCompletion(job.id);
+    const stopped = await waitForStop(job.id);
 
-    assert.ok(!finished.reassembledText.includes("chunk 0"));
-    const introducedZero = finished.documentPreservation.warnings.some(
-      (w) => w.type === "new_numeric_value_introduced" && /:\s*0(?:\D|$)/.test(w.detail)
-    );
-    assert.equal(introducedZero, false);
+    assert.equal(stopped.reassembledText, null);
+    assert.equal(stopped.documentPreservation, null);
+    assert.equal(stopped.providerBlock?.code, "NOT_CONFIGURED");
   } finally {
     if (originalKey !== undefined) process.env.ANTHROPIC_API_KEY = originalKey;
   }
 });
 
-test("summarizeJob exposes progress counts consistent with chunk statuses", async () => {
+test("summarizeJob exposes one blocking failure while preserving remaining chunks as queued", async () => {
   const originalKey = process.env.ANTHROPIC_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
   try {
     const job = createJob({ text: DOC, styleFilters: {}, rewriteIntensity: "auto", grammarIntensity: "standard", lengthPreference: "auto" });
-    await waitForCompletion(job.id);
+    await waitForStop(job.id);
     const summary = summarizeJob(getJob(job.id));
     assert.equal(summary.progress.chunkCount, summary.chunks.length);
-    assert.equal(summary.progress.failedCount, summary.chunks.length);
+    assert.equal(summary.progress.failedCount, 1);
+    assert.equal(summary.providerBlock?.code, "NOT_CONFIGURED");
+    assert.ok(summary.chunks.some((c) => c.status === "queued"));
   } finally {
     if (originalKey !== undefined) process.env.ANTHROPIC_API_KEY = originalKey;
   }
