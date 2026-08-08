@@ -4,6 +4,8 @@ import { rewrite } from "../lib/pipeline.js";
 import { assessExecutionCompliance, preferByExecutionCompliance } from "../lib/executionCompliance.js";
 import { selectiveResidualRework } from "../lib/residualRework.js";
 import { resolveRewriteModePolicy } from "../lib/rewriteModePolicy.js";
+import { assessSourceBeforeRewrite } from "../lib/sourceAssessment.js";
+import { deriveInterventionAuthority } from "../lib/interventionAuthority.js";
 import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 
@@ -31,7 +33,11 @@ function qualityPipelineAlreadyRetried(result) {
 
 function finalCandidateStatus(compliance, residual) {
   if (!compliance?.execution_passed && !compliance?.preservation_ok) return "execution_and_preservation_failed";
-  if (!compliance?.execution_passed) return "execution_under";
+  if (!compliance?.execution_passed) {
+    if (compliance?.execution_status === "over-executed") return "execution_over";
+    if (compliance?.execution_status === "conflicting-execution") return "execution_conflict";
+    return "execution_under";
+  }
   if (!compliance?.preservation_ok) return "preservation_failed";
   if (residual?.attempted && !residual?.accepted && residual?.before?.should_rework) return "accepted_with_residual_risks";
   return "accepted";
@@ -40,7 +46,6 @@ function finalCandidateStatus(compliance, residual) {
 rewriteRouter.post("/rewrite", async (req, res) => {
   const requestId = randomUUID();
   const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation } = req.body || {};
-  const modePolicy = resolveRewriteModePolicy({ rewriteIntensity, naturalisation });
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string.", requestId });
@@ -66,6 +71,15 @@ rewriteRouter.post("/rewrite", async (req, res) => {
     });
   }
 
+  // Source texture is assessed BEFORE the rewrite mode is resolved. This means
+  // human-corpus-like writing can constrain breadth before the model is called.
+  const sourceAssessment = assessSourceBeforeRewrite({ text, styleFilters: styleFilters || {} });
+  const modePolicy = resolveRewriteModePolicy({
+    rewriteIntensity,
+    naturalisation,
+    authorialTexture: sourceAssessment.authorial_texture,
+  });
+
   const runRewrite = () => rewrite({
     sourceText: text,
     styleFilters: styleFilters || {},
@@ -75,11 +89,32 @@ rewriteRouter.post("/rewrite", async (req, res) => {
     naturalisation: modePolicy.effective_naturalisation,
   });
 
+  function enrichForCompliance(result) {
+    const authority = deriveInterventionAuthority({
+      planSummary: result.intervention_plan_summary,
+      authorialTexture: sourceAssessment.authorial_texture,
+      requestedIntensity: modePolicy.requested_intensity,
+      requestedNaturalisation: modePolicy.requested_naturalisation,
+      effectiveIntent: result.intervention_intent?.effective,
+    });
+    return {
+      ...result,
+      authorial_texture: sourceAssessment.authorial_texture,
+      intervention_authority: authority,
+      source_assessment: {
+        authorial_texture: sourceAssessment.authorial_texture,
+        cadence_deviation: sourceAssessment.cadence_deviation,
+        measured_language_deviation: sourceAssessment.measured_language_deviation,
+        note: "Pre-generation source assessment constrains rewrite breadth. It is a preservation/style assessment, not proof of authorship.",
+      },
+    };
+  }
+
   let attempt = 0;
   let lastErr;
   while (attempt <= MAX_RETRIES) {
     try {
-      let result = await runRewrite();
+      let result = enrichForCompliance(await runRewrite());
 
       let executionCompliance = assessExecutionCompliance(result);
       let reconciliationRetryUsed = false;
@@ -89,17 +124,18 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       let firstAttemptCompliance = null;
       let selectedAttempt = "first";
 
-      // Execution reconciliation is only about insufficient plan execution.
-      // Preservation failures no longer masquerade as under-execution.
+      // Reconciliation retries address UNDER-execution only. A model that edited
+      // too much must not be rewarded with another broad whole-document rewrite.
       if (
-        !executionCompliance.execution_passed &&
+        executionCompliance.under_executed &&
+        !executionCompliance.over_executed &&
         modePolicy.effective_naturalisation !== "off" &&
         !qualityPipelineAlreadyRetried(result)
       ) {
         firstAttemptCompliance = executionCompliance;
         reconciliationRetryUsed = true;
         try {
-          const secondResult = await runRewrite();
+          const secondResult = enrichForCompliance(await runRewrite());
           const preferred = preferByExecutionCompliance(result, secondResult);
           result = preferred.result;
           executionCompliance = preferred.compliance;
@@ -112,12 +148,11 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         }
       }
 
-      // If the candidate executed deeply but damaged protected content, make one
-      // bounded fresh attempt. Factual preservation has priority over rewrite depth.
+      // If protected content was damaged, make one bounded fresh attempt.
       if (!executionCompliance.preservation_ok && !reconciliationRetryUsed) {
         preservationRecoveryUsed = true;
         try {
-          const recoveryResult = await runRewrite();
+          const recoveryResult = enrichForCompliance(await runRewrite());
           const preferred = preferByExecutionCompliance(result, recoveryResult);
           result = preferred.result;
           executionCompliance = preferred.compliance;
@@ -130,10 +165,8 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         }
       }
 
-      // Dynamic second stage: diagnose the revised candidate itself and repair
-      // only residual problematic paragraphs. Unaffected paragraphs are locked.
-      // The selective result is accepted only if residual risk falls AND all
-      // factual/preservation safeguards still pass.
+      // Dynamic second stage: only after execution breadth/depth and preservation
+      // are acceptable do we repair residual machine-shaped discourse locally.
       let residualRework = null;
       if (
         executionCompliance.execution_passed &&
@@ -185,18 +218,22 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         ...(result.naturalisation_applied || {}),
         requested_level: modePolicy.requested_naturalisation,
         effective_generation_level: modePolicy.effective_naturalisation,
+        requested_intensity: modePolicy.requested_intensity,
+        effective_generation_intensity: modePolicy.effective_intensity,
         adaptive_human_reconstruction: modePolicy.adaptive_reconstruction,
+        authorial_preservation_priority: sourceAssessment.authorial_texture?.preservation_priority,
         universal_rewrite_authorised: modePolicy.universal_rewrite_authorised,
+        depth_permission: modePolicy.depth_permission,
         policy: modePolicy.policy,
       };
       result.candidate_verdict = {
-        execution: executionCompliance.execution_passed ? "passed" : "under-executed",
+        execution: executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
         preservation: executionCompliance.preservation_ok ? "passed" : "failed",
         residual: residualRework?.attempted
           ? (residualRework.accepted ? "improved" : "unresolved_or_rejected")
           : "not_required",
         final_status: finalCandidateStatus(executionCompliance, residualRework),
-        note: "Final status separates plan execution, factual preservation and residual writing-quality risk. Aggressive mode is permission for selective deep reconstruction, not compulsory rewriting, and a deeper rewrite is never preferred solely because it changes more text.",
+        note: "Final status separates minimum execution, maximum authorised breadth, factual preservation and residual writing-quality risk. Strong existing authorial texture narrows breadth; Deep/Aggressive remains permission for deep repair only where diagnostics justify it.",
       };
 
       return res.json({ ...result, requestId });
