@@ -2,12 +2,37 @@ import { extractProtectedSpans } from "./protect.js";
 
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+)$/;
 const NUMBERED_HEADING = /^(\d+(?:\.\d+)*)\s+([A-Z][^.!?]{2,80})$/;
+const RESEARCH_QUESTION_HEADING = /^Research Question\s+\d+(?:[A-Za-z])?$/i;
 const ALLCAPS_HEADING = /^[A-Z][A-Z0-9 ,'&\-:]{2,79}$/;
 const SMALL_TITLE_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "vs", "with"]);
+const NON_HEADING_TABLE_LABELS = new Set([
+  "variable",
+  "operational measure",
+  "role",
+  "expected relation",
+  "element",
+  "evidence",
+  "analytic response",
+  "research question and focus",
+  "stage",
+  "core activities",
+  "duration",
+  "target",
+  "independent",
+  "dependent",
+  "control",
+  "robustness",
+  "n/a",
+  "negative expected",
+  "positive expected",
+  "potentially nonlinear",
+  "indeterminate",
+]);
 
 function isShortTitleCaseHeading(line) {
   const trimmed = line.trim();
   if (!trimmed || trimmed.length > 60 || /[.!?;,]$/.test(trimmed)) return false;
+  if (NON_HEADING_TABLE_LABELS.has(trimmed.toLowerCase())) return false;
   const words = trimmed.split(/\s+/);
   if (words.length < 1 || words.length > 6) return false;
 
@@ -23,6 +48,9 @@ const ACRONYM_EXPANSION_A = /\b([A-Z][a-zA-Z'-]*(?:[ \t]+[A-Z][a-zA-Z'-]*){0,5})
 const ACRONYM_EXPANSION_B = /\b([A-Z]{2,6})[ \t]+\(([A-Z][a-zA-Z'-]*(?:[ \t]+[A-Z][a-zA-Z'-]*){0,5})\)/g;
 
 function headingLevel(line) {
+  const trimmed = line.trim();
+  if (NON_HEADING_TABLE_LABELS.has(trimmed.toLowerCase())) return null;
+
   const md = line.match(MARKDOWN_HEADING);
   if (md) return { level: md[1].length, text: md[2].trim(), style: "markdown" };
 
@@ -32,12 +60,16 @@ function headingLevel(line) {
     return { level: depth, text: `${numbered[1]} ${numbered[2]}`.trim(), style: "numbered" };
   }
 
-  if (ALLCAPS_HEADING.test(line.trim()) && line.trim().split(/\s+/).length <= 8) {
-    return { level: 1, text: line.trim(), style: "allcaps" };
+  if (RESEARCH_QUESTION_HEADING.test(trimmed)) {
+    return { level: 3, text: trimmed, style: "research_question" };
+  }
+
+  if (ALLCAPS_HEADING.test(trimmed) && trimmed.split(/\s+/).length <= 8) {
+    return { level: 1, text: trimmed, style: "allcaps" };
   }
 
   if (isShortTitleCaseHeading(line)) {
-    return { level: 3, text: line.trim(), style: "titlecase" };
+    return { level: 3, text: trimmed, style: "titlecase" };
   }
 
   return null;
