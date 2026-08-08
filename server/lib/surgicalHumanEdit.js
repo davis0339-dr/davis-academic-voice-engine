@@ -11,9 +11,13 @@ const ALLOWED_CATEGORIES = new Set([
   "possessive",
   "word_form",
   "preposition_idiom",
+  "idiom_usage",
   "punctuation",
   "local_clarity",
+  "sentence_grammar_repair",
 ]);
+
+const CLEAR_SEVERITIES = new Set(["clear", "required", "high"]);
 
 function countOccurrences(text, needle) {
   if (!needle) return 0;
@@ -26,6 +30,19 @@ function countOccurrences(text, needle) {
     start = index + Math.max(1, needle.length);
   }
   return count;
+}
+
+function occurrencePositions(text, needle) {
+  const positions = [];
+  if (!needle) return positions;
+  let start = 0;
+  while (true) {
+    const index = text.indexOf(needle, start);
+    if (index < 0) break;
+    positions.push(index);
+    start = index + Math.max(1, needle.length);
+  }
+  return positions;
 }
 
 function tokens(text) {
@@ -74,20 +91,47 @@ function editPreservesProtected(edit, spans) {
   return true;
 }
 
-function buildSystemPrompt({ maxEdits }) {
+function buildSystemPrompt({ maxEdits, pass = 1, targetHint = null, priorEdits = [], rejectedEdits = [] }) {
+  const passInstruction = pass === 1
+    ? [
+        "Perform an exhaustive sentence-by-sentence defect scan before proposing edits.",
+        "Do NOT confuse preservation with leaving grammatical mistakes untouched. Every clear grammar, agreement, determiner, singular/plural, possessive, word-form, preposition/idiom or genuinely local clarity defect should be reported, up to the edit ceiling.",
+      ]
+    : [
+        "This is an omission-audit pass. A first pass has already proposed some edits. Scan the source again specifically for CLEAR defects that were missed.",
+        "Do not repeat a prior proposal unless you can express the same correction with a smaller, safer or uniquely anchored source span.",
+        "Do not manufacture edits to satisfy a numeric target. If no additional clear defect exists, return an empty edits array.",
+      ];
+
+  const priorSummary = priorEdits.length
+    ? `Prior proposals already considered: ${priorEdits.slice(0, 24).map((e) => JSON.stringify({ source_span: e.source_span, replacement: e.replacement, category: e.category })).join(" | ")}`
+    : "";
+  const rejectedSummary = rejectedEdits.length
+    ? `Some earlier proposals were rejected by deterministic safeguards. If the underlying correction is genuinely necessary, re-propose it using a narrower exact span or better local anchoring: ${rejectedEdits.slice(0, 16).map((e) => JSON.stringify({ source_span: e.source_span, rejected_reason: e.rejected_reason })).join(" | ")}`
+    : "";
+  const targetLine = Number.isFinite(Number(targetHint)) && Number(targetHint) > 0
+    ? `The earlier planner identified about ${Number(targetHint)} sentences requiring intervention. Treat this only as an omission-checking clue, NEVER as a quota.`
+    : "";
+
   return [
-    "You are a surgical academic copy editor working on text that already has strong authorial texture.",
-    "Your job is NOT to rewrite the document, modernise its style, increase sophistication, vary wording for its own sake, or make it sound more polished.",
-    "Identify only objective or near-objective local defects whose correction improves correctness or clarity while preserving the writer's wording, rhythm, sequencing, examples, citations and scholarly personality.",
-    "Allowed edit categories are: grammar_agreement, article_determiner, singular_plural, possessive, word_form, preposition_idiom, punctuation, local_clarity.",
-    "Do not propose paragraph reordering, new transitions, new examples, new claims, new citations, synonym substitution for elegance, nominalisation, rhetorical tightening, stylistic upgrading, or sentence reconstruction merely because an alternative sounds more academic.",
-    "For local_clarity, change the smallest possible span. Do not replace a whole sentence when a clause or phrase can be repaired.",
-    "Every edit must quote an exact SOURCE SPAN copied verbatim from the user text. The source span should normally be between 2 and 35 words and must be uniquely identifiable.",
-    "The replacement must preserve all numbers, citations, quotations, acronyms, technical terms, factual relationships and study-stage meaning contained in that span.",
-    `Return at most ${maxEdits} edits. If the passage genuinely needs fewer edits, return fewer. If no safe local correction is justified, return an empty edits array.`,
+    "You are a defect-led academic copy editor working on text that already has strong authorial texture.",
+    "Your task is to CORRECT genuine defects while preserving the writer. It is not to polish clean prose, standardise personality, modernise style, inflate vocabulary, or make every sentence sound publication-ready.",
+    ...passInstruction,
+    "Allowed categories: grammar_agreement, article_determiner, singular_plural, possessive, word_form, preposition_idiom, idiom_usage, punctuation, local_clarity, sentence_grammar_repair.",
+    "Mark severity as clear when a correction is genuinely warranted by grammar/usage/meaning. Mark optional only when the source is acceptable and the change is merely stylistic. Optional edits will normally be rejected downstream.",
+    "For local_clarity, alter the smallest possible phrase or clause. sentence_grammar_repair may replace a full sentence only when the sentence is grammatically malformed and a phrase-level patch cannot repair it safely.",
+    "Preserve the author's cadence, paragraph order, rhetorical progression, degree of explicitness, recurring terminology, examples, citations and scholarly personality. Unevenness, repetition, older phrasing and long sentences are NOT defects by themselves.",
+    "Never add new claims, examples, citations, statistics, mechanisms or interpretations. Never change the meaning simply to improve elegance.",
+    "Every edit must quote an exact SOURCE SPAN copied verbatim from the user text. Prefer a unique span of 2-35 words. If the same span occurs more than once, provide occurrence_number (1-based) and, where useful, exact context_before/context_after copied from the source.",
+    "The replacement must preserve all numbers, citations, quotations, acronyms, technical terms, factual relationships and study-stage meaning inside the span.",
+    "Examples of the distinction: 'stakeholders interests' -> \"stakeholders' interests\" is a required possessive correction. 'an actionable variables' -> 'actionable variables' is a required determiner/number correction. Recasting a correct sentence with more sophisticated vocabulary is optional stylistic re-authoring and must not be proposed as clear.",
+    targetLine,
+    priorSummary,
+    rejectedSummary,
+    `Return every clear defect you can justify, up to ${maxEdits} edits. Fewer is correct only when the source genuinely contains fewer clear defects.`,
     "Return exactly one JSON object and nothing else in this shape:",
-    '{"edits":[{"source_span":"exact source text","replacement":"minimal corrected text","category":"grammar_agreement","reason":"brief explanation","confidence":0.95}]}',
-  ].join("\n");
+    '{"edits":[{"source_span":"exact source text","replacement":"minimal corrected text","category":"grammar_agreement","severity":"clear","reason":"brief explanation","confidence":0.95,"occurrence_number":1,"context_before":"","context_after":""}]}',
+  ].filter(Boolean).join("\n");
 }
 
 function buildRepairPrompt() {
@@ -99,11 +143,11 @@ function buildRepairPrompt() {
   ].join("\n");
 }
 
-async function proposeEdits(sourceText, maxEdits) {
+async function proposeEdits(sourceText, { maxEdits, pass = 1, targetHint = null, priorEdits = [], rejectedEdits = [] }) {
   const first = await llmProvider.callAnthropic({
-    system: buildSystemPrompt({ maxEdits }),
+    system: buildSystemPrompt({ maxEdits, pass, targetHint, priorEdits, rejectedEdits }),
     messages: [{ role: "user", content: sourceText }],
-    maxTokens: 3000,
+    maxTokens: pass === 1 ? 4200 : 3600,
   });
   let parsed = parseStructuredResponseText(first.text);
   let repairUsed = false;
@@ -111,7 +155,7 @@ async function proposeEdits(sourceText, maxEdits) {
     const repaired = await llmProvider.callAnthropic({
       system: buildRepairPrompt(),
       messages: [{ role: "user", content: first.text }],
-      maxTokens: 3000,
+      maxTokens: 3600,
     });
     parsed = parseStructuredResponseText(repaired.text);
     repairUsed = true;
@@ -137,38 +181,76 @@ function sentenceIndexForPosition(sourceText, position) {
   return null;
 }
 
+function resolvePosition(sourceText, edit) {
+  const positions = occurrencePositions(sourceText, edit.source_span);
+  if (positions.length === 1) return { position: positions[0], reason: null };
+  if (!positions.length) return { position: -1, reason: "source_span_not_found" };
+
+  const occurrence = Number(edit.occurrence_number);
+  if (Number.isInteger(occurrence) && occurrence >= 1 && occurrence <= positions.length) {
+    return { position: positions[occurrence - 1], reason: null };
+  }
+
+  const before = String(edit.context_before || "");
+  const after = String(edit.context_after || "");
+  if (before || after) {
+    const matches = positions.filter((position) => {
+      const left = sourceText.slice(Math.max(0, position - before.length), position);
+      const rightStart = position + edit.source_span.length;
+      const right = sourceText.slice(rightStart, rightStart + after.length);
+      return (!before || left === before) && (!after || right === after);
+    });
+    if (matches.length === 1) return { position: matches[0], reason: null };
+  }
+
+  return { position: -1, reason: "source_span_not_unique" };
+}
+
 function normaliseProposals(sourceText, proposals, spans) {
   const accepted = [];
   const rejected = [];
-  const seenSpans = new Set();
+  const seenLocations = new Set();
 
   for (const raw of proposals) {
     const edit = {
       source_span: typeof raw?.source_span === "string" ? raw.source_span : "",
       replacement: typeof raw?.replacement === "string" ? raw.replacement : "",
       category: String(raw?.category || "").trim(),
+      severity: String(raw?.severity || "clear").trim().toLowerCase(),
       reason: String(raw?.reason || "").trim(),
       confidence: Number(raw?.confidence),
+      occurrence_number: Number(raw?.occurrence_number),
+      context_before: typeof raw?.context_before === "string" ? raw.context_before : "",
+      context_after: typeof raw?.context_after === "string" ? raw.context_after : "",
     };
 
     let rejectReason = null;
     if (!ALLOWED_CATEGORIES.has(edit.category)) rejectReason = "category_not_allowed";
+    else if (!CLEAR_SEVERITIES.has(edit.severity)) rejectReason = "optional_style_edit";
     else if (!edit.source_span.trim() || !edit.replacement.trim()) rejectReason = "empty_span_or_replacement";
     else if (edit.source_span === edit.replacement) rejectReason = "no_change";
-    else if (edit.source_span.length > 260 || edit.replacement.length > 320) rejectReason = "edit_too_large";
-    else if (countOccurrences(sourceText, edit.source_span) !== 1) rejectReason = "source_span_not_unique";
-    else if (seenSpans.has(edit.source_span)) rejectReason = "duplicate_span";
-    else if (Number.isFinite(edit.confidence) && edit.confidence < 0.72) rejectReason = "low_confidence";
-    else {
+    else if (edit.source_span.length > 420 || edit.replacement.length > 500) rejectReason = "edit_too_large";
+    else if (Number.isFinite(edit.confidence) && edit.confidence < 0.70) rejectReason = "low_confidence";
+
+    const resolved = rejectReason ? { position: -1, reason: rejectReason } : resolvePosition(sourceText, edit);
+    if (!rejectReason && resolved.reason) rejectReason = resolved.reason;
+
+    if (!rejectReason) {
       const ratio = edit.replacement.length / Math.max(1, edit.source_span.length);
-      if (ratio < 0.45 || ratio > 1.8) rejectReason = "replacement_size_out_of_bounds";
+      if (ratio < 0.40 || ratio > 1.95) rejectReason = "replacement_size_out_of_bounds";
       else {
         const wc = tokens(edit.source_span).length;
         const overlap = tokenOverlap(edit.source_span, edit.replacement);
-        const threshold = wc <= 5 ? 0.25 : 0.45;
+        const threshold = edit.category === "sentence_grammar_repair" ? 0.52 : wc <= 5 ? 0.20 : 0.40;
         if (overlap < threshold) rejectReason = "replacement_not_surgical";
         else if (!editPreservesProtected(edit, spans)) rejectReason = "protected_span_changed";
       }
+    }
+
+    if (!rejectReason) {
+      const locationKey = `${resolved.position}:${edit.source_span.length}`;
+      if (seenLocations.has(locationKey)) rejectReason = "duplicate_location";
+      else seenLocations.add(locationKey);
     }
 
     if (rejectReason) {
@@ -176,14 +258,12 @@ function normaliseProposals(sourceText, proposals, spans) {
       continue;
     }
 
-    const position = sourceText.indexOf(edit.source_span);
     accepted.push({
       ...edit,
-      confidence: Number.isFinite(edit.confidence) ? edit.confidence : 0.8,
-      position,
-      sentence_index: sentenceIndexForPosition(sourceText, position),
+      confidence: Number.isFinite(edit.confidence) ? edit.confidence : 0.82,
+      position: resolved.position,
+      sentence_index: sentenceIndexForPosition(sourceText, resolved.position),
     });
-    seenSpans.add(edit.source_span);
   }
 
   return { accepted, rejected };
@@ -211,6 +291,24 @@ function applyEdits(sourceText, edits) {
     out = out.slice(0, edit.position) + edit.replacement + out.slice(edit.position + edit.source_span.length);
   }
   return out;
+}
+
+function rejectionSummary(rejected) {
+  const summary = {};
+  for (const edit of rejected || []) {
+    const key = edit.rejected_reason || "unknown";
+    summary[key] = (summary[key] || 0) + 1;
+  }
+  return summary;
+}
+
+function executionStatus(applied, rejected, preservation) {
+  if (!preservationPassed(preservation)) return "preservation_failed";
+  if (!applied.length) return "no_safe_edit";
+  const consideredClear = applied.length + rejected.filter((e) => e.rejected_reason !== "optional_style_edit").length;
+  const coverage = consideredClear ? applied.length / consideredClear : 1;
+  if (consideredClear >= 4 && coverage < 0.60) return "surgical_partial";
+  return "surgical_plan_passed";
 }
 
 export function applySurgicalEditProposals({
@@ -252,6 +350,9 @@ export function applySurgicalEditProposals({
   const revisedText = applyEdits(sourceText, selected);
   const preservation = auditPreservation(sourceText, revisedText, spans);
   const affectedSentences = selectedSentenceIndexes.size;
+  const status = executionStatus(selected, rejected, preservation);
+  const consideredClear = selected.length + rejected.filter((e) => e.rejected_reason !== "optional_style_edit").length;
+  const coverageRatio = consideredClear ? selected.length / consideredClear : 1;
 
   return {
     revised_text: revisedText,
@@ -262,6 +363,11 @@ export function applySurgicalEditProposals({
     max_changed_sentence_ratio: maxChangedSentenceRatio,
     applied_edits: selected.map(({ position, sentence_index, ...edit }) => edit),
     rejected_edits: rejected.map(({ position, sentence_index, ...edit }) => edit),
+    rejection_summary: rejectionSummary(rejected),
+    considered_clear_edit_count: consideredClear,
+    edit_acceptance_ratio: Number(coverageRatio.toFixed(3)),
+    execution_status: status,
+    execution_passed: status === "surgical_plan_passed",
     safe_change_made: selected.length > 0,
   };
 }
@@ -270,23 +376,59 @@ export async function surgicalHumanEdit({
   sourceText,
   maxChangedSentenceRatio = 0.35,
   maxEdits = null,
+  targetInterventions = null,
 }) {
   const sentences = splitSentences(sourceText);
-  const editCeiling = Math.max(1, Math.min(24, Number(maxEdits) || Math.ceil(sentences.length * 0.35)));
-  const proposal = await proposeEdits(sourceText, editCeiling);
-  const applied = applySurgicalEditProposals({
+  const editCeiling = Math.max(1, Math.min(32, Number(maxEdits) || Math.ceil(sentences.length * 0.55)));
+  const first = await proposeEdits(sourceText, {
+    maxEdits: editCeiling,
+    pass: 1,
+    targetHint: targetInterventions,
+  });
+
+  let allProposals = [...first.edits];
+  let applied = applySurgicalEditProposals({
     sourceText,
-    proposals: proposal.edits,
+    proposals: allProposals,
     maxChangedSentenceRatio,
   });
+
+  const targetHint = Number.isFinite(Number(targetInterventions)) && Number(targetInterventions) > 0
+    ? Math.min(applied.sentence_change_ceiling, Number(targetInterventions))
+    : Math.min(applied.sentence_change_ceiling, Math.max(3, Math.ceil(sentences.length * 0.18)));
+
+  let second = null;
+  const needsOmissionAudit =
+    applied.affected_sentence_count < targetHint &&
+    allProposals.length < editCeiling * 1.5;
+
+  if (needsOmissionAudit) {
+    second = await proposeEdits(sourceText, {
+      maxEdits: Math.max(4, Math.min(editCeiling, 20)),
+      pass: 2,
+      targetHint,
+      priorEdits: first.edits,
+      rejectedEdits: applied.rejected_edits,
+    });
+    allProposals = [...allProposals, ...second.edits];
+    applied = applySurgicalEditProposals({
+      sourceText,
+      proposals: allProposals,
+      maxChangedSentenceRatio,
+    });
+  }
 
   return {
     attempted: true,
     ...applied,
-    proposed_edit_count: proposal.edits.length,
-    response_repair_used: proposal.repairUsed,
+    proposed_edit_count: allProposals.length,
+    first_pass_proposed: first.edits.length,
+    omission_audit_used: Boolean(second),
+    omission_audit_proposed: second?.edits?.length || 0,
+    response_repair_used: Boolean(first.repairUsed || second?.repairUsed),
+    target_interventions_hint: targetHint,
     note: applied.safe_change_made
-      ? "Only local grammar/clarity edits that survived preservation and breadth checks were applied; all other source text remained untouched."
-      : "No proposed local edit survived the surgical safety checks; the source remains unchanged and this is reported explicitly rather than presented as a successful revision.",
+      ? `Defect-led recovery applied ${applied.applied_edit_count} bounded correction(s) across ${applied.affected_sentence_count} sentence(s). Clean source wording remained untouched; ${applied.rejected_edits.length} proposal(s) were rejected by safeguards.`
+      : "No proposed clear local edit survived the surgical safety checks; the source remains unchanged and is reported explicitly as a non-edit result.",
   };
 }

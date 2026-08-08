@@ -10,7 +10,7 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
+      .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#039;");
   }
 
@@ -19,13 +19,20 @@
   }
 
   function statusClass(value) {
-    if (["passed", "accepted", "improved", "not_required", "surgical_local_recovery"].includes(value)) return "good";
-    if (["accepted_with_residual_risks", "unresolved_or_rejected", "execution_under", "source-preserved"].includes(value)) return "warn";
+    if (["passed", "accepted", "improved", "not_required", "surgical_local_recovery", "surgical_plan_passed"].includes(value)) return "good";
+    if (["accepted_with_residual_risks", "unresolved_or_rejected", "execution_under", "source-preserved", "surgical_partial"].includes(value)) return "warn";
     return "bad";
   }
 
   function riskSignals(diag) {
     return (diag?.signals || []).map((signal) => signal.id);
+  }
+
+  function rejectionChips(summary) {
+    return Object.entries(summary || {})
+      .filter(([, count]) => Number(count) > 0)
+      .map(([reason, count]) => `<span>${esc(title(reason))}: ${esc(count)}</span>`)
+      .join("");
   }
 
   function relabelAggressiveMode() {
@@ -61,6 +68,7 @@
     const sourceRisk = residual?.source_risk_score;
     const beforeSignals = riskSignals(residual?.before);
     const afterSignals = riskSignals(residual?.after);
+    const rejectChips = rejectionChips(surgical?.rejection_summary);
 
     panel.innerHTML = `
       <div class="rv4-title"><strong>Candidate verdict</strong><span>different ≠ automatically better</span></div>
@@ -72,12 +80,16 @@
       </div>
       ${policy ? `<div class="rv4-policy"><strong>Rewrite policy:</strong> ${esc(title(policy.policy))}. ${esc(policy.rationale || "")}</div>` : ""}
       ${surgical?.attempted ? `
-        <div class="rv4-surgical ${surgical.safe_change_made ? "goodbox" : "warnbox"}">
-          <strong>${surgical.safe_change_made ? "Surgical human-text edit applied" : "Surgical edit found no safe change"}</strong>
-          <span>${esc(surgical.applied_edit_count || 0)} local correction(s) applied across ${esc(surgical.affected_sentence_count || 0)} sentence(s)</span>
-          <span>${esc(surgical.proposed_edit_count || 0)} proposed · ${esc((surgical.rejected_edits || []).length)} rejected by safeguards</span>
+        <div class="rv4-surgical ${surgical.execution_status === "surgical_plan_passed" ? "goodbox" : "warnbox"}">
+          <strong>${surgical.safe_change_made ? "Defect-led human-text edit applied" : "Defect-led edit found no safe change"}</strong>
+          <span>${esc(surgical.applied_edit_count || 0)} correction(s) applied across ${esc(surgical.affected_sentence_count || 0)} sentence(s)</span>
+          <span>${esc(surgical.proposed_edit_count || 0)} proposed · ${esc((surgical.rejected_edits || []).length)} rejected</span>
+          ${Number.isFinite(Number(surgical.edit_acceptance_ratio)) ? `<span>safe-edit acceptance ${esc(Math.round(Number(surgical.edit_acceptance_ratio) * 100))}%</span>` : ""}
+          ${surgical.omission_audit_used ? `<span>omission audit: used · ${esc(surgical.omission_audit_proposed || 0)} additional proposal(s)</span>` : `<span>omission audit: not required</span>`}
           <div>${esc(surgical.note || "")}</div>
+          ${rejectChips ? `<details><summary>Why proposed edits were rejected</summary><div class="rv4-chips">${rejectChips}</div></details>` : ""}
         </div>
+        ${compliance.planner_superseded ? `<div class="rv4-superseded"><strong>Broad plan superseded:</strong> the original whole-document rewrite was rejected for over-editing. The execution verdict above now measures the bounded defect-led recovery rather than comparing a local repair against the discarded broad plan.</div>` : ""}
       ` : ""}
       ${safetyFallback?.source_retained ? `
         <div class="rv4-nonedit">
@@ -130,7 +142,7 @@
     .rv4-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}.rv4-title span{font-size:.82em;opacity:.62}
     .rv4-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:8px}.rv4-grid>div{padding:9px 10px;border-radius:7px;background:rgba(5,11,18,.42);border:1px solid #485568}.rv4-grid span{display:block;font-size:.78em;opacity:.66}.rv4-grid .good{border-color:#2c7658}.rv4-grid .warn{border-color:#9d7b34}.rv4-grid .bad{border-color:#9b4a4a}
     .rv4-policy{margin-top:12px;padding:9px 10px;border-left:3px solid #5d79a4;background:rgba(5,11,18,.32)}
-    .rv4-residual,.rv4-surgical{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;padding:9px;background:rgba(5,11,18,.35);border-radius:7px}.rv4-surgical div{flex-basis:100%;font-size:.86em;opacity:.78}.rv4-surgical.goodbox{border:1px solid #2c7658}.rv4-surgical.warnbox{border:1px solid #9d7b34}.rv4-nonedit{margin-top:12px;padding:10px;border:1px solid #b45a5a;border-radius:7px;background:rgba(115,35,35,.22)}.rv4-nonedit strong{display:block;color:#ffb1b1;margin-bottom:4px}
+    .rv4-residual,.rv4-surgical{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;padding:9px;background:rgba(5,11,18,.35);border-radius:7px}.rv4-surgical>div{flex-basis:100%;font-size:.86em;opacity:.78}.rv4-surgical.goodbox{border:1px solid #2c7658}.rv4-surgical.warnbox{border:1px solid #9d7b34}.rv4-superseded{margin-top:9px;padding:8px 10px;border-left:3px solid #8c6f3f;background:rgba(104,78,31,.18);font-size:.87em}.rv4-nonedit{margin-top:12px;padding:10px;border:1px solid #b45a5a;border-radius:7px;background:rgba(115,35,35,.22)}.rv4-nonedit strong{display:block;color:#ffb1b1;margin-bottom:4px}
     .rv4-note,.rv4-alert,.rv4-foot{margin-top:9px}.rv4-alert{padding:8px;border-left:3px solid #b35353;background:rgba(115,35,35,.2)}.rv4-foot{font-size:.82em;opacity:.68}.rv4-panel details{margin-top:9px}.rv4-panel summary{cursor:pointer;color:#a9bedf}.rv4-chips span{display:inline-block;margin:5px 5px 0 0;padding:3px 6px;border:1px solid #52617a;border-radius:5px;font-size:.8em}
   `;
   document.head.appendChild(style);
