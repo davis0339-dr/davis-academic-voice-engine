@@ -6,26 +6,34 @@ import { texturePromptBlock, TEXTURE_EXEMPLARS } from "../server/data/textureExe
 const base = {
   styleProfile: {},
   protectedSpans: {},
-  plan: { items: [], paragraphReorderSuggested: false },
+  plan: {
+    items: [],
+    paragraphReorderSuggested: false,
+    documentGuidance: [
+      "Several neighbouring sentences behave like independent mini-topic statements rather than one developing argument. Create local dependency where the reasoning supports it.",
+    ],
+  },
   grammarIntensity: "standard",
   humanCadence: { measuredSources: 15, meanSentenceLengthMin: 19.5, meanSentenceLengthMax: 32.1, sdMin: 13, sdMax: 18, pctLongMin: 16.7, pctLongMax: 48.5 },
 };
 
-test("texture exemplar is included only in aggressive mode", () => {
+test("detector-selected texture exemplar is no longer injected in any naturalisation mode", () => {
   const aggressive = buildSystemPrompt({ ...base, naturalisation: "aggressive" });
   const faithful = buildSystemPrompt({ ...base, naturalisation: "faithful" });
   const off = buildSystemPrompt({ ...base, naturalisation: "off" });
-  assert.ok(aggressive.includes("TEXTURE EXEMPLAR"));
+  assert.ok(!aggressive.includes("TEXTURE EXEMPLAR"));
   assert.ok(!faithful.includes("TEXTURE EXEMPLAR"));
   assert.ok(!off.includes("TEXTURE EXEMPLAR"));
 });
 
-test("the texture block instructs the model to match texture but NOT borrow content", () => {
-  const block = texturePromptBlock();
-  assert.match(block, /MATCH ITS TEXTURE, NOT ITS CONTENT/);
-  assert.match(block, /Copying any of its content is a failure/);
+test("legacy texture hook is empty and cannot leak benchmark content into production prompts", () => {
+  assert.equal(texturePromptBlock(), "");
+  assert.deepEqual(TEXTURE_EXEMPLARS, []);
 });
 
-test("exemplar set is small (guards against content-bleed risk)", () => {
-  assert.ok(TEXTURE_EXEMPLARS.length >= 1 && TEXTURE_EXEMPLARS.length <= 3);
+test("aggressive prompt receives qualitative discourse guidance instead of a single-author exemplar", () => {
+  const aggressive = buildSystemPrompt({ ...base, naturalisation: "aggressive" });
+  assert.match(aggressive, /independent mini-topic statements/i);
+  assert.match(aggressive, /local dependency/i);
+  assert.match(aggressive, /paragraph as a unit of reasoning/i);
 });
