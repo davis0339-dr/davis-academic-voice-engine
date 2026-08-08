@@ -27,7 +27,8 @@ function extraNumericLike(sourceSpans, revisedSpans) {
 
 const CITATION_YEAR_TOKEN = /(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?/gi;
 const PAREN_GROUP = /\(([^()\n]{1,360})\)/g;
-const NARRATIVE_REFERENCE = /\b([A-Z][A-Za-z'’.-]*(?:\s+(?:[A-Z][A-Za-z'’.-]*|and|&|of|the|for|in|on|et|al\.|\[[A-Z0-9&.\-]{2,12}\])){0,12})\s*\(((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:\s*,\s*(?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?))*)\)/g;
+const LEADING_CITATION_CONNECTIVE = /^(?:because|although|though|while|whereas|since|however|therefore|thus|moreover|furthermore|additionally|consequently|nevertheless|nonetheless|similarly|likewise|conversely|notably|importantly|indeed)\s+/i;
+const NARRATIVE_REFERENCE = /\b(?!(?:Because|Although|Though|While|Whereas|Since|However|Therefore|Thus|Moreover|Furthermore|Additionally|Consequently|Nevertheless|Nonetheless|Similarly|Likewise|Conversely|Notably|Importantly|Indeed)\b)([A-Z][A-Za-z'’.-]*(?:\s+(?:[A-Z][A-Za-z'’.-]*|and|&|of|the|for|in|on|et|al\.|\[[A-Z0-9&.\-]{2,12}\])){0,12})\s*\(((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:\s*,\s*(?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?))*)\)/g;
 
 function canonicalAuthor(author) {
   return String(author || "")
@@ -36,6 +37,8 @@ function canonicalAuthor(author) {
     .replace(/\bet\s+al\.?/gi, " et al ")
     .replace(/[^A-Za-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
+    .trim()
+    .replace(LEADING_CITATION_CONNECTIVE, "")
     .trim()
     .toLowerCase();
 }
@@ -49,7 +52,8 @@ function keysFromAuthorYears(author, years) {
 // Build citation identity from the raw passage, not from one visual citation
 // form. Parenthetical (Author, 2020) and narrative Author (2020) are the same
 // source and must not be reported as a dropped/new citation merely because the
-// grammar changed around it.
+// grammar changed around it. Leading discourse connectives such as “Because”
+// are not part of the author identity.
 function citationReferenceIndex(text) {
   const byKey = new Map();
   const source = String(text || "");

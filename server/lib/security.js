@@ -29,7 +29,10 @@ export function securityHeaders(req, res, next) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  // Voice Reasoning is opt-in and same-origin only. The browser speech engine may
+  // still use the browser vendor's speech service; the UI discloses this before
+  // enabling capture. Camera, location, payment and USB remain disabled.
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=()");
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
   res.setHeader("X-DNS-Prefetch-Control", "off");
@@ -130,7 +133,7 @@ const jobCreateLimiter = createRateLimiter({
 export function protectExpensiveApi(req, res, next) {
   if (req.method !== "POST") return next();
   const path = req.path || "";
-  if (!/^\/(?:rewrite|analyse|detector-scan|research|jobs)(?:\/|$)/.test(path)) return next();
+  if (!/^\/(?:rewrite|analyse|detector-scan|detector-screenshot|research|jobs)(?:\/|$)/.test(path)) return next();
   return expensiveLimiter(req, res, (err) => {
     if (err) return next(err);
     dailyCostLimiter(req, res, (dailyErr) => {
@@ -142,7 +145,7 @@ export function protectExpensiveApi(req, res, next) {
 }
 
 export function expensiveConcurrencyGate(req, res, next) {
-  if (req.method !== "POST" || !/^\/(?:rewrite|analyse|detector-scan|research)(?:\/|$)/.test(req.path || "")) return next();
+  if (req.method !== "POST" || !/^\/(?:rewrite|analyse|detector-scan|detector-screenshot|research)(?:\/|$)/.test(req.path || "")) return next();
   const maxConcurrent = intEnv("MAX_CONCURRENT_EXPENSIVE_REQUESTS", 4, 1, 20);
   if (activeExpensiveRequests >= maxConcurrent) {
     res.setHeader("Retry-After", "5");
@@ -185,11 +188,22 @@ function validateDetectorObservation(observation) {
 export function validateApiPayload(req, res, next) {
   if (req.method !== "POST") return next();
   const path = req.path || "";
-  const requiresJsonBody = path === "/rewrite" || path === "/analyse" || path === "/detector-scan" || path === "/detector-research" || path === "/jobs" || path === "/jobs/" || /^\/research(?:\/|$)/.test(path);
+  const requiresJsonBody = path === "/rewrite" || path === "/analyse" || path === "/detector-scan" || path === "/detector-research" || path === "/detector-screenshot" || path === "/jobs" || path === "/jobs/" || /^\/research(?:\/|$)/.test(path);
   if (!requiresJsonBody) return next();
 
   if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "A JSON object body is required.", requestId: req.requestId });
+  }
+
+  if (path === "/detector-screenshot") {
+    const { mimeType, imageBase64 } = req.body;
+    if (!["image/png", "image/jpeg"].includes(mimeType)) {
+      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector screenshot must be PNG or JPEG.", requestId: req.requestId });
+    }
+    if (typeof imageBase64 !== "string" || imageBase64.length === 0 || imageBase64.length > 2_900_000) {
+      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector screenshot payload is missing or exceeds the bounded image envelope.", requestId: req.requestId });
+    }
+    return next();
   }
 
   const {
