@@ -44,11 +44,18 @@ function syntheticBurden(diagnostics, sentenceCount) {
   const denominator = Math.max(5, sentenceCount / 4);
   const burdenRatio = weighted / denominator;
   const lowSyntheticScore = clamp01(1 - burdenRatio / 2.4);
+  const architectureHighCount = architecture.filter((s) => s?.severity === "high").length;
+  const discourseHighCount = discourse.filter((s) => s?.severity === "high").length;
+  const contrastiveHighCount = contrastive.filter((s) => s?.severity === "high").length;
+
   return {
     weighted_score: Number(weighted.toFixed(3)),
     burden_ratio: Number(burdenRatio.toFixed(3)),
     low_synthetic_score: Number(lowSyntheticScore.toFixed(3)),
-    high_signal_count: [...architecture, ...discourse, ...contrastive].filter((s) => s?.severity === "high").length,
+    high_signal_count: architectureHighCount + discourseHighCount + contrastiveHighCount,
+    architecture_high_count: architectureHighCount,
+    discourse_high_count: discourseHighCount,
+    contrastive_high_count: contrastiveHighCount,
     architecture_signal_count: architecture.length,
     discourse_signal_count: discourse.length,
     contrastive_signal_count: contrastive.length,
@@ -103,17 +110,20 @@ function labelFor(score) {
 }
 
 function preservationPriority(score, burden, cadenceDeviation) {
-  // High preservation requires a positive multi-signal texture score AND the
-  // absence of strong synthetic architecture. The threshold is deliberately
-  // below the label threshold because a clean scholarly document can contain a
-  // few local imperfections without losing its preservation claim.
+  // High preservation is deliberately multi-signal. A human-like academic text
+  // can contain isolated features that a contrastive detector labels strongly;
+  // one such flag must not veto the entire document. Strong architecture burden,
+  // conservative cadence deviation, or a poor composite texture score can veto it.
+  const architectureVeto = burden.architecture_high_count >= 2 || burden.architecture_signal_count >= 4;
+  const burdenAcceptable = burden.low_synthetic_score >= 0.34;
+
   if (
-    score >= 0.62 &&
-    burden.high_signal_count === 0 &&
-    burden.architecture_signal_count <= 1 &&
+    score >= 0.60 &&
+    !architectureVeto &&
+    burdenAcceptable &&
     !cadenceDeviation?.threshold_flagged
   ) return "high";
-  if (score >= 0.46 && burden.high_signal_count <= 1) return "medium";
+  if (score >= 0.44 && burden.architecture_high_count <= 2) return "medium";
   return "low";
 }
 
@@ -138,7 +148,7 @@ export function assessAuthorialTexture({ text, diagnostics, cadenceDeviation, la
   const priority = preservationPriority(score, burden, cadenceDeviation);
 
   return {
-    version: "authorial-texture-v1.1",
+    version: "authorial-texture-v1.2",
     score: Number(score.toFixed(3)),
     label: labelFor(score),
     preservation_priority: priority,
@@ -154,6 +164,6 @@ export function assessAuthorialTexture({ text, diagnostics, cadenceDeviation, la
         : null,
       measured_family_available: Boolean(languageDeviation?.available),
     },
-    note: "This score estimates how strongly the source's existing academic texture should be preserved. It does not establish whether a human or an AI authored the text.",
+    note: "This score estimates how strongly the source's existing academic texture should be preserved. It does not establish whether a human or an AI authored the text; isolated detector-like features do not override the document-level evidence by themselves.",
   };
 }
