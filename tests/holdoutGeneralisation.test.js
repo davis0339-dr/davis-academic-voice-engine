@@ -38,10 +38,22 @@ test("formal academic structures are marked passthrough rather than rewritten", 
   const { chunks } = chunkDocument(freshProspectus, map, { targetWordsPerChunk: 300 });
   const rq = chunks.find((c) => /^Research Question 1$/i.test(c.heading || ""));
   const definitions = chunks.find((c) => /^Definitions$/i.test(c.heading || ""));
+  const analysisPlan = chunks.find((c) => /^Data Analysis Plan$/i.test(c.heading || ""));
   const refs = chunks.find((c) => /^References$/i.test(c.heading || ""));
   assert.equal(rq?.rewriteMode, "passthrough");
   assert.equal(definitions?.rewriteMode, "passthrough");
+  assert.equal(analysisPlan?.rewriteMode, "passthrough");
   assert.equal(refs?.rewriteMode, "passthrough");
+});
+
+test("flattened table column labels are not misclassified as independent academic headings", () => {
+  const map = buildDocumentMap(freshProspectus);
+  const labels = map.headings.map((h) => h.text.toLowerCase());
+  assert.ok(!labels.includes("variable"));
+  assert.ok(!labels.includes("operational measure"));
+  assert.ok(!labels.includes("role"));
+  assert.ok(!labels.includes("expected relation"));
+  assert.ok(!labels.includes("independent"));
 });
 
 test("numeric ranges do not create false negative-number preservation spans", () => {
@@ -68,4 +80,20 @@ test("preservation audit catches explicit list-count inconsistencies introduced 
   const audit = auditPreservation(source, revised);
   assert.equal(audit.list_counts_ok, false);
   assert.ok(audit.warnings.some((w) => w.type === "list_count_mismatch"));
+});
+
+test("preservation audit rejects first-person researcher voice introduced into an impersonal source", () => {
+  const source = "Table 1 presents the alignment of the study. The alternative denominator will be used as a robustness test.";
+  const revised = "Table 1 presents the alignment of the study. I use the alternative denominator as a robustness test.";
+  const audit = auditPreservation(source, revised);
+  assert.equal(audit.researcher_voice_ok, false);
+  assert.ok(audit.warnings.some((w) => w.type === "researcher_voice_shift"));
+});
+
+test("preservation audit rejects Section-to-Chapter structure drift", () => {
+  const source = "Section 1 establishes the problem. Section 2 reviews the literature.";
+  const revised = "Chapter 1 establishes the problem. The present chapter reviews the literature.";
+  const audit = auditPreservation(source, revised);
+  assert.equal(audit.document_structure_ok, false);
+  assert.ok(audit.warnings.some((w) => w.type === "document_structure_shift"));
 });
