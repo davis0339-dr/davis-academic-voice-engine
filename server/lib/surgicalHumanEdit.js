@@ -213,17 +213,15 @@ function applyEdits(sourceText, edits) {
   return out;
 }
 
-export async function surgicalHumanEdit({
+export function applySurgicalEditProposals({
   sourceText,
+  proposals,
   maxChangedSentenceRatio = 0.35,
-  maxEdits = null,
 }) {
   const sentences = splitSentences(sourceText);
   const sentenceCeiling = Math.max(1, Math.floor(sentences.length * Math.max(0.08, Math.min(0.50, Number(maxChangedSentenceRatio) || 0.35))));
-  const editCeiling = Math.max(1, Math.min(24, Number(maxEdits) || Math.ceil(sentences.length * 0.35)));
   const spans = extractProtectedSpans(sourceText);
-  const proposal = await proposeEdits(sourceText, editCeiling);
-  const normalised = normaliseProposals(sourceText, proposal.edits, spans);
+  const normalised = normaliseProposals(sourceText, proposals || [], spans);
   const candidates = nonOverlappingEdits(normalised.accepted);
 
   const selected = [];
@@ -256,19 +254,38 @@ export async function surgicalHumanEdit({
   const affectedSentences = selectedSentenceIndexes.size;
 
   return {
-    attempted: true,
     revised_text: revisedText,
     preservation,
-    proposed_edit_count: proposal.edits.length,
     applied_edit_count: selected.length,
     affected_sentence_count: affectedSentences,
     sentence_change_ceiling: sentenceCeiling,
     max_changed_sentence_ratio: maxChangedSentenceRatio,
-    response_repair_used: proposal.repairUsed,
     applied_edits: selected.map(({ position, sentence_index, ...edit }) => edit),
     rejected_edits: rejected.map(({ position, sentence_index, ...edit }) => edit),
     safe_change_made: selected.length > 0,
-    note: selected.length
+  };
+}
+
+export async function surgicalHumanEdit({
+  sourceText,
+  maxChangedSentenceRatio = 0.35,
+  maxEdits = null,
+}) {
+  const sentences = splitSentences(sourceText);
+  const editCeiling = Math.max(1, Math.min(24, Number(maxEdits) || Math.ceil(sentences.length * 0.35)));
+  const proposal = await proposeEdits(sourceText, editCeiling);
+  const applied = applySurgicalEditProposals({
+    sourceText,
+    proposals: proposal.edits,
+    maxChangedSentenceRatio,
+  });
+
+  return {
+    attempted: true,
+    ...applied,
+    proposed_edit_count: proposal.edits.length,
+    response_repair_used: proposal.repairUsed,
+    note: applied.safe_change_made
       ? "Only local grammar/clarity edits that survived preservation and breadth checks were applied; all other source text remained untouched."
       : "No proposed local edit survived the surgical safety checks; the source remains unchanged and this is reported explicitly rather than presented as a successful revision.",
   };
