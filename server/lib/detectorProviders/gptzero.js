@@ -1,16 +1,7 @@
-// Detector QA provider adapter for GPTZero. This exists ONLY for
-// observational product QA (Section 15.3/15.4 of the build handoff) --
-// it is never called from server/lib/pipeline.js, and nothing in this
-// codebase feeds its output back into generation. See server/lib/detectorQA.js
-// for the hard boundary that enforces that separation.
-//
-// IMPORTANT: Turnitin has no public developer API. It is an
-// institutionally-licensed product integrated directly into LMS platforms
-// (Canvas, Moodle, etc.) with no general third-party access route. This
-// build does not, and cannot honestly, offer a "Turnitin" adapter --
-// faking one would violate Section 18.2's "no fake production functions"
-// rule. GPTZero is the one detector this build can genuinely reach,
-// because it publishes a documented API.
+// GPTZero provider adapter used by the Detector Research Lab.
+// The adapter keeps the provider's probabilistic output and sentence highlighting
+// available for comparative research; it does not convert a classifier score into
+// proof of authorship. Raw responses remain visible for schema-audit purposes.
 
 const GPTZERO_API_URL = "https://api.gptzero.me/v2/predict/text";
 
@@ -34,13 +25,19 @@ export function isConfigured() {
   return Boolean(apiKey && apiKey.trim().length > 0);
 }
 
-// Deliberately defensive: GPTZero's response schema has changed over time
-// and this build has not been able to verify the exact current shape
-// against a live account. Rather than assert a rigid shape and risk
-// silently misreporting a score, this pulls out whichever recognisable
-// fields are present, keeps the full raw payload alongside them, and sets
-// parseWarning when it can't find what it expected -- so a schema drift
-// shows up as a visible warning, not a wrong number presented as fact.
+function normalizeSentenceRows(doc) {
+  const candidates = [doc?.sentences, doc?.sentence_classifications, doc?.sentenceClassifications]
+    .find((value) => Array.isArray(value)) || [];
+  return candidates.map((row, index) => ({
+    index,
+    text: row?.sentence || row?.text || row?.content || null,
+    predictedClass: row?.predicted_class || row?.predictedClass || row?.classification || null,
+    generatedProb: row?.generated_prob ?? row?.generatedProb ?? row?.ai_probability ?? row?.probability ?? null,
+    highlightForAi: Boolean(row?.highlight_sentence_for_ai ?? row?.highlightSentenceForAi ?? row?.highlighted),
+    confidenceCategory: row?.confidence_category || row?.confidenceCategory || null,
+  }));
+}
+
 export function normalizeGptZeroResponse(raw) {
   const doc = raw && Array.isArray(raw.documents) && raw.documents.length > 0 ? raw.documents[0] : null;
 
@@ -49,30 +46,42 @@ export function normalizeGptZeroResponse(raw) {
       provider: "gptzero",
       parseWarning: "Response did not contain a recognizable `documents[0]` entry; showing raw response only.",
       summary: null,
+      sentences: [],
       raw,
     };
   }
 
   const classProbabilities = doc.class_probabilities || doc.classProbabilities || null;
-  const predictedClass = doc.predicted_class || doc.predictedClass || null;
+  const predictedClass = doc.predicted_class || doc.predictedClass || doc.document_classification || doc.documentClassification || null;
+  const documentClassification = doc.document_classification || doc.documentClassification || predictedClass;
+  const confidenceCategory = doc.confidence_category || doc.confidenceCategory || null;
   const completelyGeneratedProb = doc.completely_generated_prob ?? doc.completelyGeneratedProb ?? null;
   const averageGeneratedProb = doc.average_generated_prob ?? doc.averageGeneratedProb ?? null;
+  const subclass = doc.subclass || doc.subclasses || null;
+  const sentences = normalizeSentenceRows(doc);
+  const highlightedSentenceIndices = sentences.filter((row) => row.highlightForAi).map((row) => row.index);
 
-  const foundAnyField = [classProbabilities, predictedClass, completelyGeneratedProb, averageGeneratedProb].some(
-    (v) => v !== null && v !== undefined
+  const foundAnyField = [classProbabilities, predictedClass, documentClassification, confidenceCategory, completelyGeneratedProb, averageGeneratedProb, subclass, sentences.length].some(
+    (v) => v !== null && v !== undefined && v !== 0
   );
 
   return {
     provider: "gptzero",
+    modelVersion: raw?.version || raw?.model_version || doc?.version || doc?.model_version || null,
     parseWarning: foundAnyField
       ? null
       : "Recognized documents[0] but none of the expected score fields were present; API shape may have changed. Showing raw response.",
     summary: {
       predictedClass,
+      documentClassification,
+      confidenceCategory,
       classProbabilities,
       completelyGeneratedProb,
       averageGeneratedProb,
+      subclass,
+      highlightedSentenceIndices,
     },
+    sentences,
     raw,
   };
 }
