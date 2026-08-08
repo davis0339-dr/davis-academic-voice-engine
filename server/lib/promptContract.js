@@ -40,6 +40,9 @@ export const SYNTACTIC_DIVERSITY_INSTRUCTIONS = [
   "Do not overuse demonstratives or explicit transitions merely to satisfy the previous rule. The relationship can also be carried by repeated technical terms, shared grammatical subjects or an unfolding evidence chain.",
   "Keep technical constructs stable. Vary ordinary surrounding language only where repetition is stylistically unnecessary; do not thesaurus-swap discipline terms.",
   "Allow paragraph length and sentence complexity to follow rhetorical function. A definition, evidence statement, interpretation and transition need not have the same shape.",
+  "Treat the paragraph as a unit of reasoning, not a container for individually polished sentences. Some paragraphs should accumulate evidence, some should compare, qualify, explain a mechanism, narrow the context, define a construct or justify a method, according to what the source is actually doing.",
+  "When several studies are cited, synthesise only where the source warrants synthesis. Avoid a mechanical Study A / Study B / These findings show pattern repeated across paragraph after paragraph.",
+  "Epistemic stance is part of meaning. A human academic writer does not hedge or assert by quota; certainty should rise or fall with the evidence actually available in the source.",
   "The goal is structural variety arising from reasoning, not visible randomisation. If a pattern looks deliberately alternated, it is probably too mechanical.",
 ];
 
@@ -96,6 +99,9 @@ function uniqueDiagnosticRequirements(plan) {
     for (const reason of item.reasons || []) {
       if (!reasons.includes(reason)) reasons.push(reason);
     }
+  }
+  for (const guidance of plan.documentGuidance || []) {
+    if (!reasons.includes(guidance)) reasons.push(guidance);
   }
   return reasons;
 }
