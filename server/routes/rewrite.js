@@ -39,6 +39,42 @@ function planUnitCount(result) {
   return Object.values(result?.intervention_plan_summary || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
 }
 
+function underExecutionCodes(compliance) {
+  return Array.isArray(compliance?.under_execution_codes) ? compliance.under_execution_codes : [];
+}
+
+function visibleChangeOnlyUnderExecution(compliance) {
+  const codes = underExecutionCodes(compliance);
+  return Boolean(compliance?.under_executed && codes.length > 0 && codes.every((code) => code === "VISIBLE_CHANGE_FLOOR"));
+}
+
+function hasConcreteUnderExecution(compliance) {
+  if (!compliance?.under_executed) return false;
+  const codes = underExecutionCodes(compliance);
+  // Backward-compatible fallback: a legacy compliance result without codes is
+  // treated as a concrete execution failure and may still receive one retry.
+  if (!codes.length) return true;
+  return codes.some((code) => code !== "VISIBLE_CHANGE_FLOOR");
+}
+
+function refreshTransformationQuality(sourceText, result, revisedText, naturalisationLevel) {
+  const previous = result?.transformation_quality || {};
+  const refreshed = assessTransformationQuality(
+    sourceText,
+    revisedText,
+    naturalisationLevel,
+    { protectedSpans: extractProtectedSpans(sourceText) }
+  );
+  return {
+    ...refreshed,
+    corrective_retry_used: Boolean(previous.corrective_retry_used),
+    rescue_retry_used: Boolean(previous.rescue_retry_used),
+    first_attempt: previous.first_attempt || null,
+    pre_rescue_attempt: previous.pre_rescue_attempt || null,
+    recomputed_after_residual_rework: true,
+  };
+}
+
 function finalCandidateStatus(compliance, residual, sourceRetainedForSafety = false) {
   if (sourceRetainedForSafety) return "no_safe_edit_available";
   if (!compliance?.execution_passed && !compliance?.preservation_ok) return "execution_and_preservation_failed";
@@ -248,15 +284,13 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         }
       }
 
-      // Reconciliation retries address UNDER-execution only. A model that edited
-      // too much must not be rewarded with another broad whole-document rewrite.
-      // A surgical recovery is also final for this request: do not follow it with
-      // another broad pass merely because its intentionally local work falls below
-      // the original planner's minimum restructuring load.
+      // Reconciliation retries repair genuine concrete planner/executor mismatches.
+      // A visible-change-floor warning alone must NOT trigger another broad pass;
+      // that would turn preservation into a quota and can destroy strong source text.
       if (
         !sourceRetainedForSafety &&
         !overExecutionRecoveryUsed &&
-        executionCompliance.under_executed &&
+        hasConcreteUnderExecution(executionCompliance) &&
         !executionCompliance.over_executed &&
         modePolicy.effective_naturalisation !== "off" &&
         !qualityPipelineAlreadyRetried(result)
@@ -301,28 +335,51 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         }
       }
 
-      // Dynamic second stage: only after execution breadth/depth and preservation
-      // are acceptable do we repair residual machine-shaped discourse locally.
-      // Surgical human-text recovery is already a local second stage, so it is
-      // not followed by another residual rewrite in the same request.
+      // Dynamic second stage: discourse reconstruction is judged by the candidate's
+      // residual discourse architecture, not by an arbitrary demand that a fixed
+      // proportion of source sentences be different. A visible-change-floor-only
+      // warning may therefore proceed to this selective diagnostic stage; concrete
+      // planner failures may not.
       let residualRework = null;
-      if (
+      let residualStageEligible = false;
+      let residualStageBlockedReason = null;
+      const visibleOnlyUnder = visibleChangeOnlyUnderExecution(executionCompliance);
+      residualStageEligible = Boolean(
         !sourceRetainedForSafety &&
         !overExecutionRecoveryUsed &&
-        executionCompliance.execution_passed &&
         executionCompliance.preservation_ok &&
+        !executionCompliance.over_executed &&
+        (executionCompliance.execution_passed || visibleOnlyUnder) &&
         modePolicy.effective_naturalisation !== "off"
-      ) {
+      );
+
+      if (!residualStageEligible) {
+        if (sourceRetainedForSafety) residualStageBlockedReason = "non_edit_result";
+        else if (overExecutionRecoveryUsed) residualStageBlockedReason = "surgical_recovery_is_final";
+        else if (modePolicy.effective_naturalisation === "off") residualStageBlockedReason = "naturalisation_off";
+        else if (!executionCompliance.preservation_ok) residualStageBlockedReason = "preservation_failed";
+        else if (executionCompliance.over_executed) residualStageBlockedReason = "over_execution";
+        else residualStageBlockedReason = "concrete_execution_failure";
+      }
+
+      if (residualStageEligible) {
         try {
           residualRework = await selectiveResidualRework({
             sourceText: text,
             candidateText: result.revised_text,
           });
           if (residualRework.accepted) {
+            const refreshedQuality = refreshTransformationQuality(
+              text,
+              result,
+              residualRework.revised_text,
+              modePolicy.effective_naturalisation
+            );
             result = {
               ...result,
               revised_text: residualRework.revised_text,
               preservation: residualRework.preservation || result.preservation,
+              transformation_quality: refreshedQuality,
             };
             executionCompliance = assessExecutionCompliance(result);
           }
@@ -353,6 +410,8 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         rejected_over_execution: rejectedOverExecution,
         selected_attempt: sourceRetainedForSafety ? "transparent-no-edit-fallback" : selectedAttempt,
         first_attempt: firstAttemptCompliance,
+        residual_stage_eligible: residualStageEligible,
+        residual_stage_blocked_reason: residualStageBlockedReason,
         max_reconciliation_retries: 1,
         max_preservation_recovery_retries: 1,
         max_over_execution_recovery_retries: 1,
@@ -373,24 +432,33 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         depth_permission: modePolicy.depth_permission,
         policy: modePolicy.policy,
       };
+
+      const residualVerdict = sourceRetainedForSafety
+        ? "not_run_on_non_edit_result"
+        : overExecutionRecoveryUsed
+          ? "surgical_local_recovery"
+          : residualRework?.attempted
+            ? (residualRework.accepted ? "improved" : "unresolved_or_rejected")
+            : residualStageEligible
+              ? "not_required"
+              : modePolicy.effective_naturalisation === "off"
+                ? "not_applicable"
+                : "not_run_execution_blocked";
+
       result.candidate_verdict = {
         execution: sourceRetainedForSafety
           ? "no-safe-edit-available"
           : executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
         preservation: sourceRetainedForSafety ? "source-preserved" : executionCompliance.preservation_ok ? "passed" : "failed",
-        residual: sourceRetainedForSafety
-          ? "not_run_on_non_edit_result"
-          : overExecutionRecoveryUsed
-            ? "surgical_local_recovery"
-            : residualRework?.attempted
-              ? (residualRework.accepted ? "improved" : "unresolved_or_rejected")
-              : "not_required",
+        residual: residualVerdict,
         final_status: finalCandidateStatus(executionCompliance, residualRework, sourceRetainedForSafety),
         note: sourceRetainedForSafety
           ? "No safe local correction survived after the broad rewrite exceeded authorial-preservation authority. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision."
           : overExecutionRecoveryUsed
             ? "The broad rewrite was rejected for over-editing. Only exact local grammar/clarity corrections that passed preservation and intervention ceilings were applied; all other source wording was retained."
-            : "Final status separates minimum execution, maximum authorised breadth, factual preservation and residual writing-quality risk. Strong existing authorial texture narrows breadth; Deep/Aggressive remains permission for deep repair only where diagnostics justify it.",
+            : residualVerdict === "not_run_execution_blocked"
+              ? "Residual discourse quality was not declared unnecessary: that stage was blocked by a concrete execution failure. Final status separates concrete plan execution, preservation-aware visible-change plausibility, maximum authorised breadth, factual preservation and residual discourse risk."
+              : "Final status separates concrete plan execution, preservation-aware visible-change plausibility, maximum authorised breadth, factual preservation and residual discourse risk. Strong existing authorial texture narrows breadth; Deep/Aggressive remains permission for deep repair only where diagnostics justify it.",
       };
 
       return res.json({ ...result, requestId });
