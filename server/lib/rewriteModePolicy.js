@@ -7,15 +7,16 @@ const VALID_NATURALISATION = new Set(["off", "faithful", "aggressive"]);
 const VALID_INTENSITY = new Set(["auto", "minor", "moderate", "deep"]);
 
 function texturePriority(authorialTexture) {
-  return authorialTexture?.preservation_priority || "medium";
+  return authorialTexture?.preservation_priority || null;
 }
 
 function preservationAwareIntensity(requestedIntensity, authorialTexture) {
   const priority = texturePriority(authorialTexture);
+  // Legacy/internal callers that do not supply a pre-generation texture result
+  // keep their previous intensity behavior. Production analyse/rewrite routes do
+  // supply the texture assessment before mode resolution.
+  if (!priority) return requestedIntensity;
   if (priority === "high") {
-    // Auto already escalates genuinely flagged sentences/paragraphs to structural
-    // operations. This preserves the user's permission for deep repair without
-    // using Deep as a broad micro-edit command on clean sentences.
     if (requestedIntensity === "deep" || requestedIntensity === "moderate") return "auto";
     return requestedIntensity;
   }
@@ -35,7 +36,7 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
       effective_naturalisation: requestedNaturalisation,
       requested_intensity: requestedIntensity,
       effective_intensity: effectiveIntensity,
-      preservation_priority: priority,
+      preservation_priority: priority || "not_assessed",
       policy: requestedNaturalisation === "off"
         ? "clarity_only"
         : priority === "high"
@@ -54,14 +55,10 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
 
   return {
     requested_naturalisation: "aggressive",
-    // Deliberately use the selective generation contract. The old aggressive
-    // contract authorised wholesale restyling and could transform one synthetic
-    // register into another. Deep reconstruction is driven by diagnostics and
-    // residual checks instead.
     effective_naturalisation: "faithful",
     requested_intensity: requestedIntensity,
     effective_intensity: effectiveIntensity,
-    preservation_priority: priority,
+    preservation_priority: priority || "not_assessed",
     policy: priority === "high" ? "authorial_preservation_targeted" : "adaptive_human_reconstruction",
     universal_rewrite_authorised: false,
     adaptive_reconstruction: true,
