@@ -38,6 +38,20 @@ function maxConsecutiveShort(lengths, ceiling = 9) {
   return max;
 }
 
+function maxConsecutiveTrue(flags) {
+  let max = 0;
+  let run = 0;
+  for (const flag of flags) {
+    if (flag) {
+      run += 1;
+      max = Math.max(max, run);
+    } else {
+      run = 0;
+    }
+  }
+  return max;
+}
+
 function countMatches(text, regex) {
   return (text.match(regex) || []).length;
 }
@@ -107,6 +121,11 @@ function lexicalContainment(a, b) {
 // metric compares each revised sentence against every source sentence after
 // protected material and stopwords are removed. A sentence is near-source
 // only when both lexical containment and ordered-token containment are high.
+//
+// The local-run measure matters because a long passage can otherwise pass the
+// aggregate ratio while leaving one paragraph (often the opening) almost
+// untouched. Aggressive revision should distribute structural change across
+// the passage rather than concentrating all of it in later paragraphs.
 function assessNearSourceSentences(sourceText, revisedText, protectedSpans) {
   const source = splitSentences(sourceText)
     .map((text) => ({ text, tokens: contentTokens(text, protectedSpans) }))
@@ -116,10 +135,11 @@ function assessNearSourceSentences(sourceText, revisedText, protectedSpans) {
     .filter((item) => item.tokens.length >= 5);
 
   if (!revised.length || !source.length) {
-    return { ratio: 0, count: 0, eligible: revised.length, worst: [] };
+    return { ratio: 0, count: 0, eligible: revised.length, worst: [], maxConsecutive: 0 };
   }
 
   const matched = [];
+  const matchedFlags = [];
   for (const candidate of revised) {
     let best = null;
     for (const original of source) {
@@ -139,9 +159,9 @@ function assessNearSourceSentences(sourceText, revisedText, protectedSpans) {
       }
     }
 
-    if (best && best.orderedContainment >= 0.72 && best.lexicalContainment >= 0.78) {
-      matched.push(best);
-    }
+    const isNearSource = Boolean(best && best.orderedContainment >= 0.72 && best.lexicalContainment >= 0.78);
+    matchedFlags.push(isNearSource);
+    if (isNearSource) matched.push(best);
   }
 
   matched.sort((a, b) => b.score - a.score);
@@ -150,6 +170,7 @@ function assessNearSourceSentences(sourceText, revisedText, protectedSpans) {
     count: matched.length,
     eligible: revised.length,
     worst: matched.slice(0, 3),
+    maxConsecutive: maxConsecutiveTrue(matchedFlags),
   };
 }
 
@@ -224,6 +245,10 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
       passed = false;
       reasons.push(`${(nearSource.ratio * 100).toFixed(1)}% of substantive revised sentences retain near-source content-word order/structure, above the aggressive-mode ceiling of 38%.`);
     }
+    if (nearSource.maxConsecutive >= 4) {
+      passed = false;
+      reasons.push(`The revision contains a local run of ${nearSource.maxConsecutive} consecutive near-source sentences. Aggressive mode must distribute structural reconstruction across the passage rather than leaving one stretch substantially source-shaped.`);
+    }
 
     // A source-level rhetorical problem diagnosed by the engine must actually
     // be resolved by aggressive revision. Grammar alone is not enough.
@@ -283,6 +308,7 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
     near_source_sentence_ratio: Number(nearSource.ratio.toFixed(3)),
     near_source_sentence_count: nearSource.count,
     near_source_sentence_eligible: nearSource.eligible,
+    max_consecutive_near_source_sentences: nearSource.maxConsecutive,
     near_source_examples: nearSource.worst.map((item) => ({
       score: Number(item.score.toFixed(3)),
       ordered_containment: Number(item.orderedContainment.toFixed(3)),
@@ -303,6 +329,6 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
       revised_choppy_sentence_run: Boolean(revisedRhetorical.choppySentenceRun),
     },
     reasons,
-    note: "This is a protected-span-adjusted rewrite-depth, rhetorical-resolution and academic-register quality audit, not an AI-authorship or detector score.",
+    note: "This is a protected-span-adjusted rewrite-depth, local-transformation-coverage, rhetorical-resolution and academic-register quality audit, not an AI-authorship or detector score.",
   };
 }
