@@ -8,6 +8,7 @@ const DEFAULT_TARGET_WORDS = 800;
 const HARD_MAX_MULTIPLIER = 1.25;
 
 const PASSTHROUGH_HEADING = /^(?:research questions? and hypotheses|research question\s*\d+|study alignment|definitions|conceptual model|operationali[sz]ation of variables|data analysis plan|proposed schedule|references|table\s*\d+\b|figure\s*\d+\b)/i;
+const STANDALONE_INSTITUTIONAL = /^(?:Section|Chapter)\s+\d+(?:\.\d+)*$/i;
 
 function wordCount(text) {
   return (text.match(/[A-Za-z0-9']+/g) || []).length;
@@ -98,9 +99,7 @@ function lastSentenceTail(text, maxChars = 240) {
 }
 
 function isFormalPassthrough(heading, body) {
-  if (heading && PASSTHROUGH_HEADING.test(heading.trim())) return true;
-  // Formal hypothesis lines should never be paraphrased into prose, even if
-  // they appear under an unexpected heading after document conversion.
+  if (heading && (PASSTHROUGH_HEADING.test(heading.trim()) || STANDALONE_INSTITUTIONAL.test(heading.trim()))) return true;
   if (/\bH0?\d+[a-z]?\s*:/i.test(body || "") || /\bH1\d*[a-z]?\s*:/i.test(body || "")) return true;
   return false;
 }
@@ -118,7 +117,16 @@ function chunkByHeadings(fullText, headings, targetWords, hardMaxWords) {
   if (preamble) rawChunks.push({ heading: null, reattachHeading: false, body: preamble, rewriteMode: "passthrough" });
 
   for (const section of sections) {
-    if (!section.body) continue;
+    // Standalone institutional labels such as “Section 1” often have no body
+    // because the next line is itself a heading (“Introduction”). Preserve the
+    // empty structural label as an atomic passthrough chunk rather than silently
+    // dropping it during reassembly.
+    if (!section.body) {
+      if (STANDALONE_INSTITUTIONAL.test(section.heading || "")) {
+        rawChunks.push({ heading: section.heading, reattachHeading: true, body: "", rewriteMode: "passthrough" });
+      }
+      continue;
+    }
     const formal = isFormalPassthrough(section.heading, section.body);
     if (formal) {
       rawChunks.push({ heading: section.heading, reattachHeading: true, body: section.body, rewriteMode: "passthrough" });
