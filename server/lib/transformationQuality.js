@@ -169,6 +169,23 @@ function rhetoricalIssueSummary(text) {
   };
 }
 
+const BRIDGE_ONLY_RE = /^(?:narrowing\s+(?:the\s+)?(?:lens|focus)|turning\s+(?:the\s+)?(?:attention|focus)|moving\s+(?:the\s+)?(?:analysis|focus)|shifting\s+(?:the\s+)?(?:analysis|focus)|against\s+this\s+background|in\s+this\s+context|from\s+this\s+perspective|with\s+this\s+context)\b/i;
+
+function orphanBridgeParagraphs(text) {
+  return String(text || "")
+    .split(/\n{2,}/)
+    .map((paragraph, paragraphIndex) => ({ paragraph: paragraph.trim(), paragraphIndex }))
+    .filter(({ paragraph }) => paragraph)
+    .filter(({ paragraph }) => {
+      const sentences = splitSentences(paragraph);
+      if (sentences.length !== 1) return false;
+      const wc = normalise(paragraph).length;
+      if (wc < 8 || wc > 35) return false;
+      if (/\d/.test(paragraph) || /\((?:[^()]*?(?:19|20)\d{2}[^()]*)\)/.test(paragraph)) return false;
+      return BRIDGE_ONLY_RE.test(paragraph);
+    });
+}
+
 const DIRECT_ADDRESS = /\b(?:you|your|yours|yourself|yourselves)\b/gi;
 const FORMALITY_RISK = /\b(?:don't|doesn't|didn't|can't|won't|isn't|aren't|wasn't|weren't|it's|that's|there's|you're|we're|they're|ticking\s+(?:the\s+)?boxes|locked\s+up|tiny\s+fraction|same\s+thing|goes?\s+hand\s+in\s+hand|when\s+you\s+look|old\s+yardstick)\b/gi;
 
@@ -205,6 +222,9 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
   const formalityRisksIntroduced = Math.max(0, countMatches(revisedText, FORMALITY_RISK) - countMatches(sourceText, FORMALITY_RISK));
   const sourceRhetorical = rhetoricalIssueSummary(sourceText);
   const revisedRhetorical = rhetoricalIssueSummary(revisedText);
+  const sourceOrphanBridges = orphanBridgeParagraphs(sourceText);
+  const revisedOrphanBridges = orphanBridgeParagraphs(revisedText);
+  const introducedOrphanBridges = Math.max(0, revisedOrphanBridges.length - sourceOrphanBridges.length);
 
   const lengthRatio = sourceTokens.length ? revisedTokens.length / sourceTokens.length : 1;
   const level = (naturalisation || "faithful").toLowerCase();
@@ -247,6 +267,10 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
     if (sourceRhetorical.choppySentenceRun && revisedRhetorical.choppySentenceRun) {
       passed = false;
       reasons.push("A diagnosed consecutive micro-sentence run remains unresolved in the revision; merge or redistribute those propositions into argument-led academic cadence.");
+    }
+    if (introducedOrphanBridges > 0) {
+      passed = false;
+      reasons.push(`The revision introduced ${introducedOrphanBridges} standalone bridge-only paragraph(s). Transitional framing should normally remain attached to the evidence or reasoning it introduces rather than becoming a staged one-sentence paragraph.`);
     }
 
     const shortDominant = shortSentenceRatio > 0.32;
@@ -306,6 +330,8 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
     max_consecutive_short_sentences: consecutiveShortMax,
     direct_address_introduced: directAddressIntroduced,
     formality_risks_introduced: formalityRisksIntroduced,
+    introduced_orphan_bridge_paragraphs: introducedOrphanBridges,
+    orphan_bridge_examples: revisedOrphanBridges.slice(0, 3).map((row) => row.paragraph),
     rhetorical_resolution: {
       source_gap_label_scaffolding: Boolean(sourceRhetorical.gapLabelScaffolding),
       revised_gap_label_scaffolding: Boolean(revisedRhetorical.gapLabelScaffolding),
@@ -317,6 +343,6 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
       revised_choppy_sentence_run: Boolean(revisedRhetorical.choppySentenceRun),
     },
     reasons,
-    note: "This is a protected-span-adjusted rewrite-depth, local-transformation-coverage, rhetorical-resolution and academic-register quality audit, not an AI-authorship or detector score.",
+    note: "This is a protected-span-adjusted rewrite-depth, local-transformation-coverage, rhetorical-resolution, paragraph-function and academic-register quality audit, not an AI-authorship or detector score.",
   };
 }
