@@ -1,14 +1,13 @@
 {
   "name": "davis-academic-voice-engine",
   "version": "0.1.0",
-  "description": "Evidence-backed academic writing, revision and research-style engine (Phase 1)",
+  "description": "Researcher-led academic reasoning, evidence alignment and manuscript revision engine",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test",
-    "qa:detector": "node scripts/detector-qa-report.js"
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18.17"

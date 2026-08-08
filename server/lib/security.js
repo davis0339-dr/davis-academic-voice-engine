@@ -130,7 +130,7 @@ const jobCreateLimiter = createRateLimiter({
 export function protectExpensiveApi(req, res, next) {
   if (req.method !== "POST") return next();
   const path = req.path || "";
-  if (!/^\/(?:rewrite|analyse|detector-scan|jobs)(?:\/|$)/.test(path)) return next();
+  if (!/^\/(?:rewrite|analyse|detector-scan|research|jobs)(?:\/|$)/.test(path)) return next();
   return expensiveLimiter(req, res, (err) => {
     if (err) return next(err);
     dailyCostLimiter(req, res, (dailyErr) => {
@@ -142,7 +142,7 @@ export function protectExpensiveApi(req, res, next) {
 }
 
 export function expensiveConcurrencyGate(req, res, next) {
-  if (req.method !== "POST" || !/^\/(?:rewrite|analyse|detector-scan)(?:\/|$)/.test(req.path || "")) return next();
+  if (req.method !== "POST" || !/^\/(?:rewrite|analyse|detector-scan|research)(?:\/|$)/.test(req.path || "")) return next();
   const maxConcurrent = intEnv("MAX_CONCURRENT_EXPENSIVE_REQUESTS", 4, 1, 20);
   if (activeExpensiveRequests >= maxConcurrent) {
     res.setHeader("Retry-After", "5");
@@ -185,15 +185,31 @@ function validateDetectorObservation(observation) {
 export function validateApiPayload(req, res, next) {
   if (req.method !== "POST") return next();
   const path = req.path || "";
-  const requiresJsonBody = path === "/rewrite" || path === "/analyse" || path === "/detector-scan" || path === "/detector-research" || path === "/jobs" || path === "/jobs/";
+  const requiresJsonBody = path === "/rewrite" || path === "/analyse" || path === "/detector-scan" || path === "/detector-research" || path === "/jobs" || path === "/jobs/" || /^\/research(?:\/|$)/.test(path);
   if (!requiresJsonBody) return next();
 
   if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "A JSON object body is required.", requestId: req.requestId });
   }
 
-  const { text, sourceText, candidateText, observations, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, label } = req.body;
-  for (const [key, value] of Object.entries({ text, sourceText, candidateText })) {
+  const {
+    text,
+    sourceText,
+    candidateText,
+    thoughts,
+    manuscriptContext,
+    researchContext,
+    constraints,
+    section,
+    observations,
+    styleFilters,
+    rewriteIntensity,
+    grammarIntensity,
+    lengthPreference,
+    naturalisation,
+    label,
+  } = req.body;
+  for (const [key, value] of Object.entries({ text, sourceText, candidateText, thoughts, manuscriptContext, researchContext, constraints, section })) {
     if (value !== undefined && typeof value !== "string") {
       return res.status(400).json({ error: "BAD_REQUEST", message: `\`${key}\` must be a string.`, requestId: req.requestId });
     }

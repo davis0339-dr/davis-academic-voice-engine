@@ -1,0 +1,255 @@
+import { Router } from "express";
+import { llmProvider, HealthState } from "../lib/llmProvider.js";
+import {
+  acceptedArgumentNodes,
+  extractJsonObject,
+  normalizeArgumentMap,
+  normalizeEvidenceLinks,
+  retrieveEvidenceCandidates,
+  summarizeAgency,
+} from "../lib/researcherAgency.js";
+
+export const researchStudioRouter = Router();
+
+const REASONING_SYSTEM = `You are the reasoning-analysis layer of an academic manuscript development system.
+Your job is to recover and structure the RESEARCHER'S intellectual position before any prose is rewritten.
+Do not reward polished wording. Do not infer human authorship from style. Do not invent evidence, citations, theories, variables, findings, methods or sources.
+Preserve uncertainty, disagreement, boundaries, causal caution and distinctions the researcher makes.
+Treat spoken or rough language as potentially valuable reasoning. Separate what the researcher clearly supplied from what you are only suggesting.
+Do not write the final academic paragraph in this step.
+
+Return valid JSON only with this exact shape:
+{
+  "researcher_summary": "plain-language summary of what the researcher appears to mean",
+  "nodes": [
+    {
+      "id": "arg-1",
+      "type": "claim|mechanism|qualification|assumption|counterargument|interpretation|implication|boundary|evidence_need|methodological_choice",
+      "statement": "one precise intellectual move",
+      "origin": "researcher|system_suggestion|shared",
+      "researcher_status": "unreviewed",
+      "confidence": "low|moderate|high",
+      "evidence_need": "what would need support, if anything",
+      "rationale": "why this node matters to the argument"
+    }
+  ],
+  "unresolved_questions": ["only questions that materially affect the argument"],
+  "boundaries": ["things the researcher is explicitly not claiming"],
+  "researcher_decisions": ["clear decisions already made by the researcher"]
+}`;
+
+const EVIDENCE_SYSTEM = `You are the evidence-alignment layer of an academic research system.
+You will receive approved/reviewable argument nodes and candidate excerpts retrieved from researcher-supplied source files.
+Classify only what the excerpt actually supports. Do not invent bibliographic details or claim a source supports something merely because vocabulary overlaps.
+Use only these relationships: supports, qualifies, contradicts, contextualises, insufficient.
+If the excerpt is not enough, choose insufficient.
+Preserve the supplied source id, source title, citation string and locator exactly.
+Return valid JSON only:
+{"links":[{"id":"evidence-1","argument_id":"arg-1","source_id":"source-1","source_title":"...","citation":"...","locator":"...","relationship":"supports","explanation":"...","excerpt":"verbatim supplied excerpt","researcher_status":"unreviewed"}]}`;
+
+const CHALLENGE_SYSTEM = `You are a rigorous but economical academic challenge layer.
+Do not rewrite the manuscript. Ask at most TWO questions, only where an answer would materially strengthen, narrow, correct or evidence the researcher's argument.
+Prefer questions about mechanisms, unsupported inference, competing explanation, evidential fit, causal strength, boundaries, interpretation or methodological implications.
+Do not ask for information already present. Do not ask generic questions such as 'Can you elaborate?'.
+Return valid JSON only:
+{"questions":[{"argument_id":"arg-1","question":"...","why_it_matters":"...","evidence_gap":"..."}]}`;
+
+const RECONSTRUCT_SYSTEM = `You are the controlled academic reconstruction layer of an academic writing system.
+The argument map is authoritative. The researcher's accepted/modified reasoning, boundaries and decisions must govern the prose.
+Evidence links are supporting material, not permission to invent facts. Use only citations explicitly supplied in evidence links. Never fabricate a citation.
+Do not strengthen causal or epistemic force. Preserve may/might/suggest/associate distinctions. Do not create new variables, moderators, methods, results or theoretical claims unless they are explicitly approved argument nodes.
+Do not make every paragraph structurally symmetrical. Let sentence and paragraph architecture follow the intellectual work being done. Prefer conceptual transitions over decorative transitions. Preserve ordinary precise language over inflated academic vocabulary.
+Return valid JSON only:
+{"draft":"...","used_argument_ids":["arg-1"],"used_evidence_ids":["evidence-1"],"warnings":["..."],"agency_note":"brief explanation of how researcher decisions governed the draft"}`;
+
+const INTEGRITY_SYSTEM = `You are an argument-integrity auditor.
+Compare candidate prose against an approved researcher argument map. Do not judge whether the prose is human or AI. Judge whether the candidate preserves the researcher's intellectual decisions.
+For each approved node classify status as preserved, strengthened, weakened, lost or contradicted. Flag new material that is not licensed by the argument map. Pay special attention to changed causal strength, removed qualifications, changed variable meaning, reversed direction, new claims, and lost boundaries.
+Return valid JSON only:
+{"node_results":[{"argument_id":"arg-1","status":"preserved","explanation":"..."}],"new_claims":["..."],"lost_boundaries":["..."],"epistemic_drift":["..."],"overall":"preserved|minor_drift|material_drift","summary":"..."}`;
+
+function providerError(res, err, requestId) {
+  const state = err?.healthState || HealthState.PROVIDER_ERROR;
+  const status = state === HealthState.NOT_CONFIGURED ? 503 : state === HealthState.RATE_LIMITED ? 429 : 502;
+  return res.status(status).json({ error: state, message: err?.message || "Research reasoning service unavailable.", requestId });
+}
+
+function shortString(value, max) {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function sanitizeStyleFilters(filters) {
+  if (!filters || typeof filters !== "object" || Array.isArray(filters)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(filters).slice(0, 12)) {
+    if (typeof key === "string" && typeof value === "string") out[key.slice(0, 80)] = value.slice(0, 160);
+  }
+  return out;
+}
+
+async function modelJson({ system, payload, maxTokens = 4096 }) {
+  const result = await llmProvider.callAnthropic({
+    system,
+    messages: [{ role: "user", content: JSON.stringify(payload) }],
+    maxTokens,
+  });
+  return extractJsonObject(result.text);
+}
+
+researchStudioRouter.post("/research/reasoning-map", async (req, res) => {
+  const thoughts = shortString(req.body?.thoughts, 16000);
+  const manuscriptContext = shortString(req.body?.manuscriptContext, 12000);
+  const styleFilters = sanitizeStyleFilters(req.body?.styleFilters);
+  if (!thoughts) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "`thoughts` is required. Give the researcher's own explanation, rough notes or argument.", requestId: req.requestId });
+  }
+  try {
+    const raw = await modelJson({
+      system: REASONING_SYSTEM,
+      payload: {
+        researcher_thoughts: thoughts,
+        manuscript_context: manuscriptContext || null,
+        academic_context: styleFilters,
+        instruction: "Recover the reasoning; do not polish it into final prose.",
+      },
+      maxTokens: 5000,
+    });
+    const argumentMap = normalizeArgumentMap(raw);
+    return res.json({ argumentMap, agency: summarizeAgency(argumentMap), persistence: "none", requestId: req.requestId });
+  } catch (err) {
+    return providerError(res, err, req.requestId);
+  }
+});
+
+researchStudioRouter.post("/research/evidence-align", async (req, res) => {
+  const argumentMap = normalizeArgumentMap(req.body?.argumentMap || {});
+  const sources = Array.isArray(req.body?.sources) ? req.body.sources.slice(0, 8).map((source, index) => ({
+    id: shortString(source?.id, 80) || `source-${index + 1}`,
+    title: shortString(source?.title || source?.name, 300) || `Source ${index + 1}`,
+    citation: shortString(source?.citation, 500),
+    text: shortString(source?.text, 40000),
+  })).filter((source) => source.text) : [];
+  if (!argumentMap.nodes.length) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "An argument map with at least one node is required.", requestId: req.requestId });
+  }
+  if (!sources.length) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "Upload or add at least one source before aligning evidence.", requestId: req.requestId });
+  }
+
+  const retrieval = retrieveEvidenceCandidates(argumentMap, sources, { perNode: 3 });
+  const candidateCount = retrieval.reduce((sum, item) => sum + item.candidates.length, 0);
+  if (!candidateCount) {
+    return res.json({ links: [], retrieval, mode: "no_candidate_overlap", warning: "No plausible passages were retrieved. This is not evidence that the argument is unsupported; the supplied sources may use different terminology.", requestId: req.requestId });
+  }
+
+  try {
+    const raw = await modelJson({
+      system: EVIDENCE_SYSTEM,
+      payload: {
+        arguments: acceptedArgumentNodes(argumentMap),
+        retrieved_candidates: retrieval,
+        instruction: "Classify evidential relationship conservatively and only from the supplied excerpts.",
+      },
+      maxTokens: 6500,
+    });
+    const links = normalizeEvidenceLinks(raw);
+    return res.json({ links, retrieval, mode: "retrieval_plus_model_alignment", persistence: "none", requestId: req.requestId });
+  } catch (err) {
+    if (err?.healthState === HealthState.NOT_CONFIGURED) {
+      const links = retrieval.flatMap((item, itemIndex) => item.candidates.map((candidate, candidateIndex) => ({
+        id: `candidate-${itemIndex + 1}-${candidateIndex + 1}`,
+        argument_id: item.argument_id,
+        source_id: candidate.source_id,
+        source_title: candidate.source_title,
+        citation: candidate.citation,
+        locator: candidate.locator,
+        relationship: "candidate",
+        explanation: "Lexically relevant passage retrieved; evidential relationship has not been model-classified.",
+        excerpt: candidate.text,
+        researcher_status: "unreviewed",
+      })));
+      return res.json({ links, retrieval, mode: "lexical_retrieval_only", warning: "LLM is not configured, so passages were retrieved but not interpreted.", requestId: req.requestId });
+    }
+    return providerError(res, err, req.requestId);
+  }
+});
+
+researchStudioRouter.post("/research/challenge", async (req, res) => {
+  const argumentMap = normalizeArgumentMap(req.body?.argumentMap || {});
+  const evidenceLinks = normalizeEvidenceLinks({ links: req.body?.evidenceLinks || [] });
+  const researchContext = shortString(req.body?.researchContext, 6000);
+  if (!argumentMap.nodes.length) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "An argument map is required before challenge mode.", requestId: req.requestId });
+  }
+  try {
+    const raw = await modelJson({
+      system: CHALLENGE_SYSTEM,
+      payload: { argument_map: argumentMap, evidence_links: evidenceLinks, research_context: researchContext || null },
+      maxTokens: 1800,
+    });
+    const questions = Array.isArray(raw.questions) ? raw.questions.slice(0, 2).map((q) => ({
+      argument_id: shortString(q?.argument_id, 80),
+      question: shortString(q?.question, 1200),
+      why_it_matters: shortString(q?.why_it_matters, 1200),
+      evidence_gap: shortString(q?.evidence_gap, 1200),
+    })).filter((q) => q.question) : [];
+    return res.json({ questions, requestId: req.requestId });
+  } catch (err) {
+    return providerError(res, err, req.requestId);
+  }
+});
+
+researchStudioRouter.post("/research/reconstruct", async (req, res) => {
+  const argumentMap = normalizeArgumentMap(req.body?.argumentMap || {});
+  const evidenceLinks = normalizeEvidenceLinks({ links: req.body?.evidenceLinks || [] });
+  const styleFilters = sanitizeStyleFilters(req.body?.styleFilters);
+  const section = shortString(req.body?.section, 120);
+  const constraints = shortString(req.body?.constraints, 4000);
+  const approvedNodes = acceptedArgumentNodes(argumentMap);
+  if (!approvedNodes.length) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "No accepted/reviewable argument nodes are available for reconstruction.", requestId: req.requestId });
+  }
+  try {
+    const raw = await modelJson({
+      system: RECONSTRUCT_SYSTEM,
+      payload: {
+        approved_argument_nodes: approvedNodes,
+        boundaries: argumentMap.boundaries,
+        researcher_decisions: argumentMap.researcher_decisions,
+        evidence_links: evidenceLinks.filter((link) => link.researcher_status !== "rejected" && link.relationship !== "insufficient"),
+        academic_context: styleFilters,
+        section: section || styleFilters.section || null,
+        additional_constraints: constraints || null,
+      },
+      maxTokens: 6000,
+    });
+    return res.json({
+      draft: shortString(raw.draft, 30000),
+      used_argument_ids: Array.isArray(raw.used_argument_ids) ? raw.used_argument_ids.slice(0, 40).map((x) => shortString(x, 80)).filter(Boolean) : [],
+      used_evidence_ids: Array.isArray(raw.used_evidence_ids) ? raw.used_evidence_ids.slice(0, 80).map((x) => shortString(x, 80)).filter(Boolean) : [],
+      warnings: Array.isArray(raw.warnings) ? raw.warnings.slice(0, 12).map((x) => shortString(x, 1200)).filter(Boolean) : [],
+      agency_note: shortString(raw.agency_note, 2000),
+      requestId: req.requestId,
+    });
+  } catch (err) {
+    return providerError(res, err, req.requestId);
+  }
+});
+
+researchStudioRouter.post("/research/integrity", async (req, res) => {
+  const argumentMap = normalizeArgumentMap(req.body?.argumentMap || {});
+  const candidateText = shortString(req.body?.candidateText, 30000);
+  if (!argumentMap.nodes.length || !candidateText) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "Provide an argument map and candidate text for integrity checking.", requestId: req.requestId });
+  }
+  try {
+    const raw = await modelJson({
+      system: INTEGRITY_SYSTEM,
+      payload: { approved_argument_map: argumentMap, candidate_text: candidateText },
+      maxTokens: 4500,
+    });
+    return res.json({ ...raw, requestId: req.requestId });
+  } catch (err) {
+    return providerError(res, err, req.requestId);
+  }
+});

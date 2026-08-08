@@ -9,6 +9,7 @@ import { analyseRouter } from "./routes/analyse.js";
 import { rewriteRouter } from "./routes/rewrite.js";
 import { detectorScanRouter } from "./routes/detectorScan.js";
 import { jobsRouter } from "./routes/jobs.js";
+import { researchStudioRouter } from "./routes/researchStudio.js";
 import { llmProvider } from "./lib/llmProvider.js";
 import {
   securityHeaders,
@@ -48,6 +49,7 @@ app.use("/api", analyseRouter);
 app.use("/api", rewriteRouter);
 app.use("/api", detectorScanRouter);
 app.use("/api", jobsRouter);
+app.use("/api", researchStudioRouter);
 
 app.use(express.static(path.join(__dirname, "..", "public"), {
   etag: true,

@@ -2,9 +2,12 @@
   const DOCX_EXT = /\.docx$/i;
   const PDF_EXT = /\.pdf$/i;
   const TEXT_EXT = /\.(txt|md|markdown)$/i;
+  const CSV_EXT = /\.csv$/i;
+  const XLSX_EXT = /\.xlsx$/i;
   const MAMMOTH_SRC = "https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js";
   const PDFJS_SRC = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
   const PDFJS_WORKER_SRC = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+  const XLSX_SRC = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
   const loading = new Map();
 
   function extensionOf(file) {
@@ -107,7 +110,7 @@
     if (window.mammoth?.convertToHtml) {
       const result = await window.mammoth.convertToHtml({ arrayBuffer });
       const text = htmlToAcademicText(result.value);
-      if (text) return { text, warnings: result.messages || [] };
+      if (text) return { text, warnings: result.messages || [], structure: "word_blocks" };
     }
 
     // Conservative fallback for unusual DOCX files where HTML conversion
@@ -115,7 +118,7 @@
     const fallback = await window.mammoth.extractRawText({ arrayBuffer });
     const text = String(fallback.value || "").replace(/\r\n/g, "\n").trim();
     if (!text) throw new Error("No readable text was found in this Word document.");
-    return { text, warnings: fallback.messages || [] };
+    return { text, warnings: fallback.messages || [], structure: "word_raw_text" };
   }
 
   async function readPdf(file) {
@@ -140,13 +143,41 @@
         lastY = y;
       }
       if (current.trim()) lines.push(current.trim());
-      pages.push(lines.join("\n"));
+      if (lines.length) pages.push(`[Page ${pageNumber}]\n${lines.join("\n")}`);
     }
     const text = pages.filter(Boolean).join("\n\n").trim();
     if (!text) {
       throw new Error("No selectable text was found in this PDF. Scanned/image-only PDFs are not supported in this build.");
     }
-    return { text, warnings: [] };
+    return { text, warnings: [], structure: "pdf_pages", pageCount: pdf.numPages };
+  }
+
+  async function readCsv(file) {
+    const text = (await file.text()).replace(/\r\n/g, "\n").trim();
+    if (!text) throw new Error("No readable rows were found in this CSV file.");
+    return { text: `[Sheet: CSV]\n${text}`, warnings: [], structure: "spreadsheet_rows", sheetNames: ["CSV"] };
+  }
+
+  async function readXlsx(file) {
+    await loadScript(XLSX_SRC, () => Boolean(window.XLSX?.read && window.XLSX?.utils?.sheet_to_json));
+    const arrayBuffer = await file.arrayBuffer();
+    // SheetJS reads workbook structures; this importer never evaluates formulas,
+    // executes macros, or writes workbook code. Macro-enabled .xlsm is deliberately
+    // not accepted by this build.
+    const workbook = window.XLSX.read(arrayBuffer, { type: "array", cellDates: false, cellFormula: false, cellHTML: false, cellStyles: false });
+    const sections = [];
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "", blankrows: false });
+      const serialized = rows
+        .map((row) => row.map((cell) => String(cell ?? "").replace(/[\t\r\n]+/g, " ").trim()).join("\t"))
+        .filter((row) => row.replace(/\t/g, "").trim())
+        .join("\n");
+      if (serialized) sections.push(`[Sheet: ${sheetName}]\n${serialized}`);
+    }
+    const text = sections.join("\n\n").trim();
+    if (!text) throw new Error("No readable worksheet cells were found in this Excel workbook.");
+    return { text, warnings: [], structure: "spreadsheet_rows", sheetNames: workbook.SheetNames || [] };
   }
 
   async function readAcademicFile(file, maxBytes) {
@@ -156,12 +187,14 @@
     }
 
     if (TEXT_EXT.test(file.name) || file.type === "text/plain" || file.type === "text/markdown") {
-      return { text: await readPlain(file), warnings: [] };
+      return { text: await readPlain(file), warnings: [], structure: "plain_text" };
     }
     if (DOCX_EXT.test(file.name)) return readDocx(file);
     if (PDF_EXT.test(file.name) || file.type === "application/pdf") return readPdf(file);
+    if (CSV_EXT.test(file.name) || file.type === "text/csv") return readCsv(file);
+    if (XLSX_EXT.test(file.name) || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") return readXlsx(file);
 
-    throw new Error(`Unsupported file type .${extensionOf(file) || "unknown"}. Use TXT, MD, DOCX, or a text-based PDF.`);
+    throw new Error(`Unsupported file type .${extensionOf(file) || "unknown"}. Use TXT, MD, DOCX, a text-based PDF, CSV, or XLSX.`);
   }
 
   window.AcademicFileImport = { readAcademicFile };
