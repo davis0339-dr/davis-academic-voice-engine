@@ -8,7 +8,7 @@ import { parseTextStructure } from "./textStructure.js";
 
 const ENUMERATION_OPEN_RE = /^(?:first(?:ly)?|second(?:ly)?|third(?:ly)?|fourth(?:ly)?|fifth(?:ly)?|finally)\b/i;
 const EXPLICIT_TRANSITION_RE = /^(?:however|moreover|furthermore|additionally|therefore|thus|consequently|nevertheless|nonetheless|similarly|conversely|indeed|importantly|notably|overall|together|in contrast|by contrast|as a result|for example|for instance|accordingly)\b/i;
-const PACKAGING_RE = /\b(?:two|three|four|five|several)\s+(?:principal\s+|main\s+|major\s+|mutually\s+reinforcing\s+)?(?:findings|contributions|pillars|implications|reasons|points|steps|arguments|attributes|dimensions|themes|patterns|lessons)\b/i;
+const PACKAGING_RE = /\b(?:two|three|four|five|several)\s+(?:(?:principal|main|major|mutually\s+reinforcing|theoretical|policy|practical|empirical|methodological|conceptual|regulatory|managerial)\s+)?(?:findings|contributions|pillars|implications|reasons|points|steps|arguments|attributes|dimensions|themes|patterns|lessons)\b/i;
 const CLOSURE_RE = /(?:^(?:thus|therefore|consequently|accordingly|overall|together|in sum|taken together)\b|\b(?:this|these|the evidence|the pattern|the result|the finding|the implication)\s+(?:therefore\s+)?(?:shows?|suggests?|indicates?|implies?|demonstrates?|means?|supports?|reveals?)\b)/i;
 const APHORISTIC_RE = /(?:\b(?:is|are)\s+not\s+[^,.!?;:]{1,70}\bbut\b|^(?:the\s+)?(?:point|answer|problem|goal|distinction|lesson|result|signal)\s+(?:is|lies|remains)\b|\bmasquerad(?:e|es|ing)\s+as\b|\bwearing\s+an?\b)/i;
 // Keep this deliberately bounded. Broad greedy patterns over whole academic
