@@ -73,7 +73,97 @@ function candidateStatus(executionPassed, preservationPassed, status) {
   return "execution_and_preservation_failed";
 }
 
+function assessSurgicalCompliance(result) {
+  const surgical = result?.surgical_recovery;
+  if (!surgical?.attempted) return null;
+
+  const preservation = preservationAssessment(result);
+  const proposedClear = Math.max(
+    Number(surgical.considered_clear_edit_count || 0),
+    Number(surgical.applied_edit_count || 0)
+  );
+  const applied = Number(surgical.applied_edit_count || 0);
+  const acceptanceRatio = proposedClear ? clamp01(applied / proposedClear) : 1;
+  const status = surgical.execution_status || (applied ? "surgical_plan_passed" : "no_safe_edit");
+  const executionPassed = status === "surgical_plan_passed" && preservation.passed;
+  const partial = status === "surgical_partial";
+  const reasons = [];
+
+  if (partial) {
+    reasons.push(`Only ${applied} of ${proposedClear} clear defect-led edit candidates survived the surgical safeguards; an omission/rejection review is still warranted.`);
+  } else if (status === "no_safe_edit") {
+    reasons.push("No clear local correction survived the surgical safeguards.");
+  }
+  if (!preservation.passed) reasons.push(...preservation.reasons);
+
+  const quality = result?.transformation_quality || {};
+  const unchangedSentenceRatio = Number.isFinite(quality.unchanged_sentence_ratio)
+    ? Number(quality.unchanged_sentence_ratio)
+    : null;
+  const changedSentenceRatio = unchangedSentenceRatio === null ? null : clamp01(1 - unchangedSentenceRatio);
+  const authority = result?.intervention_authority || {};
+  const changedCeiling = Number.isFinite(Number(authority.max_changed_sentence_ratio))
+    ? Number(authority.max_changed_sentence_ratio)
+    : Number(surgical.max_changed_sentence_ratio || 0.35);
+
+  return {
+    version: "surgical-defect-compliance-v1",
+    passed: executionPassed,
+    execution_passed: executionPassed,
+    execution_status: status,
+    under_executed: partial,
+    over_executed: false,
+    preservation_ok: preservation.passed,
+    candidate_status: executionPassed ? "accepted" : preservation.passed ? "execution_under" : "execution_and_preservation_failed",
+    score: Number(acceptanceRatio.toFixed(3)),
+    execution_score: Number(acceptanceRatio.toFixed(3)),
+    overall_score: Number(((acceptanceRatio * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3)),
+    effective_intent: result?.intervention_intent?.effective || null,
+    intervention_authority: authority,
+    planner_superseded: true,
+    superseded_plan: plannedCounts(result),
+    planned: {
+      total: proposedClear,
+      keep: 0,
+      micro: proposedClear,
+      substantive: 0,
+      intervention: proposedClear,
+    },
+    reported: {
+      total: applied,
+      kept: 0,
+      micro: applied,
+      restructures: 0,
+      splitMerge: 0,
+      paragraphReorders: 0,
+      substantive: 0,
+      intervention: applied,
+    },
+    intervention_coverage: Number(acceptanceRatio.toFixed(3)),
+    structural_coverage: 1,
+    planned_keep_ratio: 0,
+    unchanged_sentence_ratio: unchangedSentenceRatio,
+    changed_sentence_ratio: changedSentenceRatio === null ? null : Number(changedSentenceRatio.toFixed(3)),
+    unchanged_sentence_ceiling: null,
+    changed_sentence_ceiling: Number(changedCeiling.toFixed(3)),
+    substantive_operation_ratio: 0,
+    substantive_operation_ceiling: 0,
+    reasons,
+    under_execution_reasons: partial ? reasons.filter((r) => /Only \d+ of \d+/.test(r)) : [],
+    over_execution_reasons: [],
+    execution_reasons: reasons,
+    preservation_reasons: preservation.reasons,
+    warnings: surgical.rejected_edits?.length
+      ? [`${surgical.rejected_edits.length} proposed edit(s) were rejected by surgical safeguards. Rejection reasons are available in surgical_recovery.rejection_summary.`]
+      : [],
+    note: "The original broad rewrite plan was superseded after over-editing a high-preservation source. Compliance is therefore measured against the bounded defect-led surgical plan, while the rejected broad plan remains available as superseded_plan for auditability.",
+  };
+}
+
 export function assessExecutionCompliance(result) {
+  const surgicalCompliance = assessSurgicalCompliance(result);
+  if (surgicalCompliance) return surgicalCompliance;
+
   const planned = plannedCounts(result);
   const reported = reportedCounts(result);
   const quality = result?.transformation_quality || {};
@@ -112,8 +202,6 @@ export function assessExecutionCompliance(result) {
     underReasons.push(`Independent source/revision comparison finds ${(unchangedSentenceRatio * 100).toFixed(0)}% of source sentences unchanged, above the ${(unchangedCeiling * 100).toFixed(0)}% ceiling implied by this plan's intervention requirement.`);
   }
 
-  // NEW: the planner also places a ceiling on intervention breadth. A candidate
-  // cannot receive PASS simply because it changed at least the required amount.
   const maxChangedSentenceRatio = Number.isFinite(Number(authority.max_changed_sentence_ratio))
     ? Number(authority.max_changed_sentence_ratio)
     : Math.min(0.95, 1 - planKeepRatio + 0.35);
@@ -188,7 +276,7 @@ export function assessExecutionCompliance(result) {
     execution_reasons: [...underReasons, ...overReasons],
     preservation_reasons: preservation.reasons,
     warnings,
-    note: "Execution compliance now enforces both the planner's minimum required work and its maximum authorised disturbance. Preservation is assessed separately. None of these verdicts establishes authorship.",
+    note: "Execution compliance enforces both the planner's minimum required work and its maximum authorised disturbance. Preservation is assessed separately. None of these verdicts establishes authorship.",
   };
 }
 
@@ -196,8 +284,6 @@ export function preferByExecutionCompliance(firstResult, secondResult) {
   const first = assessExecutionCompliance(firstResult);
   const second = assessExecutionCompliance(secondResult);
 
-  // Preservation is a hard preference. A deeper rewrite never wins by damaging
-  // protected facts, citations, quotations, technical terms or study stage.
   if (second.preservation_ok && !first.preservation_ok) return { result: secondResult, compliance: second, selected: "second" };
   if (first.preservation_ok && !second.preservation_ok) return { result: firstResult, compliance: first, selected: "first" };
 
