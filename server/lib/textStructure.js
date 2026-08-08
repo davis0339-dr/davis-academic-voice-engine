@@ -7,7 +7,8 @@ import { splitSentences, wordCount } from "./sentences.js";
 
 const LIST_ITEM_RE = /^\s*(?:[-*•]|\d{1,3}[.)]|[A-Za-z][.)])\s+\S/;
 const NUMBERED_HEADING_RE = /^\s*\d+(?:\.\d+)+\s+\S/;
-const QUOTE_RE = /^\s*(?:>|[“"])[\s\S]+(?:[”"])?\s*$/;
+const BLOCKQUOTE_RE = /^\s*>\s*\S/;
+const STANDALONE_QUOTE_RE = /^\s*[“\"][\s\S]+[”\"]\s*$/;
 
 function looksLikeHeading(text) {
   const trimmed = text.trim();
@@ -15,7 +16,7 @@ function looksLikeHeading(text) {
   if (NUMBERED_HEADING_RE.test(trimmed)) return true;
   const words = wordCount(trimmed);
   if (words === 0 || words > 14) return false;
-  if (/[.!?][”"]?$/.test(trimmed)) return false;
+  if (/[.!?][”\"]?$/.test(trimmed)) return false;
   return /^[A-Z0-9]/.test(trimmed);
 }
 
@@ -23,7 +24,9 @@ function classifyBlock(text) {
   const trimmed = text.trim();
   if (LIST_ITEM_RE.test(trimmed)) return "list_item";
   if (looksLikeHeading(trimmed)) return "heading";
-  if (QUOTE_RE.test(trimmed) && wordCount(trimmed) <= 80) return "quotation";
+  if ((BLOCKQUOTE_RE.test(trimmed) || STANDALONE_QUOTE_RE.test(trimmed)) && wordCount(trimmed) <= 80) {
+    return "quotation";
+  }
   return "paragraph";
 }
 
