@@ -36,7 +36,7 @@ function protectNumberedMarkers(text) {
 }
 
 export function splitSentences(text) {
-  let working = protectNumberedMarkers(String(text || ""));
+  let working = protectNumberedMarkers(String(text || "").replace(/\r\n?/g, "\n"));
   const placeholders = [];
   PROTECT_ABBREVIATIONS.forEach((abbr, i) => {
     const token = `\u0000ABBR${i}\u0000`;
@@ -45,9 +45,15 @@ export function splitSentences(text) {
     placeholders.push([token, abbr]);
   });
 
+  // Blank-line paragraph/heading boundaries are semantic boundaries even when
+  // the preceding unit has no terminal full stop (common with pasted headings).
   const rawSentences = working
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9\"“])/)
-    .map((s) => s.trim())
+    .split(/\n{2,}/)
+    .flatMap((block) => block
+      .trim()
+      .split(/(?<=[.!?])\s+(?=[A-Z0-9\"“])/)
+      .map((s) => s.trim())
+      .filter(Boolean))
     .filter(Boolean);
 
   return rawSentences.map((s) => {
