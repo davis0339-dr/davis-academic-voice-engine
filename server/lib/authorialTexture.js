@@ -71,8 +71,6 @@ function paragraphOrganicity(diagnostics) {
   const m = mean(lengths);
   const cv = m ? stddev(lengths) / m : 0;
 
-  // Very even paragraph lengths are more suspicious than unevenness. Extremely
-  // high variability is not automatically rewarded; this is a soft signal only.
   let score = 0.7;
   if (cv >= 0.22 && cv <= 0.95) score = 1;
   else if (cv >= 0.14) score = 0.82;
@@ -99,19 +97,23 @@ function measuredFamilyFit(languageDeviation) {
 }
 
 function labelFor(score) {
-  if (score >= 0.72) return "strong_existing_texture";
-  if (score >= 0.52) return "mixed_existing_texture";
+  if (score >= 0.66) return "strong_existing_texture";
+  if (score >= 0.50) return "mixed_existing_texture";
   return "weak_or_synthetic_texture";
 }
 
 function preservationPriority(score, burden, cadenceDeviation) {
+  // High preservation requires a positive multi-signal texture score AND the
+  // absence of strong synthetic architecture. The threshold is deliberately
+  // below the label threshold because a clean scholarly document can contain a
+  // few local imperfections without losing its preservation claim.
   if (
-    score >= 0.68 &&
+    score >= 0.62 &&
     burden.high_signal_count === 0 &&
     burden.architecture_signal_count <= 1 &&
     !cadenceDeviation?.threshold_flagged
   ) return "high";
-  if (score >= 0.48 && burden.high_signal_count <= 1) return "medium";
+  if (score >= 0.46 && burden.high_signal_count <= 1) return "medium";
   return "low";
 }
 
@@ -136,7 +138,7 @@ export function assessAuthorialTexture({ text, diagnostics, cadenceDeviation, la
   const priority = preservationPriority(score, burden, cadenceDeviation);
 
   return {
-    version: "authorial-texture-v1",
+    version: "authorial-texture-v1.1",
     score: Number(score.toFixed(3)),
     label: labelFor(score),
     preservation_priority: priority,
