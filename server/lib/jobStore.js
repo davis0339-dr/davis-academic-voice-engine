@@ -186,12 +186,16 @@ async function processJob(jobId) {
     if (chunk.status !== "queued") continue;
     await processChunk(job, chunk);
     if (chunk.error && PROVIDER_BLOCKING_CODES.has(chunk.error.code)) {
-      job.status = chunk.error.code === "PROVIDER_BILLING_REQUIRED" ? "blocked_provider_billing" : "blocked_provider";
+      job.status = "failed";
       job.providerBlock = {
         code: chunk.error.code,
         message: chunk.error.message,
         chunkIndex: chunk.index,
       };
+      // Stop on the first account/configuration failure. The remaining chunks
+      // stay queued. After the provider issue is fixed, Retry on this one
+      // failed chunk resumes the normal job loop and continues the rest.
+      job.completedAt = new Date().toISOString();
       return;
     }
   }
