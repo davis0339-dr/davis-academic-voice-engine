@@ -17,18 +17,13 @@ const EXTERNAL_DETECTOR_POLICY = Object.freeze({
 });
 
 detectorScanRouter.get("/health/detectors", (_req, res) => {
-  res.json({
-    providers: [],
-    policy: EXTERNAL_DETECTOR_POLICY,
-  });
+  res.json({ providers: [], policy: EXTERNAL_DETECTOR_POLICY });
 });
 
 detectorScanRouter.get("/detector-research/evidence", (_req, res) => {
   res.json(detectorEvidenceSummary());
 });
 
-// Intentionally retained as a closed endpoint so old front-end builds fail safely
-// rather than silently sending manuscript text to a third-party detector.
 detectorScanRouter.post("/detector-scan", (req, res) => {
   res.status(410).json({
     error: "EXTERNAL_DETECTORS_DISABLED",
@@ -39,19 +34,21 @@ detectorScanRouter.post("/detector-scan", (req, res) => {
   });
 });
 
-// Compare source/revision features with detector results the researcher has
-// independently obtained and entered manually. The endpoint is deliberately
-// stateless: manuscript text and manual detector notes are analysed for this
-// request and are not persisted.
+// Manual/independently obtained observations are compared with source/revision
+// measurements. Optional styleFilters select the closest evidence-backed corpus
+// family; sparse filters transparently fall back through the corpus ladder.
 detectorScanRouter.post("/detector-research", (req, res) => {
-  const { sourceText = "", candidateText = "", observations = [] } = req.body || {};
+  const { sourceText = "", candidateText = "", observations = [], styleFilters = {} } = req.body || {};
   if ((!sourceText || typeof sourceText !== "string") && (!candidateText || typeof candidateText !== "string")) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "Provide `sourceText` and/or `candidateText` as text.", requestId: req.requestId });
   }
   if (!Array.isArray(observations) || observations.length > 20) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`observations` must be an array with at most 20 detector observations.", requestId: req.requestId });
   }
-  const report = buildDetectorResearchReport({ sourceText, candidateText, observations });
+  if (!styleFilters || typeof styleFilters !== "object" || Array.isArray(styleFilters)) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "`styleFilters` must be an object when supplied.", requestId: req.requestId });
+  }
+  const report = buildDetectorResearchReport({ sourceText, candidateText, observations, styleFilters });
   const comparison = buildSourceRevisionComparison(sourceText, candidateText);
   res.json({
     ...report,
@@ -63,11 +60,6 @@ detectorScanRouter.post("/detector-research", (req, res) => {
   });
 });
 
-// A researcher may upload exactly one small PNG/JPEG screenshot of an external
-// detector summary. The application extracts only visibly reported observations
-// so users do not have to count highlighted words or manually transcribe scores.
-// The image is request-scoped: it is sent only to the configured LLM vision call,
-// is never written to disk, and is never sent to the detector vendor.
 detectorScanRouter.post("/detector-screenshot", async (req, res) => {
   try {
     const validated = validateDetectorScreenshotPayload(req.body || {});
