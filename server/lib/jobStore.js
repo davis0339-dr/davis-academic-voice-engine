@@ -16,6 +16,7 @@ const TRANSIENT_CODES = new Set([
   "PROVIDER_OVERLOADED",
   "PROVIDER_UNAVAILABLE",
 ]);
+const PROVIDER_BLOCKING_CODES = new Set(["PROVIDER_BILLING_REQUIRED", "AUTH_FAILED", "NOT_CONFIGURED"]);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -64,6 +65,7 @@ function finishChunkTiming(chunk) {
 }
 
 function finalizeIfComplete(job) {
+  if (job.providerBlock) return;
   const allAttempted = job.chunks.every((c) => c.status === "done" || c.status === "failed");
   if (!allAttempted) return;
 
@@ -148,10 +150,24 @@ async function processJob(jobId) {
   const job = jobs.get(jobId);
   if (!job) return;
   job.status = "processing";
+  job.providerBlock = null;
   job.startedAt = job.startedAt || new Date().toISOString();
 
   for (const chunk of job.chunks) {
-    if (chunk.status === "queued") await processChunk(job, chunk);
+    if (chunk.status !== "queued") continue;
+    await processChunk(job, chunk);
+    if (chunk.error && PROVIDER_BLOCKING_CODES.has(chunk.error.code)) {
+      job.status = chunk.error.code === "PROVIDER_BILLING_REQUIRED" ? "blocked_provider_billing" : "blocked_provider";
+      job.providerBlock = {
+        code: chunk.error.code,
+        message: chunk.error.message,
+        chunkIndex: chunk.index,
+      };
+      // Stop immediately. Do not burn through the remaining chunks with the
+      // same non-retryable account/configuration failure. They stay queued and
+      // can continue after the provider issue is fixed and Retry is clicked.
+      return;
+    }
   }
   finalizeIfComplete(job);
 }
@@ -188,6 +204,7 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
     })),
     reassembledText: null,
     documentPreservation: null,
+    providerBlock: null,
   };
   jobs.set(job.id, job);
 
@@ -221,18 +238,16 @@ export function retryChunk(jobId, chunkIndex) {
   job.completedAt = null;
   job.reassembledText = null;
   job.documentPreservation = null;
+  job.providerBlock = null;
 
-  // True background retry: return immediately to the browser and let normal
-  // job polling show progress. A retry should never hold an HTTP connection
-  // open for the duration of an LLM request.
-  processChunk(job, chunk)
-    .then(() => finalizeIfComplete(job))
-    .catch((err) => {
-      chunk.status = "failed";
-      chunk.error = { code: err.code || "RETRY_FAILED", message: err.message };
-      finishChunkTiming(chunk);
-      finalizeIfComplete(job);
-    });
+  // Resume the normal job loop so a provider-blocked job continues with the
+  // failed chunk and then all still-queued chunks after credits/configuration
+  // are restored. The HTTP request returns immediately.
+  processJob(jobId).catch((err) => {
+    job.status = "failed";
+    job.fatalError = err.message;
+    job.completedAt = new Date().toISOString();
+  });
 
   return { job };
 }
@@ -282,6 +297,7 @@ export function summarizeJob(job) {
     })),
     reassembledText: job.reassembledText,
     documentPreservation: job.documentPreservation,
+    providerBlock: job.providerBlock || null,
     fatalError: job.fatalError || null,
   };
 }
