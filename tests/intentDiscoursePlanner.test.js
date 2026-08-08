@@ -98,7 +98,7 @@ test("KEEP now records why technically clean evidence is being preserved", () =>
 });
 
 test("deep aggressive mode gives paragraph rebuild scope without turning that scope into a sentence quota", () => {
-  const text = "The discussion is already clear. The paragraphs are grammatically correct. The wording remains formal. The argument is easy to follow.";
+  const text = "The discussion develops a coherent explanation of the financing issue while retaining the distinctions that matter for interpretation. The supporting propositions are already expressed in clear academic language and do not contain a local grammatical defect. The paragraph therefore provides a useful case for testing whether deep permission is represented as discourse scope rather than compulsory sentence replacement.";
   const plan = buildInterventionPlan(diagnose(text), {
     rewriteIntensity: "deep",
     lengthPreference: "maintain",
