@@ -1,13 +1,13 @@
 // Phase 3 long-document chunking.
 // Prefer semantic/section and paragraph boundaries, but enforce a real size
 // ceiling. Formal research artefacts (questions/hypotheses, alignment tables,
-// definitions, conceptual-model captions, variable tables, schedules and
-// references) are passed through rather than paraphrased.
+// definitions, conceptual models, variable tables, equations/statistical plans,
+// schedules and references) are passed through rather than paraphrased.
 
 const DEFAULT_TARGET_WORDS = 800;
 const HARD_MAX_MULTIPLIER = 1.25;
 
-const PASSTHROUGH_HEADING = /^(?:research questions? and hypotheses|research question\s*\d+|study alignment|definitions|conceptual model|operationali[sz]ation of variables|proposed schedule|references|table\s*\d+\b|figure\s*\d+\b)/i;
+const PASSTHROUGH_HEADING = /^(?:research questions? and hypotheses|research question\s*\d+|study alignment|definitions|conceptual model|operationali[sz]ation of variables|data analysis plan|proposed schedule|references|table\s*\d+\b|figure\s*\d+\b)/i;
 
 function wordCount(text) {
   return (text.match(/[A-Za-z0-9']+/g) || []).length;
@@ -99,11 +99,8 @@ function lastSentenceTail(text, maxChars = 240) {
 
 function isFormalPassthrough(heading, body) {
   if (heading && PASSTHROUGH_HEADING.test(heading.trim())) return true;
-  const wc = wordCount(body || "");
-  // Very small chunks produced by flattened DOCX/PDF tables are not useful
-  // standalone rewrite units and are safer preserved verbatim.
-  if (heading && wc > 0 && wc < 25) return true;
-  // Formal hypothesis lines should never be paraphrased into prose.
+  // Formal hypothesis lines should never be paraphrased into prose, even if
+  // they appear under an unexpected heading after document conversion.
   if (/\bH0?\d+[a-z]?\s*:/i.test(body || "") || /\bH1\d*[a-z]?\s*:/i.test(body || "")) return true;
   return false;
 }
