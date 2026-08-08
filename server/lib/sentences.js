@@ -26,6 +26,7 @@ const PROTECT_ABBREVIATIONS = [
 ];
 
 const LIST_DOT_TOKEN = "\u0000LISTDOT\u0000";
+const STRUCTURE_BREAK_TOKEN = "\u0000STRUCTBREAK\u0000";
 
 function protectNumberedMarkers(text) {
   // Protect 1. / 2. / 10. when the number is functioning as an enumerator or
@@ -35,8 +36,22 @@ function protectNumberedMarkers(text) {
   });
 }
 
+function markListHeaderBreaks(text) {
+  // Preserve historical cadence measurement semantics: ordinary paragraph
+  // breaks are NOT converted into sentence boundaries. Only a short colon-led
+  // header immediately followed by an enumerated/bulleted list gets a semantic
+  // break so "Treatment paths:" does not fuse with item 1.
+  return text.replace(
+    /(^|\n)([^\n]{1,120}:)\n{2,}(?=\s*(?:[-*•]|\d{1,3}[.)]|[A-Za-z][.)])\s+\S)/g,
+    (_match, prefix, header) => `${prefix}${header}${STRUCTURE_BREAK_TOKEN}`
+  );
+}
+
 export function splitSentences(text) {
-  let working = protectNumberedMarkers(String(text || "").replace(/\r\n?/g, "\n"));
+  let working = String(text || "").replace(/\r\n?/g, "\n");
+  working = markListHeaderBreaks(working);
+  working = protectNumberedMarkers(working);
+
   const placeholders = [];
   PROTECT_ABBREVIATIONS.forEach((abbr, i) => {
     const token = `\u0000ABBR${i}\u0000`;
@@ -45,10 +60,8 @@ export function splitSentences(text) {
     placeholders.push([token, abbr]);
   });
 
-  // Blank-line paragraph/heading boundaries are semantic boundaries even when
-  // the preceding unit has no terminal full stop (common with pasted headings).
   const rawSentences = working
-    .split(/\n{2,}/)
+    .split(STRUCTURE_BREAK_TOKEN)
     .flatMap((block) => block
       .trim()
       .split(/(?<=[.!?])\s+(?=[A-Z0-9\"“])/)
