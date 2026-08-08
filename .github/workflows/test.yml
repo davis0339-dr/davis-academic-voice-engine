@@ -34,7 +34,7 @@ jobs:
             echo 'A credential-like secret pattern was found in tracked files.'
             exit 1
           fi
-      - name: Check browser JavaScript syntax
+      - name: Check browser and research JavaScript syntax
         run: |
           node --check public/safeDom.js
           node --check public/app.js
@@ -44,6 +44,9 @@ jobs:
           node --check public/authorialTextureUI.js
           node --check public/detectorResearchUI.js
           node --check public/detectorEvidenceUI.js
+          node --check public/researchStudioUI.js
+          node --check server/lib/researcherAgency.js
+          node --check server/routes/researchStudio.js
       - name: Run test suite
         shell: bash
         run: |
