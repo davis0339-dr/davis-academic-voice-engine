@@ -66,8 +66,6 @@
       </details>
     `;
 
-    // Correct the older observability badge so over-execution is never rendered
-    // as UNDER-EXECUTED merely because execution_passed is false.
     if (compliance?.execution_status) {
       const legacy = document.querySelector("#plannerV3Dashboard .pov-compliance > div > strong");
       if (legacy && /Execution compliance:/i.test(legacy.textContent || "")) {
@@ -102,4 +100,16 @@
     .atv5-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.atv5-grid>div{padding:8px 10px;background:rgba(4,10,18,.4);border-radius:7px}.atv5-grid span{display:block;font-size:.76em;opacity:.68}.atv5-policy,.atv5-execution{margin-top:10px;padding:8px 10px;border-left:3px solid #557296;background:rgba(4,10,18,.28)}.atv5-execution.good{border-left-color:#2b845f}.atv5-execution.warn{border-left-color:#b56b4a}.atv5-panel details{margin-top:10px}.atv5-panel summary{cursor:pointer;color:#a9bedf}.atv5-components{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.atv5-components span{padding:4px 7px;border:1px solid #465b74;border-radius:5px;font-size:.8em}.atv5-panel p{font-size:.82em;opacity:.7}
   `;
   document.head.appendChild(style);
+})();
+
+// Load the research-only detector comparison layer after all existing fetch
+// wrappers have installed so it can observe configured detector scans without
+// changing the rewrite pipeline itself.
+(() => {
+  if (document.querySelector('script[data-detector-research-ui="true"]')) return;
+  const script = document.createElement("script");
+  script.src = "/detectorResearchUI.js";
+  script.dataset.detectorResearchUi = "true";
+  script.defer = true;
+  document.head.appendChild(script);
 })();
