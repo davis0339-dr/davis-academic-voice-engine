@@ -172,13 +172,18 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
     return { sentenceIndex: index, sentence, level, reasons };
   });
 
+  const discourseSignals = diagnostics.qualitative_human_discourse?.signals || [];
+  const documentGuidance = discourseSignals.map((signal) =>
+    `${signal.interpretation} ${signal.action}`
+  );
+
   // Aggressive rewriting authorises sentence-level reconstruction; it does
   // NOT by itself authorise reshuffling the author's rhetorical sequence.
   // Paragraph reordering is suggested only when a paragraph-level pattern was
   // actually diagnosed. This protects funnel logic and claim-evidence order.
   const paragraphReorderSuggested = diagnostics.structural_monotony.some(
     (m) => m.issue === "uniform_paragraph_length" || m.issue === "repeated_paragraph_opening_frame" || m.issue === "gap_label_scaffolding" || m.issue === "proxy_label_scaffolding"
-  );
+  ) || discourseSignals.some((signal) => signal.issue === "repeated_paragraph_logic");
 
   const summary = items.reduce((acc, item) => {
     acc[item.level] = (acc[item.level] || 0) + 1;
@@ -190,6 +195,8 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
     lengthPreference: length,
     naturalisation: naturalisationLevel,
     items,
+    documentGuidance,
+    qualitativeDiscourseSignalCount: discourseSignals.length,
     paragraphReorderSuggested,
     summary,
   };
