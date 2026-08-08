@@ -75,7 +75,7 @@
           <option value="authorial">Deep Authorial Reconstruction (evidence-safe)</option>
         </select>
       </label>
-      <div class="limit-hint">Deep Authorial Reconstruction keeps the research design, evidence, citations, variables and technical meaning locked while permitting broader paragraph and sentence redevelopment. Detector scores remain QA signals, not generation targets.</div>
+      <div class="limit-hint">Deep Authorial Reconstruction keeps the research design, evidence, citations, variables and technical meaning locked while permitting broader paragraph and sentence redevelopment.</div>
 
       <div id="profileEvidence" class="evidence-box">Evidence strength: —</div>
     </div>
@@ -116,7 +116,7 @@
     <button class="tab-header" data-tab="preservation">Preservation</button>
     <button class="tab-header" data-tab="profile">Style Profile</button>
     <button class="tab-header" data-tab="methodology">Methodology</button>
-    <button class="tab-header" data-tab="detectorqa">Detector QA</button>
+    <button class="tab-header" data-tab="detectorqa">Detector Research Lab</button>
     <button class="tab-header" data-tab="longdoc">Long Document</button>
   </div>
 
@@ -138,10 +138,61 @@
   <div id="tab-detectorqa" class="tab-panel">
     <p class="detector-disclaimer">Loading…</p>
     <div class="action-row">
-      <button id="scanSourceBtn">Scan source</button>
-      <button id="scanRevisedBtn">Scan revised</button>
+      <button id="scanSourceBtn">Scan source with configured detectors</button>
+      <button id="scanRevisedBtn">Scan revised with configured detectors</button>
+      <button id="analyseDetectorResearchBtn">Analyse source ↔ revised patterns</button>
       <span id="detectorStatus" class="llm-status"></span>
     </div>
+
+    <details class="research-entry" open>
+      <summary>Record a result from a detector you checked manually</summary>
+      <div class="detector-manual-grid">
+        <label>Detector
+          <select id="manualDetector">
+            <option value="GPTZero">GPTZero</option>
+            <option value="Stealthwriter">Stealthwriter</option>
+            <option value="Turnitin">Turnitin</option>
+            <option value="Copyleaks">Copyleaks</option>
+            <option value="Originality.ai">Originality.ai</option>
+            <option value="Other">Other</option>
+          </select>
+        </label>
+        <label>Model/version
+          <input id="manualDetectorVersion" type="text" maxlength="80" placeholder="e.g. Model 4.8b / V2" />
+        </label>
+        <label>Classification
+          <select id="manualDetectorClass">
+            <option value="ai">AI</option>
+            <option value="ai_paraphrased">AI paraphrased / rewritten</option>
+            <option value="mixed">Mixed</option>
+            <option value="human">Human</option>
+            <option value="uncertain">Uncertain</option>
+          </select>
+        </label>
+        <label>AI score %
+          <input id="manualAiScore" type="number" min="0" max="100" step="0.1" placeholder="100" />
+        </label>
+        <label>Human score %
+          <input id="manualHumanScore" type="number" min="0" max="100" step="0.1" placeholder="0" />
+        </label>
+        <label>Paraphrased score %
+          <input id="manualParaphraseScore" type="number" min="0" max="100" step="0.1" placeholder="optional" />
+        </label>
+        <label class="detector-wide">Flagged sentence numbers (optional, 1-based, comma-separated)
+          <input id="manualFlaggedSentences" type="text" maxlength="500" placeholder="1,2,5,8" />
+        </label>
+        <label class="detector-wide">Notes
+          <input id="manualDetectorNotes" type="text" maxlength="1000" placeholder="e.g. Possible AI paraphrasing; first paragraph heavily highlighted" />
+        </label>
+      </div>
+      <div class="action-row">
+        <button id="addDetectorObservationBtn">Add observation</button>
+        <button id="clearDetectorObservationsBtn">Clear observations</button>
+      </div>
+      <div id="manualObservationList" class="detector-observation-list"></div>
+    </details>
+
+    <div id="detectorResearchResults"></div>
     <div id="detectorResults"></div>
   </div>
   <div id="tab-longdoc" class="tab-panel">

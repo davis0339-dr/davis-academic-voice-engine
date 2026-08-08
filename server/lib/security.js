@@ -161,19 +161,47 @@ export function expensiveConcurrencyGate(req, res, next) {
   next();
 }
 
+function validateDetectorObservation(observation) {
+  if (!observation || typeof observation !== "object" || Array.isArray(observation)) return false;
+  const stringFields = ["detector", "version", "classification", "notes"];
+  for (const field of stringFields) {
+    const value = observation[field];
+    if (value !== undefined && value !== null && typeof value !== "string") return false;
+  }
+  if (typeof observation.detector === "string" && observation.detector.length > 80) return false;
+  if (typeof observation.version === "string" && observation.version.length > 80) return false;
+  if (typeof observation.classification === "string" && observation.classification.length > 80) return false;
+  if (typeof observation.notes === "string" && observation.notes.length > 1000) return false;
+  for (const field of ["aiScore", "humanScore", "paraphrasedScore"]) {
+    const value = observation[field];
+    if (value !== undefined && value !== null && value !== "" && !Number.isFinite(Number(value))) return false;
+  }
+  if (observation.flaggedSentenceIndices !== undefined) {
+    if (!Array.isArray(observation.flaggedSentenceIndices) || observation.flaggedSentenceIndices.length > 1000) return false;
+  }
+  return true;
+}
+
 export function validateApiPayload(req, res, next) {
   if (req.method !== "POST") return next();
   const path = req.path || "";
-  const requiresJsonBody = path === "/rewrite" || path === "/analyse" || path === "/detector-scan" || path === "/jobs" || path === "/jobs/";
+  const requiresJsonBody = path === "/rewrite" || path === "/analyse" || path === "/detector-scan" || path === "/detector-research" || path === "/jobs" || path === "/jobs/";
   if (!requiresJsonBody) return next();
 
   if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "A JSON object body is required.", requestId: req.requestId });
   }
 
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, label } = req.body;
-  if (text !== undefined && typeof text !== "string") {
-    return res.status(400).json({ error: "BAD_REQUEST", message: "`text` must be a string.", requestId: req.requestId });
+  const { text, sourceText, candidateText, observations, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, label } = req.body;
+  for (const [key, value] of Object.entries({ text, sourceText, candidateText })) {
+    if (value !== undefined && typeof value !== "string") {
+      return res.status(400).json({ error: "BAD_REQUEST", message: `\`${key}\` must be a string.`, requestId: req.requestId });
+    }
+  }
+  if (observations !== undefined) {
+    if (!Array.isArray(observations) || observations.length > 20 || !observations.every(validateDetectorObservation)) {
+      return res.status(400).json({ error: "BAD_REQUEST", message: "Invalid detector observations payload.", requestId: req.requestId });
+    }
   }
   for (const [key, value] of Object.entries({ rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, label })) {
     if (value !== undefined && (typeof value !== "string" || value.length > 80)) {

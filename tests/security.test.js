@@ -92,6 +92,37 @@ test("payload validator rejects prototype-like filter keys and malformed option 
   assert.equal(res.body.error, "BAD_REQUEST");
 });
 
+test("detector research payload accepts bounded observations and manuscript strings", () => {
+  const req = mockReq({
+    method: "POST",
+    path: "/detector-research",
+    body: {
+      sourceText: "Human source text.",
+      candidateText: "Candidate revision text.",
+      observations: [{ detector: "GPTZero", classification: "ai", aiScore: 87, flaggedSentenceIndices: [0] }],
+    },
+  });
+  const res = mockRes();
+  let nextCalled = false;
+  validateApiPayload(req, res, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+});
+
+test("detector research payload rejects oversized or malformed observation records", () => {
+  const req = mockReq({
+    method: "POST",
+    path: "/detector-research",
+    body: {
+      candidateText: "Candidate revision text.",
+      observations: [{ detector: "x".repeat(81), classification: "ai", aiScore: "not-a-number" }],
+    },
+  });
+  const res = mockRes();
+  validateApiPayload(req, res, () => assert.fail("malformed detector research payload must not pass"));
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, "BAD_REQUEST");
+});
+
 test("payload validator does not require a JSON body for chunk retry routes", () => {
   const req = mockReq({ method: "POST", path: "/jobs/id/chunks/1/retry", body: undefined });
   const res = mockRes();

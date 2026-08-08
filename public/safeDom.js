@@ -7,7 +7,8 @@
 
   const allowedTags = new Set([
     "A", "B", "BR", "BUTTON", "DETAILS", "DIV", "EM", "H4", "LI", "P", "PRE",
-    "SPAN", "STRONG", "SUMMARY", "TEXTAREA", "UL",
+    "SECTION", "SPAN", "STRONG", "SUMMARY", "TABLE", "TBODY", "TD", "TEXTAREA",
+    "TH", "THEAD", "TR", "UL",
   ]);
   const allowedAttrs = new Set([
     "class", "id", "href", "target", "rel", "readonly", "rows", "title", "role",
