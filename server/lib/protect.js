@@ -13,10 +13,13 @@ const NARRATIVE_CITATION =
 
 const NUMBERED_CITATION = /\[\d+(?:,\s*\d+)*(?:-\d+)?\]/g;
 
+// Numeric ranges encode one factual relation, not two independent numbers.
+// Keep the exact source form so 2015-2024 cannot silently become "2015, 2024"
+// and NAICS 31-33 cannot lose sector 32.
+const NUMERIC_RANGE = /\b\d{1,4}\s*[-–—]\s*\d{1,4}\b/g;
+
 // A minus sign is treated as a sign only when it is not the separator in a
-// range such as 2015-2024 or NAICS 31-33. This prevents false preservation
-// warnings such as "-2024" when a legitimate range is restyled as
-// "2015 to 2024".
+// range such as 2015-2024 or NAICS 31-33.
 const PERCENT_OR_DECIMAL = /(?<!\d)-?\d+(?:,\d{3})*(?:\.\d+)?%?/g;
 
 const MONETARY =
@@ -73,9 +76,10 @@ export function extractProtectedSpans(text) {
 
   const statNotation = dedupe(matchAll(STAT_NOTATION, text));
   const monetary = dedupe(matchAll(MONETARY, text));
+  const ranges = dedupe(matchAll(NUMERIC_RANGE, text));
 
   let numberScratch = text;
-  for (const c of [...citations, ...statNotation, ...monetary]) {
+  for (const c of [...citations, ...statNotation, ...monetary, ...ranges]) {
     numberScratch = numberScratch.split(c).join(" ");
   }
   const numbers = dedupe(
@@ -93,6 +97,7 @@ export function extractProtectedSpans(text) {
   return {
     citations,
     numbers,
+    ranges,
     monetary,
     statNotation,
     quotes,
