@@ -1,8 +1,8 @@
 // Deterministic audit of whether a model response actually executed the planner's
 // requested intervention depth. This is not an authorship detector and does not
-// infer who wrote the text. It reconciles planner demand, model-reported edit
-// counts and transformation evidence before the application presents a rewrite
-// as successfully executed.
+// infer who wrote the text. Execution depth and factual preservation are separate
+// verdicts: a deeply rewritten candidate can execute the plan and still be rejected
+// because it damaged protected content.
 
 const SUBSTANTIVE_LEVELS = new Set([
   "SENTENCE_RESTRUCTURE",
@@ -48,17 +48,23 @@ function reportedCounts(result) {
   return { total, kept, micro, restructures, splitMerge, paragraphReorders, substantive, intervention };
 }
 
-function preservationPassed(result) {
+function preservationAssessment(result) {
   const p = result?.preservation || {};
-  const required = [
-    p.numbers_ok,
-    p.citations_ok,
-    p.technical_terms_ok,
-    p.quotes_ok,
-    p.study_stage_ok !== false,
-    !p.new_factual_claims_detected,
-  ];
-  return required.every(Boolean);
+  const reasons = [];
+  if (!p.numbers_ok) reasons.push("Numbers or numeric relationships were not fully preserved.");
+  if (!p.citations_ok) reasons.push("One or more source citations were dropped, altered or newly introduced.");
+  if (!p.technical_terms_ok) reasons.push("Protected technical terms or acronyms were not fully preserved.");
+  if (!p.quotes_ok) reasons.push("Quoted material did not survive the revision as required.");
+  if (p.study_stage_ok === false) reasons.push("The revision changed proposal/completed-study orientation.");
+  if (p.new_factual_claims_detected) reasons.push("The preservation audit detected a new factual claim or factual drift.");
+  return { passed: reasons.length === 0, reasons };
+}
+
+function candidateStatus(executionPassed, preservationPassed) {
+  if (executionPassed && preservationPassed) return "accepted";
+  if (executionPassed && !preservationPassed) return "preservation_failed";
+  if (!executionPassed && preservationPassed) return "execution_under";
+  return "execution_and_preservation_failed";
 }
 
 export function assessExecutionCompliance(result) {
@@ -74,34 +80,26 @@ export function assessExecutionCompliance(result) {
     ? Number(quality.unchanged_sentence_ratio)
     : null;
 
-  const reasons = [];
+  const executionReasons = [];
   const warnings = [];
 
-  // A small plan should not trigger a costly reconciliation retry. Once the
-  // planner requests substantial work, however, a model cannot report carrying
-  // out barely half the requested intervention and still be treated as fully
-  // compliant.
   if (planned.intervention >= 8 && interventionCoverage < 0.67) {
-    reasons.push(`Only ${(interventionCoverage * 100).toFixed(0)}% of the planner's intervention load is represented in the model edit summary.`);
+    executionReasons.push(`Only ${(interventionCoverage * 100).toFixed(0)}% of the planner's intervention load is represented in the model edit summary.`);
   } else if (planned.intervention >= 8 && interventionCoverage < 0.80) {
     warnings.push(`Planner-to-model intervention coverage is ${(interventionCoverage * 100).toFixed(0)}%; acceptable but below the preferred 80% execution band.`);
   }
 
   if (planned.substantive >= 6 && structuralCoverage < 0.60) {
-    reasons.push(`Only ${(structuralCoverage * 100).toFixed(0)}% of planned substantive restructuring is represented in the model edit summary.`);
+    executionReasons.push(`Only ${(structuralCoverage * 100).toFixed(0)}% of planned substantive restructuring is represented in the model edit summary.`);
   }
 
   if (effectiveIntent === "discourse_reconstruction" && planned.substantive >= 6 && structuralCoverage < 0.67) {
-    reasons.push("The effective intervention is discourse reconstruction, but the returned structural edit count does not reflect enough of that plan.");
+    executionReasons.push("The effective intervention is discourse reconstruction, but the returned structural edit count does not reflect enough of that plan.");
   }
 
-  // Model-reported counts are useful but not sufficient. The unchanged-sentence
-  // ratio is calculated independently from source and revision, so it supplies a
-  // second piece of evidence about whether a structurally demanding plan was
-  // actually executed.
   const unchangedCeiling = Math.min(0.78, planKeepRatio + 0.25);
   if (planned.substantive >= 8 && unchangedSentenceRatio !== null && unchangedSentenceRatio > unchangedCeiling) {
-    reasons.push(`Independent source/revision comparison finds ${(unchangedSentenceRatio * 100).toFixed(0)}% of source sentences unchanged, above the ${(unchangedCeiling * 100).toFixed(0)}% ceiling implied by this plan's KEEP share.`);
+    executionReasons.push(`Independent source/revision comparison finds ${(unchangedSentenceRatio * 100).toFixed(0)}% of source sentences unchanged, above the ${(unchangedCeiling * 100).toFixed(0)}% ceiling implied by this plan's KEEP share.`);
   }
 
   if (planned.total > 0 && reported.total > 0) {
@@ -111,23 +109,28 @@ export function assessExecutionCompliance(result) {
     }
   }
 
-  const preservationOk = preservationPassed(result);
-  if (!preservationOk) {
-    reasons.push("The candidate does not pass factual/preservation safeguards, so it cannot be preferred solely for higher rewrite depth.");
-  }
+  const preservation = preservationAssessment(result);
+  const executionPassed = executionReasons.length === 0;
 
-  const scoreComponents = [
+  const executionScoreComponents = [
     interventionCoverage,
     structuralCoverage,
     unchangedSentenceRatio === null ? 1 : clamp01(1 - Math.max(0, unchangedSentenceRatio - planKeepRatio)),
-    preservationOk ? 1 : 0,
   ];
-  const score = Number((scoreComponents.reduce((a, b) => a + b, 0) / scoreComponents.length).toFixed(3));
+  const executionScore = Number((executionScoreComponents.reduce((a, b) => a + b, 0) / executionScoreComponents.length).toFixed(3));
+  const overallScore = Number(((executionScore * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3));
 
   return {
-    version: "planner-execution-compliance-v1",
-    passed: reasons.length === 0,
-    score,
+    version: "planner-execution-compliance-v2",
+    // `passed` is retained for backward compatibility, but now means execution
+    // compliance only. Preservation has its own explicit verdict below.
+    passed: executionPassed,
+    execution_passed: executionPassed,
+    preservation_ok: preservation.passed,
+    candidate_status: candidateStatus(executionPassed, preservation.passed),
+    score: executionScore,
+    execution_score: executionScore,
+    overall_score: overallScore,
     effective_intent: effectiveIntent,
     planned,
     reported,
@@ -136,10 +139,11 @@ export function assessExecutionCompliance(result) {
     planned_keep_ratio: Number(planKeepRatio.toFixed(3)),
     unchanged_sentence_ratio: unchangedSentenceRatio,
     unchanged_sentence_ceiling: Number(unchangedCeiling.toFixed(3)),
-    preservation_ok: preservationOk,
-    reasons,
+    reasons: executionReasons,
+    execution_reasons: executionReasons,
+    preservation_reasons: preservation.reasons,
     warnings,
-    note: "Execution compliance reconciles planner demand, model-reported operations and independently measured source/revision overlap. It is a rewrite-process quality check, not an AI-authorship score.",
+    note: "Execution compliance measures whether the planner's requested work was carried out. Preservation is assessed separately. Neither verdict is an AI-authorship score.",
   };
 }
 
@@ -147,10 +151,14 @@ export function preferByExecutionCompliance(firstResult, secondResult) {
   const first = assessExecutionCompliance(firstResult);
   const second = assessExecutionCompliance(secondResult);
 
+  // Preservation is a hard preference. A deeper rewrite never wins by damaging
+  // protected facts, citations, quotations, technical terms or study stage.
   if (second.preservation_ok && !first.preservation_ok) return { result: secondResult, compliance: second, selected: "second" };
   if (first.preservation_ok && !second.preservation_ok) return { result: firstResult, compliance: first, selected: "first" };
-  if (second.passed && !first.passed) return { result: secondResult, compliance: second, selected: "second" };
-  if (first.passed && !second.passed) return { result: firstResult, compliance: first, selected: "first" };
-  if (second.score > first.score) return { result: secondResult, compliance: second, selected: "second" };
+
+  if (second.execution_passed && !first.execution_passed) return { result: secondResult, compliance: second, selected: "second" };
+  if (first.execution_passed && !second.execution_passed) return { result: firstResult, compliance: first, selected: "first" };
+
+  if (second.overall_score > first.overall_score) return { result: secondResult, compliance: second, selected: "second" };
   return { result: firstResult, compliance: first, selected: "first" };
 }
