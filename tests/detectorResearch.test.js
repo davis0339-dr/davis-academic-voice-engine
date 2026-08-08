@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { linguisticProfile, positionalProfiles, buildDetectorResearchReport } from "../server/lib/detectorResearch.js";
 import { normalizeCopyleaksResponse } from "../server/lib/detectorProviders/copyleaks.js";
+import { normalizeGptZeroResponse } from "../server/lib/detectorProviders/gptzero.js";
 
 const source = `Corporate debt is a central source of financing for U.S. businesses, but creditors price it using more than accounting ratios. They also assess the reliability of financial reporting, the quality of oversight, the concentration of managerial authority, and the board's capacity to monitor risk.
 
@@ -36,7 +37,7 @@ test("detector research report preserves cross-detector disagreement rather than
       { detector: "Stealthwriter", version: "V1", classification: "human", humanScore: 100 },
     ],
   });
-  assert.equal(report.version, "detector-research-v1");
+  assert.equal(report.version, "detector-research-v2");
   assert.equal(report.detector_consensus.detector_count, 2);
   assert.equal(report.detector_consensus.disagreement, true);
   assert.ok(report.research_hypotheses.some((item) => /disagree/i.test(item)));
@@ -51,6 +52,19 @@ test("manual detector scores are bounded and sentence indices are sanitized", ()
   assert.equal(observation.ai_score, 100);
   assert.equal(observation.human_score, 0);
   assert.deepEqual(observation.flagged_sentence_indices, [0, 2, 4]);
+  assert.equal(report.flagged_sentence_analysis.available, true);
+  assert.equal(report.flagged_sentence_analysis.flagged_sentence_indices.length, 3);
+});
+
+test("opening detector highlights are measured separately from the remainder", () => {
+  const text = `Opening sentence one is highly regular. Opening sentence two is also highly regular.\n\nOpening paragraph two continues the pattern. It closes in the same way.\n\nThe third paragraph is different. Evidence appears here. The argument then moves elsewhere.`;
+  const report = buildDetectorResearchReport({
+    candidateText: text,
+    observations: [{ detector: "Manual", classification: "ai", flaggedSentenceIndices: [0, 1, 2] }],
+  });
+  assert.equal(report.flagged_sentence_analysis.available, true);
+  assert.ok(report.flagged_sentence_analysis.opening_two_paragraphs.flagged_share > report.flagged_sentence_analysis.remainder.flagged_share);
+  assert.ok(report.research_hypotheses.some((item) => /opening two paragraphs/i.test(item)));
 });
 
 test("Copyleaks normalizer retains model version, section probabilities and explainable spans", () => {
@@ -62,7 +76,29 @@ test("Copyleaks normalizer retains model version, section probabilities and expl
   });
   assert.equal(normalized.modelVersion, "v9.0");
   assert.equal(normalized.summary.ai, 0.8);
+  assert.equal(normalized.summary.predictedClass, "ai");
   assert.equal(normalized.sections[0].classification, "ai");
   assert.deepEqual(normalized.sections[0].matches, [{ start: 10, length: 25 }]);
   assert.deepEqual(normalized.explain.spans, [{ start: 12, length: 8 }]);
+});
+
+test("GPTZero normalizer retains document classification, confidence and sentence highlighting", () => {
+  const normalized = normalizeGptZeroResponse({
+    version: "2026-test",
+    documents: [{
+      document_classification: "AI_ONLY",
+      predicted_class: "ai",
+      confidence_category: "high",
+      class_probabilities: { human: 0.01, mixed: 0.04, ai: 0.95 },
+      sentences: [
+        { sentence: "One sentence.", generated_prob: 0.9, highlight_sentence_for_ai: true },
+        { sentence: "Another sentence.", generated_prob: 0.2, highlight_sentence_for_ai: false },
+      ],
+    }],
+  });
+  assert.equal(normalized.modelVersion, "2026-test");
+  assert.equal(normalized.summary.documentClassification, "AI_ONLY");
+  assert.equal(normalized.summary.confidenceCategory, "high");
+  assert.deepEqual(normalized.summary.highlightedSentenceIndices, [0]);
+  assert.equal(normalized.sentences[0].generatedProb, 0.9);
 });
