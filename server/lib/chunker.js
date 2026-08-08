@@ -1,12 +1,13 @@
 // Phase 3 long-document chunking.
 // Prefer semantic/section and paragraph boundaries, but enforce a real size
-// ceiling. Pasted Word/PDF text often arrives as one enormous paragraph; in
-// that case sentence boundaries are the safe fallback. A pathological single
-// sentence is finally split by words rather than allowing a multi-thousand-word
-// request to reach the LLM and time out.
+// ceiling. Formal research artefacts (questions/hypotheses, alignment tables,
+// definitions, conceptual-model captions, variable tables, schedules and
+// references) are passed through rather than paraphrased.
 
 const DEFAULT_TARGET_WORDS = 800;
 const HARD_MAX_MULTIPLIER = 1.25;
+
+const PASSTHROUGH_HEADING = /^(?:research questions? and hypotheses|research question\s*\d+|study alignment|definitions|conceptual model|operationali[sz]ation of variables|proposed schedule|references|table\s*\d+\b|figure\s*\d+\b)/i;
 
 function wordCount(text) {
   return (text.match(/[A-Za-z0-9']+/g) || []).length;
@@ -39,9 +40,7 @@ function splitPathologicalSentence(sentence, hardMaxWords) {
 }
 
 function groupSentencesByTargetSize(text, targetWords, hardMaxWords) {
-  const sentences = splitSentences(text).flatMap((sentence) =>
-    splitPathologicalSentence(sentence, hardMaxWords)
-  );
+  const sentences = splitSentences(text).flatMap((sentence) => splitPathologicalSentence(sentence, hardMaxWords));
   const groups = [];
   let current = [];
   let currentWords = 0;
@@ -76,9 +75,6 @@ function groupParagraphsByTargetSize(paragraphs, targetWords, hardMaxWords) {
 
   for (const para of paragraphs) {
     const w = wordCount(para);
-
-    // Production bug fixed: a 2,901-word pasted paragraph previously bypassed
-    // the nominal chunk target and went to the model as one request.
     if (w > hardMaxWords) {
       flush();
       groups.push(...groupSentencesByTargetSize(para, targetWords, hardMaxWords));
@@ -101,6 +97,17 @@ function lastSentenceTail(text, maxChars = 240) {
   return (sentenceStart >= 0 ? tail.slice(sentenceStart) : tail).trim();
 }
 
+function isFormalPassthrough(heading, body) {
+  if (heading && PASSTHROUGH_HEADING.test(heading.trim())) return true;
+  const wc = wordCount(body || "");
+  // Very small chunks produced by flattened DOCX/PDF tables are not useful
+  // standalone rewrite units and are safer preserved verbatim.
+  if (heading && wc > 0 && wc < 25) return true;
+  // Formal hypothesis lines should never be paraphrased into prose.
+  if (/\bH0?\d+[a-z]?\s*:/i.test(body || "") || /\bH1\d*[a-z]?\s*:/i.test(body || "")) return true;
+  return false;
+}
+
 function chunkByHeadings(fullText, headings, targetWords, hardMaxWords) {
   const sections = [];
   for (let i = 0; i < headings.length; i++) {
@@ -111,15 +118,23 @@ function chunkByHeadings(fullText, headings, targetWords, hardMaxWords) {
 
   const preamble = fullText.slice(0, headings[0].offset).trim();
   const rawChunks = [];
-  if (preamble) rawChunks.push({ heading: null, reattachHeading: false, body: preamble });
+  if (preamble) rawChunks.push({ heading: null, reattachHeading: false, body: preamble, rewriteMode: "passthrough" });
 
   for (const section of sections) {
     if (!section.body) continue;
+    const formal = isFormalPassthrough(section.heading, section.body);
+    if (formal) {
+      rawChunks.push({ heading: section.heading, reattachHeading: true, body: section.body, rewriteMode: "passthrough" });
+      continue;
+    }
     const groups = groupParagraphsByTargetSize(splitParagraphs(section.body), targetWords, hardMaxWords);
     groups.forEach((body, i) => {
-      // Keep the real section label on continuation chunks for the progress UI,
-      // but mark it for reassembly only on the first piece. No fake headings.
-      rawChunks.push({ heading: section.heading, reattachHeading: i === 0, body });
+      rawChunks.push({
+        heading: section.heading,
+        reattachHeading: i === 0,
+        body,
+        rewriteMode: isFormalPassthrough(section.heading, body) ? "passthrough" : "rewrite",
+      });
     });
   }
   return rawChunks;
@@ -127,7 +142,7 @@ function chunkByHeadings(fullText, headings, targetWords, hardMaxWords) {
 
 function chunkByParagraphGroups(fullText, targetWords, hardMaxWords) {
   const groups = groupParagraphsByTargetSize(splitParagraphs(fullText), targetWords, hardMaxWords);
-  return groups.map((body) => ({ heading: null, reattachHeading: false, body }));
+  return groups.map((body) => ({ heading: null, reattachHeading: false, body, rewriteMode: "rewrite" }));
 }
 
 export function chunkDocument(fullText, documentMap, options = {}) {
@@ -147,6 +162,7 @@ export function chunkDocument(fullText, documentMap, options = {}) {
       index,
       heading: c.heading,
       reattachHeading: c.reattachHeading,
+      rewriteMode: c.rewriteMode || "rewrite",
       sourceText: c.body,
       wordCount: wordCount(c.body),
       precedingContextTail: index > 0 ? lastSentenceTail(rawChunks[index - 1].body) : "",
