@@ -48,8 +48,6 @@ function replaceBlocksSequentially(candidateText, replacements, structure) {
   let out = String(candidateText || "").replace(/\r\n?/g, "\n");
   const ordered = [...replacements].sort((a, b) => b.block_index - a.block_index);
 
-  // Replace from the end using the exact diagnosed block text. This preserves
-  // all untouched separators, headings and paragraphs verbatim.
   for (const replacement of ordered) {
     const block = structure.blocks[replacement.block_index];
     if (!block || block.type !== "paragraph") continue;
@@ -126,13 +124,25 @@ async function callResidualModel(payload) {
 }
 
 export async function selectiveResidualRework({ sourceText, candidateText, maxBlocks = 6 }) {
+  const sourceBaseline = analyseResidualWriting(sourceText);
   const before = analyseResidualWriting(candidateText);
-  if (!before.should_rework) {
+  const sourceScore = Number(sourceBaseline.metrics.total_risk_score || 0);
+  const beforeScore = Number(before.metrics.total_risk_score || 0);
+  const candidateWorseThanSource = beforeScore > sourceScore + 2;
+  const shouldAttempt = before.target_blocks.length > 0 && (before.should_rework || candidateWorseThanSource);
+
+  if (!shouldAttempt) {
     return {
       attempted: false,
       accepted: false,
-      reason: "No residual block met the selective-rework threshold.",
+      reason: candidateWorseThanSource
+        ? "The candidate scored worse than the source baseline, but no paragraph met the minimum block-target threshold for safe local rework."
+        : "No residual block met the selective-rework threshold.",
       revised_text: candidateText,
+      source_baseline: sourceBaseline,
+      source_risk_score: sourceScore,
+      candidate_risk_score: beforeScore,
+      candidate_worse_than_source: candidateWorseThanSource,
       before,
       after: before,
       target_blocks: [],
@@ -157,7 +167,10 @@ export async function selectiveResidualRework({ sourceText, candidateText, maxBl
   });
 
   const { result, repairUsed } = await callResidualModel({
-    instruction: "Revise only the target paragraphs. Preserve meaning and hard protected spans; reduce the supplied residual risks without over-formalising the prose.",
+    instruction: "Revise only the target paragraphs. Preserve meaning and hard protected spans; reduce the supplied residual risks without over-formalising the prose. The result should not merely be more different from the source; it should reduce the diagnosed synthetic discourse pressure.",
+    source_risk_score: sourceScore,
+    candidate_risk_score: beforeScore,
+    candidate_worse_than_source: candidateWorseThanSource,
     targets,
   });
 
@@ -172,6 +185,10 @@ export async function selectiveResidualRework({ sourceText, candidateText, maxBl
       accepted: false,
       reason: "Residual model did not return exactly one valid replacement for each target block.",
       revised_text: candidateText,
+      source_baseline: sourceBaseline,
+      source_risk_score: sourceScore,
+      candidate_risk_score: beforeScore,
+      candidate_worse_than_source: candidateWorseThanSource,
       before,
       after: before,
       target_blocks: targets.map((target) => target.block_index),
@@ -182,21 +199,28 @@ export async function selectiveResidualRework({ sourceText, candidateText, maxBl
   const reworkedText = replaceBlocksSequentially(candidateText, replacements, candidateStructure);
   const preservation = auditPreservation(sourceText, reworkedText, extractProtectedSpans(sourceText));
   const after = analyseResidualWriting(reworkedText);
-  const beforeScore = Number(before.metrics.total_risk_score || 0);
   const afterScore = Number(after.metrics.total_risk_score || 0);
   const riskImproved = afterScore < beforeScore;
+  const noWorseThanSource = afterScore <= sourceScore + 2;
   const preservationOk = preservationPassed(preservation);
-  const accepted = preservationOk && riskImproved;
+  const accepted = preservationOk && riskImproved && noWorseThanSource;
 
   return {
     attempted: true,
     accepted,
     reason: accepted
-      ? `Selective rework reduced residual risk from ${beforeScore} to ${afterScore} while preservation safeguards remained intact.`
+      ? `Selective rework reduced residual risk from ${beforeScore} to ${afterScore}, returned it to the source-baseline band (${sourceScore}), and preserved protected content.`
       : !preservationOk
         ? "Selective rework was rejected because factual/preservation safeguards failed."
-        : "Selective rework was rejected because it did not reduce the residual risk score.",
+        : !riskImproved
+          ? "Selective rework was rejected because it did not reduce the residual risk score."
+          : `Selective rework improved the candidate but was still more synthetically patterned than the source baseline (${afterScore} versus ${sourceScore}); the prior candidate was retained for further review.`,
     revised_text: accepted ? reworkedText : candidateText,
+    source_baseline: sourceBaseline,
+    source_risk_score: sourceScore,
+    candidate_risk_score: beforeScore,
+    after_risk_score: afterScore,
+    candidate_worse_than_source: candidateWorseThanSource,
     before,
     after: accepted ? after : before,
     attempted_after: after,
