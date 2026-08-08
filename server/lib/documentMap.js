@@ -2,6 +2,7 @@ import { extractProtectedSpans } from "./protect.js";
 
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+)$/;
 const NUMBERED_HEADING = /^(\d+(?:\.\d+)*)\s+([A-Z][^.!?]{2,80})$/;
+const INSTITUTIONAL_HEADING = /^(Section|Chapter)\s+(\d+(?:\.\d+)*)\s*:\s*([A-Z][^.!?]{1,100})$/i;
 const RESEARCH_QUESTION_HEADING = /^Research Question\s+\d+(?:[A-Za-z])?$/i;
 const ALLCAPS_HEADING = /^[A-Z][A-Z0-9 ,'&\-:]{2,79}$/;
 const SMALL_TITLE_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "vs", "with"]);
@@ -11,6 +12,7 @@ const NON_HEADING_TABLE_LABELS = new Set([
   "role",
   "expected relation",
   "element",
+  "question or focus",
   "evidence",
   "analytic response",
   "research question and focus",
@@ -53,6 +55,16 @@ function headingLevel(line) {
 
   const md = line.match(MARKDOWN_HEADING);
   if (md) return { level: md[1].length, text: md[2].trim(), style: "markdown" };
+
+  const institutional = line.match(INSTITUTIONAL_HEADING);
+  if (institutional) {
+    const depth = institutional[2].split(".").length;
+    return {
+      level: depth,
+      text: `${institutional[1]} ${institutional[2]}: ${institutional[3]}`.trim(),
+      style: "institutional_numbered",
+    };
+  }
 
   const numbered = line.match(NUMBERED_HEADING);
   if (numbered) {
