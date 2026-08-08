@@ -27,12 +27,7 @@ test(
       });
 
     await assert.rejects(
-      () =>
-        llmProvider.callAnthropic({
-          system: "test",
-          messages: [{ role: "user", content: "test" }],
-          maxTokens: 8,
-        }),
+      () => llmProvider.callAnthropic({ system: "test", messages: [{ role: "user", content: "test" }], maxTokens: 8 }),
       (err) => err.healthState === HealthState.PROVIDER_OVERLOADED && err.status === 529
     );
   })
@@ -44,13 +39,33 @@ test(
     global.fetch = async () => new Response("temporarily unavailable", { status: 503 });
 
     await assert.rejects(
-      () =>
-        llmProvider.callAnthropic({
-          system: "test",
-          messages: [{ role: "user", content: "test" }],
-          maxTokens: 8,
-        }),
+      () => llmProvider.callAnthropic({ system: "test", messages: [{ role: "user", content: "test" }], maxTokens: 8 }),
       (err) => err.healthState === HealthState.PROVIDER_UNAVAILABLE && err.status === 503
+    );
+  })
+);
+
+test(
+  "exhausted Anthropic credits are classified as PROVIDER_BILLING_REQUIRED rather than generic provider error",
+  withProviderEnv(async () => {
+    global.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          type: "error",
+          error: {
+            type: "invalid_request_error",
+            message: "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+          },
+        }),
+        { status: 400, headers: { "content-type": "application/json" } }
+      );
+
+    await assert.rejects(
+      () => llmProvider.callAnthropic({ system: "test", messages: [{ role: "user", content: "test" }], maxTokens: 8 }),
+      (err) =>
+        err.healthState === HealthState.PROVIDER_BILLING_REQUIRED &&
+        err.status === 400 &&
+        /credits are exhausted/i.test(err.message)
     );
   })
 );
