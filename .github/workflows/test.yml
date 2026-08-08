@@ -45,6 +45,7 @@ jobs:
           node --check public/detectorResearchUI.js
           node --check public/detectorEvidenceUI.js
           node --check public/researchStudioUI.js
+          node --check public/researchStudioCapabilitiesUI.js
           node --check server/lib/researcherAgency.js
           node --check server/routes/researchStudio.js
       - name: Run test suite
