@@ -1,12 +1,17 @@
 import { Router } from "express";
 import { scanWithAllConfigured, listDetectorHealth } from "../lib/detectorQA.js";
 import { buildDetectorResearchReport } from "../lib/detectorResearch.js";
+import { detectorEvidenceSummary } from "../lib/detectorEvidenceBase.js";
 
 export const detectorScanRouter = Router();
 
 detectorScanRouter.get("/health/detectors", async (_req, res) => {
   const health = await listDetectorHealth();
   res.json({ providers: health });
+});
+
+detectorScanRouter.get("/detector-research/evidence", (_req, res) => {
+  res.json(detectorEvidenceSummary());
 });
 
 detectorScanRouter.post("/detector-scan", async (req, res) => {
@@ -16,7 +21,7 @@ detectorScanRouter.post("/detector-scan", async (req, res) => {
   }
   const result = await scanWithAllConfigured(text);
   const research = buildDetectorResearchReport({ candidateText: text, observations: result.observations });
-  res.json({ label: label || null, ...result, research, requestId: req.requestId });
+  res.json({ label: label || null, ...result, research, evidence: detectorEvidenceSummary(), requestId: req.requestId });
 });
 
 // Compare source/revision features with any detector results the researcher has
@@ -32,5 +37,5 @@ detectorScanRouter.post("/detector-research", (req, res) => {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`observations` must be an array with at most 20 detector observations.", requestId: req.requestId });
   }
   const report = buildDetectorResearchReport({ sourceText, candidateText, observations });
-  res.json({ ...report, persistence: "none", requestId: req.requestId });
+  res.json({ ...report, evidence: detectorEvidenceSummary(), persistence: "none", requestId: req.requestId });
 });
