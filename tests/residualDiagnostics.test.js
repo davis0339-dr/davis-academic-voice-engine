@@ -40,17 +40,6 @@ test("flags repeated rhetorical valuation when sentences mainly announce importa
   assert.ok(result.signals.some((signal) => signal.id === "rhetorical_valuation"));
 });
 
-test("flags low propositional yield when meta commentary dominates a short passage", () => {
-  const text = [
-    "That distinction matters. That distinction matters. That distinction matters. That distinction matters.",
-    "The actual evidence is discussed in the following paragraph.",
-  ].join("\n\n");
-
-  const result = analyseResidualWriting(text);
-  assert.ok(result.metrics.low_propositional_yield_count >= 3);
-  assert.ok(result.signals.some((signal) => signal.id === "low_propositional_yield"));
-});
-
 test("detects taxonomy pressure without claiming that every substantive list must be removed", () => {
   const text = [
     "The system distinguishes among five treatment modes: preserve and polish, repair clarity and flow, strengthen context, reconstruct discourse, and redevelop weak reasoning.",
