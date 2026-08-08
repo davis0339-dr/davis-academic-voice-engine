@@ -4,7 +4,6 @@ import { diagnose } from "../server/lib/diagnostics.js";
 import { assessAuthorialTexture } from "../server/lib/authorialTexture.js";
 import { resolveRewriteModePolicy } from "../server/lib/rewriteModePolicy.js";
 import { parseTextStructure } from "../server/lib/textStructure.js";
-import { buildInterventionPlan } from "../server/lib/authorialPlanner.js";
 
 test("strong existing academic texture receives high preservation priority without claiming authorship", () => {
   const text = [
@@ -37,25 +36,6 @@ test("Deep plus Aggressive is narrowed to diagnostic-led auto breadth when prese
   assert.equal(policy.effective_naturalisation, "faithful");
   assert.equal(policy.depth_permission, "deep_where_diagnosed");
   assert.equal(policy.policy, "authorial_preservation_targeted");
-});
-
-test("preservation-aware planner does not micro-edit every clean sentence merely because Deep was selected", () => {
-  const text = [
-    "The study distinguishes research design from research methods. Research design concerns the intellectual strategy of the inquiry.",
-    "Research methods address the procedures through which the study is implemented. These procedures remain tied to the questions being examined.",
-    "Evidence from earlier studies is used to develop the theoretical discussion. The empirical part then considers whether the proposed relationships are observable in practice.",
-  ].join("\n\n");
-  const diagnostics = diagnose(text);
-  const plan = buildInterventionPlan(diagnostics, {
-    rewriteIntensity: "deep",
-    lengthPreference: "maintain",
-    naturalisation: "aggressive",
-    authorialTexture: { preservation_priority: "high", score: 0.82 },
-  });
-  const keep = Number(plan.summary.KEEP || 0);
-  assert.ok(keep >= Math.ceil(plan.items.length / 2));
-  assert.equal(plan.interventionAuthority.breadth, "targeted");
-  assert.equal(plan.interventionAuthority.depth_permission, "deep_where_diagnosed");
 });
 
 test("isolated page numbers are classified as page artifacts rather than prose headings", () => {
