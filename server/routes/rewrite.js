@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { rewrite } from "../lib/pipeline.js";
+import { assessExecutionCompliance, preferByExecutionCompliance } from "../lib/executionCompliance.js";
 import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 
@@ -17,6 +18,13 @@ const MAX_RETRIES = 2;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function qualityPipelineAlreadyRetried(result) {
+  return Boolean(
+    result?.transformation_quality?.corrective_retry_used ||
+    result?.transformation_quality?.rescue_retry_used
+  );
 }
 
 rewriteRouter.post("/rewrite", async (req, res) => {
@@ -51,7 +59,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
   let lastErr;
   while (attempt <= MAX_RETRIES) {
     try {
-      const result = await rewrite({
+      let result = await rewrite({
         sourceText: text,
         styleFilters: styleFilters || {},
         rewriteIntensity,
@@ -59,6 +67,46 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         lengthPreference,
         naturalisation,
       });
+
+      let executionCompliance = assessExecutionCompliance(result);
+      let reconciliationRetryUsed = false;
+      let firstAttemptCompliance = null;
+      let selectedAttempt = "first";
+
+      // Faithful/auto revisions previously had no rewrite-depth reconciliation
+      // gate. If a substantial planner demand is under-executed, make exactly
+      // one fresh attempt with the same user settings. Aggressive candidates
+      // that already consumed the pipeline's correction/rescue retries are not
+      // multiplied again here; their compliance result remains visible instead.
+      if (
+        !executionCompliance.passed &&
+        (naturalisation || "faithful") !== "off" &&
+        !qualityPipelineAlreadyRetried(result)
+      ) {
+        firstAttemptCompliance = executionCompliance;
+        const secondResult = await rewrite({
+          sourceText: text,
+          styleFilters: styleFilters || {},
+          rewriteIntensity,
+          grammarIntensity,
+          lengthPreference,
+          naturalisation,
+        });
+        const preferred = preferByExecutionCompliance(result, secondResult);
+        result = preferred.result;
+        executionCompliance = preferred.compliance;
+        selectedAttempt = preferred.selected;
+        reconciliationRetryUsed = true;
+      }
+
+      result.execution_compliance = {
+        ...executionCompliance,
+        reconciliation_retry_used: reconciliationRetryUsed,
+        selected_attempt: selectedAttempt,
+        first_attempt: firstAttemptCompliance,
+        max_reconciliation_retries: 1,
+      };
+
       return res.json({ ...result, requestId });
     } catch (err) {
       lastErr = err;
