@@ -122,13 +122,23 @@ const dailyCostLimiter = createRateLimiter({
   name: "expensive-day",
 });
 
+const jobCreateLimiter = createRateLimiter({
+  windowMs: 10 * 60 * 1000,
+  max: intEnv("LONGDOC_JOBS_PER_10_MIN", 6, 1, 100),
+  name: "longdoc-create",
+});
+
 export function protectExpensiveApi(req, res, next) {
   if (req.method !== "POST") return next();
   const path = req.path || "";
   if (!/^\/(?:rewrite|analyse|detector-scan|jobs)(?:\/|$)/.test(path)) return next();
   return expensiveLimiter(req, res, (err) => {
     if (err) return next(err);
-    dailyCostLimiter(req, res, next);
+    dailyCostLimiter(req, res, (dailyErr) => {
+      if (dailyErr) return next(dailyErr);
+      if (path === "/jobs" || path === "/jobs/") return jobCreateLimiter(req, res, next);
+      next();
+    });
   });
 }
 
@@ -154,6 +164,10 @@ export function expensiveConcurrencyGate(req, res, next) {
 
 export function validateApiPayload(req, res, next) {
   if (req.method !== "POST") return next();
+  const path = req.path || "";
+  const requiresJsonBody = path === "/rewrite" || path === "/analyse" || path === "/detector-scan" || path === "/jobs" || path === "/jobs/";
+  if (!requiresJsonBody) return next();
+
   if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "A JSON object body is required.", requestId: req.requestId });
   }
