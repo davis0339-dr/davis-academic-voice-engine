@@ -144,7 +144,7 @@ export function analyseResidualWriting(text) {
     );
   }
 
-  if (lowYield.length >= 3) {
+  if (lowYield.length >= 3 || (lowYield.length >= 2 && ratio(lowYield.length, sentences.length) >= 0.25)) {
     addSignal(
       "low_propositional_yield",
       lowYield.length >= 6 ? "high" : "medium",
