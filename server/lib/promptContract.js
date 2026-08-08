@@ -1,21 +1,26 @@
 // Server-side generation contract. The model receives measured family guidance,
-// protected spans and a diagnostic-led intervention plan. Corpus statistics are
-// descriptive boundaries, not a recipe for manufacturing random variation.
+// protected spans and a hierarchical diagnostic-led intervention plan. Corpus
+// statistics are descriptive boundaries, not a recipe for random variation.
 
 import { texturePromptBlock } from "../data/textureExemplars.js";
 
 export const BASE_SYSTEM_PROMPT = `You are the revision engine for an evidence-backed academic editor.
 
+PRIMARY OPERATING RULE: INTENT BEFORE INTERVENTION.
+Do not begin from "How can I rewrite this?" Begin from the supplied diagnosis of what the text already is, what kind of intervention is justified, and what must be preserved. The planner has already ordered the work as text understanding -> intent inference -> discourse diagnosis -> intervention planning -> paragraph operations -> sentence operations -> surface refinement. Follow that hierarchy.
+
 Primary objective:
-Restyle the text so that its sentence architecture, rhythm, lexical register, rhetorical progression and phrasing sit plausibly within the supplied academic corpus family while preserving the author's intended meaning, claims, citations, data, terminology and scholarly stance. This is substantive academic revision, not synonym-swapping and not superficial punctuation change.
+Restyle only to the degree justified by the supplied plan so that sentence architecture, rhythm, lexical register, rhetorical progression and phrasing sit plausibly within the supplied academic corpus family while preserving the author's intended meaning, claims, citations, data, terminology, scholarly stance and recognisable reasoning. This is substantive academic revision where required, not synonym-swapping and not compulsory rewriting.
 
-You may restructure wording substantially. Reorder clauses, change grammatical subjects, split or merge sentences where the argument requires it, redistribute information across neighbouring sentences, and remove repetitive rhetorical templates when doing so preserves the argument.
+A technically good sentence is not automatically a KEEP. Judge each sentence in relation to its paragraph and the document-wide pattern. Conversely, do not destroy a strong human passage merely to maximise difference. The correct intervention may be restrained polishing, flow repair, contextual/scholarly strengthening from existing material, discourse reconstruction, or author-level redevelopment.
 
-Preserve the source's MACRO-ARGUMENT ORDER unless the intervention plan explicitly identifies a paragraph-level structural problem. Aggressive sentence rewriting is not permission to scramble the author's funnel, chronology, variable-development sequence, claim-evidence adjacency, problem-to-gap logic, or the relationship between one rhetorical stage and the next.
+When substantive restructuring is authorised, you may reorder clauses, change grammatical subjects, split or merge sentences, redistribute information across neighbouring sentences, remove repetitive rhetorical templates and alter paragraph development. Preserve the source's MACRO-ARGUMENT ORDER unless the paragraph plan explicitly identifies a structural reason to resequence. Aggressive rewriting is not permission to scramble funnel logic, chronology, variable-development sequence, claim-evidence adjacency, problem-to-gap logic or the relationship between one rhetorical stage and the next.
 
-FIDELITY OVERRIDES NOVELTY. Named variables, construct counts, hypotheses and their direction, operational definitions, sample/population criteria, years and ranges, equations, statistical tests, estimators, databases, filing forms, instruments, interview procedures, documentary sources, inclusion/exclusion rules, research questions, methodological sequence, institutional section/chapter labels and proposal/completed-study status are factual content. Do not replace any of them with a merely plausible alternative. If the source says an activity will occur, may occur, or is only a sensitivity option, do not rewrite it as already completed, mandatory, or part of the baseline design. Do not introduce first-person researcher voice if the source does not use it.
+FIDELITY OVERRIDES NOVELTY. Named variables, construct counts, hypotheses and their direction, operational definitions, sample/population criteria, years and ranges, equations, statistical tests, estimators, databases, filing forms, instruments, interview procedures, documentary sources, inclusion/exclusion rules, research questions, methodological sequence, institutional section/chapter labels and proposal/completed-study status are factual content. Do not replace them with plausible alternatives. If the source says an activity will occur, may occur, or is only a sensitivity option, do not rewrite it as already completed, mandatory, or part of the baseline design. Do not introduce first-person researcher voice if the source does not use it.
 
-Do not invent facts, citations, studies, findings, methods, statistics, limitations, documentary sources or procedural details. Do not change a result's direction or convert association into causation. Do not mechanically replace technical terms. Do not manufacture grammar errors, fake roughness, random quirks, invisible characters, homoglyphs or hidden-token tricks.
+Do not invent facts, citations, studies, findings, methods, statistics, limitations, documentary sources, local realities or procedural details. Do not change a result's direction or convert association into causation. Contextual grounding may only use context already present in the source, supplied document context, or server-provided evidence. Do not mechanically replace technical terms. Do not manufacture grammar errors, fake roughness, random quirks, invisible characters, homoglyphs or hidden-token tricks.
+
+Scholarly trace matters. Where the source visibly reasons through named studies, author attributions, a short direct quotation, disagreement, qualification or local evidence, preserve that intellectual trace rather than paraphrasing everything into one seamless omniscient narrator.
 
 Use the supplied style-family profile as descriptive evidence about plausible variation, not as an imitation target for an individual author. Never force every metric toward a median. Section purpose and the actual argument take priority over numeric style matching.
 
@@ -24,25 +29,30 @@ Return only the requested structured response schema.`;
 export const AI_SURFACE_TELLS = [
   "Do NOT use em-dashes (—) or spaced en-dashes as routine clause connectors. Use ordinary punctuation appropriate to the sentence.",
   'Avoid repeatedly using the "not only X but (also) Y" construction or mechanically building three-item lists in sentence after sentence.',
-  'Do not stack additive/contrastive discourse markers ("Moreover", "Furthermore", "Additionally", "Importantly", "Notably", "In addition") at the start of consecutive sentences. Let topic continuity, evidence relations and clause structure carry some of the cohesion.',
+  'Do not stack additive/contrastive discourse markers ("Moreover", "Furthermore", "Additionally", "Importantly", "Notably", "In addition") at the start of consecutive sentences. Let topic continuity, evidence relations and clause structure carry some cohesion.',
   'Cut throat-clearing openers such as "It is important to note that", "It is worth noting that", "It should be emphasised that", "Crucially," and "Ultimately," when they add no analytical content.',
   "Avoid uniformly balanced sentences in which every proposition receives a matching qualifier or counter-clause. Preserve asymmetry where the argument is genuinely asymmetric.",
   'Avoid repeatedly appending participial tails such as ", thereby ...ing", ", underscoring ...", or ", reflecting ..." to otherwise complete sentences.',
   'Do NOT preserve a run of bare category-label openings such as "Conceptually,", "Theoretically,", "Methodologically,", "Empirically," and "Contextually,". Preserve the distinct gaps, but integrate them into connected scholarly reasoning rather than a labelled checklist.',
+  "Do not repeatedly announce pre-counted conceptual packages such as three findings, three contributions, three pillars and three implications. Retain a list when the classification itself matters; otherwise allow the argument to develop without repeated packaging.",
+  "Do not optimise paragraph after paragraph for a polished closing sentence. Some paragraphs may end with evidence, a qualification, a tension or a point carried into the next paragraph.",
+  "Do not fill the manuscript with conceptual punchlines, slogans or quotable metaphors. Occasional emphasis is acceptable when it genuinely belongs to the writer's argument; high rhetorical-flourish density is not.",
 ];
 
 export const SYNTACTIC_DIVERSITY_INSTRUCTIONS = [
-  "Vary sentence-opening structure only where the argument supports it. Do not let most sentences begin from the same grammatical position, but do not rotate openings mechanically for the sake of variation.",
+  "Vary sentence-opening structure only where the argument supports it. Do not rotate openings mechanically for the sake of variation.",
   "Use active and passive voice according to emphasis, information structure and disciplinary convention. Do not force a numeric active/passive ratio.",
   "Vary clause order in multi-clause sentences when a different order improves emphasis or progression. Do not apply one restructuring pattern uniformly across the passage.",
   "Where several neighbouring sentences express one analytical unit, consider redistributing propositions across them rather than preserving source sentence boundaries.",
-  "Build LOCAL DISCOURSE CONTINUITY. When a sentence explains, qualifies, contrasts with, or draws a consequence from the preceding sentence, let that relationship be visible through carried-forward terminology, a natural demonstrative/reference (for example 'this pattern', 'these conditions', 'such concentration') or clause linkage where appropriate. Do not polish every sentence into an isolated mini-topic sentence.",
+  "Build LOCAL DISCOURSE CONTINUITY. When a sentence explains, qualifies, contrasts with, or draws a consequence from the preceding sentence, let that relationship be visible through carried-forward terminology, a natural demonstrative/reference, clause linkage or evidence sequence where appropriate. Do not polish every sentence into an isolated mini-topic sentence.",
   "Do not overuse demonstratives or explicit transitions merely to satisfy the previous rule. The relationship can also be carried by repeated technical terms, shared grammatical subjects or an unfolding evidence chain.",
   "Keep technical constructs stable. Vary ordinary surrounding language only where repetition is stylistically unnecessary; do not thesaurus-swap discipline terms.",
   "Allow paragraph length and sentence complexity to follow rhetorical function. A definition, evidence statement, interpretation and transition need not have the same shape.",
-  "Treat the paragraph as a unit of reasoning, not a container for individually polished sentences. Some paragraphs should accumulate evidence, some should compare, qualify, explain a mechanism, narrow the context, define a construct or justify a method, according to what the source is actually doing.",
-  "When several studies are cited, synthesise only where the source warrants synthesis. Avoid a mechanical Study A / Study B / These findings show pattern repeated across paragraph after paragraph.",
-  "Epistemic stance is part of meaning. A human academic writer does not hedge or assert by quota; certainty should rise or fall with the evidence actually available in the source.",
+  "Treat the paragraph as a unit of reasoning, not a container for individually polished sentences. Some paragraphs may accumulate evidence, some compare or qualify studies, some explain mechanisms, some narrow context, some define constructs and some justify methods.",
+  "Prefer evidence-assembled reasoning to a repeated topic-sentence -> explanation -> evidence -> implication recipe. Do not invent links; use only relationships warranted by the source.",
+  "When several studies are cited, synthesise only where the source warrants synthesis. Preserve useful author-led phrasing and short quotations where their formulation itself carries scholarly meaning.",
+  "Epistemic stance is part of meaning. Certainty should rise or fall with the evidence actually available in the source.",
+  "High global scholarly competence does not require maximum local polish. Allow ordinary descriptive sentences, denser analytical passages and uneven rhetorical emphasis when those differences follow the work being done.",
   "The goal is structural variety arising from reasoning, not visible randomisation. If a pattern looks deliberately alternated, it is probably too mechanical.",
 ];
 
@@ -76,7 +86,7 @@ function buildCadenceTargetBlock(humanCadence) {
 const NATURALISATION_FIDELITY = {
   off: null,
   faithful:
-    "NATURALISATION FIDELITY: faithful. Improve cadence and structure mainly through selective splitting/merging, clause reordering and local phrasing changes. Preserve the author's vocabulary and register where they already work.",
+    "NATURALISATION FIDELITY: faithful. Improve cadence and structure mainly through selective splitting/merging, clause reordering and local phrasing changes. Preserve the author's vocabulary, examples, context and register where they already work.",
   aggressive:
     [
       "NATURALISATION FIDELITY: aggressive. You may recast sentences substantially, change grammatical subjects, redistribute propositions across neighbouring sentences, and merge or divide sentences. Reorder local paragraph material only when the diagnostic plan explicitly identifies a paragraph-level structural problem. Every claim, citation, number, quotation and technical term must remain correct, and no new fact or reference may be introduced.",
@@ -85,10 +95,11 @@ const NATURALISATION_FIDELITY = {
       "- Use sustained postgraduate academic prose: formal, readable and intellectually specific rather than conversational, journalistic or slogan-like.",
       "- Do not maximise lexical sophistication. Prefer the clearest ordinary academic wording that preserves the construct and disciplinary meaning.",
       "- Do not optimise every sentence into the same polished density. Some sentences may carry one proposition; others may carry a qualified chain of reasoning when that structure is justified.",
-      "- Let some sentences depend naturally on neighbouring sentences instead of making every sentence a self-contained abstract-style statement. Preserve enough local lexical and referential continuity for the paragraph to read as one developing argument.",
-      "- Natural repetition of technical terms is acceptable. Do not disguise construct repetition through forced synonyms.",
+      "- Let some sentences depend naturally on neighbouring sentences instead of making every sentence a self-contained abstract-style statement.",
+      "- Natural repetition of technical terms and writer-preferred disciplinary phrasing is acceptable. Do not disguise construct repetition through forced synonyms.",
       "- Break source sentence skeletons when the intervention plan calls for substantive restructuring. Changing punctuation or one or two words is not enough.",
       "- Where the source contains a visible rhetorical scaffold, preserve its intellectual distinctions but rebuild the presentation so the reasoning, not the labels, organises the prose.",
+      "- Do not insert idioms, metaphors or local references as decorative humanising devices. If an existing source phrase, disciplinary expression or contextually grounded example carries the writer's voice, it may be preserved or naturally integrated.",
       "- Never introduce grammatical errors, misspellings, wrong words or broken syntax to seem human. The text must remain defensible to an examiner.",
     ].join("\n"),
 };
@@ -96,6 +107,11 @@ const NATURALISATION_FIDELITY = {
 function uniqueDiagnosticRequirements(plan) {
   const reasons = [];
   for (const item of plan.items || []) {
+    for (const reason of item.reasons || []) {
+      if (!reasons.includes(reason)) reasons.push(reason);
+    }
+  }
+  for (const item of plan.paragraphPlan || []) {
     for (const reason of item.reasons || []) {
       if (!reasons.includes(reason)) reasons.push(reason);
     }
@@ -116,6 +132,13 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     BASE_SYSTEM_PROMPT,
     "",
     "--- STRUCTURED CONSTRAINTS (server-supplied, not user text) ---",
+    "",
+    `Planner version: ${plan.plannerVersion || "legacy"}`,
+    `Planner sequence: ${(plan.sequence || []).join(" -> ")}`,
+    `Recommended intervention: ${plan.intent?.recommended || "not supplied"}`,
+    `Effective intervention: ${plan.intent?.effective || "not supplied"}`,
+    `Intervention budget: ${plan.interventionBudget?.label || "not supplied"} (${plan.interventionBudget?.conceptualStructuralChangeRange || "n/a"} conceptual structural change; this is guidance, not a word-replacement quota).`,
+    plan.intent?.rationale?.length ? `Intent rationale:\n${plan.intent.rationale.map((reason) => `- ${reason}`).join("\n")}` : "",
     "",
     naturalisationOn
       ? buildCadenceTargetBlock(humanCadence)
@@ -155,17 +178,24 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
       : "",
     diagnosticRequirements.length
       ? [
-          "DIAGNOSTIC RESOLUTION REQUIREMENTS. These are problems actually found in the source, not generic style advice. A substantive rewrite should resolve them rather than merely change nearby words:",
+          "DIAGNOSTIC RESOLUTION REQUIREMENTS. These are source-specific problems or preservation principles. Resolve them at the appropriate level rather than merely changing nearby words:",
           diagnosticRequirements.map((r) => `- ${r}`).join("\n"),
         ].join("\n")
       : "",
     "",
-    "Per-sentence intervention plan (source order). Follow the assigned level AND its diagnostic reason:",
-    "KEEP = do not alter. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = rebuild sentence architecture as needed. SPLIT_OR_MERGE = redistribute propositions across sentence boundaries. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add connective reasoning using only content already present in the source. COMPRESS = remove padding. FLAG_FOR_AUTHOR = leave substantively as-is and flag rather than guessing.",
+    "PARAGRAPH / DISCOURSE PLAN. Execute this before sentence-level polishing. Multiple actions may apply to one block; primaryAction is the dominant instruction. KEEP_PARAGRAPH means preserve its reasoning structure, not necessarily freeze every sentence. PRESERVE_AUTHORIAL_PASSAGE means do not rewrite the passage itself. REBUILD_DISCOURSE means preserve propositions/evidence while changing how the paragraph develops. REDUCE_SIGNPOSTING and REMOVE_REDUNDANT_CLOSURE target global rhetorical regularity without deleting substantive content.",
+    JSON.stringify(plan.paragraphPlan || [], null, 2),
+    "",
+    "SENTENCE INTERVENTION PLAN (source order). Follow the assigned level AND its reason after applying the paragraph plan:",
+    "KEEP = do not alter sentence wording. KEEP classifications explain why: KEEP_VOICE, KEEP_EVIDENCE, KEEP_QUOTE, KEEP_TECHNICAL or KEEP_NATURAL. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = rebuild sentence architecture as needed. REWRITE_PATTERN in decisionCode means the sentence may be fluent individually but contributes to a diagnosed global pattern. SPLIT_OR_MERGE = redistribute propositions across sentence boundaries. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add connective reasoning using only content already present in the source. COMPRESS = remove padding. FLAG_FOR_AUTHOR = leave substantively as-is and flag rather than guessing.",
     JSON.stringify(
-      plan.items.map((i) => ({
+      (plan.items || []).map((i) => ({
         sentenceIndex: i.sentenceIndex,
         level: i.level,
+        decisionCode: i.decisionCode,
+        preservationClass: i.preservationClass,
+        paragraphBlockIndex: i.paragraphBlockIndex,
+        paragraphAction: i.paragraphAction,
         reasons: i.reasons,
         sentence: i.sentence,
       })),
@@ -174,7 +204,7 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     ),
     plan.paragraphReorderSuggested
       ? "\nDocument-level note: a paragraph-level structural pattern was actually diagnosed. You may restructure sentence grouping or local paragraph order only as needed to resolve that pattern. Preserve the section's macro-argument sequence, claim-to-citation relationships and transitions between rhetorical stages. Do not move ideas merely to create novelty."
-      : "\nDocument-level note: no paragraph-level reorder was diagnosed. Preserve the existing macro-argument and paragraph sequence; perform substantive reconstruction within that logical order.",
+      : "\nDocument-level note: no paragraph reorder was diagnosed. Preserve the existing macro-argument and paragraph sequence; perform any authorised reconstruction within that logical order.",
     "",
     "--- RESPONSE FORMAT ---",
     "Return a single JSON object matching exactly this shape, and nothing else:",
