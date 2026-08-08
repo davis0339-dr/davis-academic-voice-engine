@@ -11,6 +11,7 @@ export const HealthState = Object.freeze({
   RATE_LIMITED: "RATE_LIMITED",
   PROVIDER_OVERLOADED: "PROVIDER_OVERLOADED",
   PROVIDER_UNAVAILABLE: "PROVIDER_UNAVAILABLE",
+  PROVIDER_BILLING_REQUIRED: "PROVIDER_BILLING_REQUIRED",
   NETWORK_TIMEOUT: "NETWORK_TIMEOUT",
   PROVIDER_ERROR: "PROVIDER_ERROR",
 });
@@ -31,7 +32,10 @@ function providerFailure(status, bodyText, retryAfter = null) {
   let healthState = HealthState.PROVIDER_ERROR;
   let message = `Provider error ${status}: ${bodyText.slice(0, 500)}`;
 
-  if (status === 429) {
+  if (/credit balance is too low|purchase credits|plans\s*&\s*billing|billing.*credit/i.test(bodyText)) {
+    healthState = HealthState.PROVIDER_BILLING_REQUIRED;
+    message = "Anthropic API credits are exhausted. Add provider credits before continuing this job.";
+  } else if (status === 429) {
     healthState = HealthState.RATE_LIMITED;
     message = "Provider rate-limited this request";
   } else if (status === 529 || /overloaded_error|\"Overloaded\"/i.test(bodyText)) {
