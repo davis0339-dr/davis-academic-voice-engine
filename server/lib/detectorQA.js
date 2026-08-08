@@ -25,27 +25,31 @@ function gptZeroObservation(result) {
     probs.ai ?? probs.generated ?? probs.completely_generated ?? s.completelyGeneratedProb ?? s.averageGeneratedProb
   );
   const humanProb = Number(probs.human);
-  const subclass = result?.raw?.documents?.[0]?.subclass || result?.raw?.documents?.[0]?.subclasses || null;
+  const subclass = s.subclass || result?.raw?.documents?.[0]?.subclass || result?.raw?.documents?.[0]?.subclasses || null;
   const paraphraseValue = Number(
     subclass?.ai_paraphrased?.probability ?? subclass?.ai_paraphrased ?? subclass?.paraphrased?.probability ?? subclass?.paraphrased
   );
   return {
     detector: "GPTZero",
-    version: result?.raw?.version || result?.raw?.model_version || result?.raw?.documents?.[0]?.version || null,
-    classification: s.predictedClass || null,
+    version: result?.modelVersion || result?.raw?.version || result?.raw?.model_version || result?.raw?.documents?.[0]?.version || null,
+    classification: s.documentClassification || s.predictedClass || null,
     aiScore: Number.isFinite(aiProb) ? (aiProb <= 1 ? aiProb * 100 : aiProb) : null,
     humanScore: Number.isFinite(humanProb) ? (humanProb <= 1 ? humanProb * 100 : humanProb) : null,
     paraphrasedScore: Number.isFinite(paraphraseValue) ? (paraphraseValue <= 1 ? paraphraseValue * 100 : paraphraseValue) : null,
+    flaggedSentenceIndices: Array.isArray(s.highlightedSentenceIndices) ? s.highlightedSentenceIndices : [],
+    notes: s.confidenceCategory ? `confidence=${s.confidenceCategory}` : null,
   };
 }
 
 function copyleaksObservation(result) {
+  const aiSections = (result?.sections || []).filter((section) => section.classification === "ai").length;
   return {
     detector: "Copyleaks",
     version: result?.modelVersion || null,
     classification: Number(result?.summary?.ai) > Number(result?.summary?.human) ? "ai" : "human",
     aiScore: Number.isFinite(Number(result?.summary?.ai)) ? Number(result.summary.ai) * 100 : null,
     humanScore: Number.isFinite(Number(result?.summary?.human)) ? Number(result.summary.human) * 100 : null,
+    notes: `${aiSections} section(s) classified as AI${result?.explain?.spans?.length ? `; ${result.explain.spans.length} explainable pattern span(s)` : ""}`,
   };
 }
 
