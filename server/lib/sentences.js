@@ -44,19 +44,23 @@ function markListHeaderBreaks(text) {
   // Preserve historical cadence measurement semantics: ordinary paragraph
   // breaks are NOT converted into sentence boundaries. Only a short colon-led
   // header immediately followed by an enumerated/bulleted list gets a semantic
-  // break so "Treatment paths:" does not fuse with item 1.
+  // break so "Treatment paths:" does not fuse with item 1. The newline after
+  // the token intentionally preserves start-of-line context for the subsequent
+  // numbered-marker protection pass.
   return text.replace(
     /(^|\n)([^\n]{1,120}:)\n{2,}(?=\s*(?:[-*•]|\d{1,3}[.)]|[A-Za-z][.)])\s+\S)/g,
-    (_match, prefix, header) => `${prefix}${header}${STRUCTURE_BREAK_TOKEN}`
+    (_match, prefix, header) => `${prefix}${header}${STRUCTURE_BREAK_TOKEN}\n`
   );
 }
 
 export function splitSentences(text) {
   let working = String(text || "").replace(/\r\n?/g, "\n");
-  // Protect enumerators while their original line/colon context is still
-  // visible, then mark the narrow structural break used for list headers.
-  working = protectNumberedMarkers(working);
+  // Detect the narrow structural list-header boundary while the original list
+  // marker is still visible; then protect the enumerator using the preserved
+  // line-start context. This fixes list segmentation without redefining normal
+  // paragraph breaks as sentence boundaries or changing corpus cadence metrics.
   working = markListHeaderBreaks(working);
+  working = protectNumberedMarkers(working);
 
   const placeholders = [];
   PROTECT_ABBREVIATIONS.forEach((abbr, i) => {
