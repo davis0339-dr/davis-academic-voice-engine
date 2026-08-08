@@ -32,11 +32,29 @@ test("numbered list markers remain attached to their semantic item", () => {
   assert.ok(!sentences.includes("3."));
 });
 
+test("blank-line heading boundaries do not fuse a heading into the first list item", () => {
+  const sentences = splitSentences("Treatment paths:\n\n1. Preserve and polish.\n2. Improve clarity and flow.");
+  assert.equal(sentences[0], "Treatment paths:");
+  assert.equal(sentences[1], "1. Preserve and polish.");
+  assert.equal(sentences[2], "2. Improve clarity and flow.");
+});
+
 test("semantic structure recognises pasted single-line-break numbered lists", () => {
   const structure = parseTextStructure("Treatment paths:\n\n1. Preserve and polish.\n2. Improve clarity and flow.\n3. Rebuild discourse when necessary.");
   const listItems = structure.blocks.filter((block) => block.type === "list_item");
   assert.equal(listItems.length, 3);
   assert.ok(listItems.every((item) => item.sentenceCount === 1));
+});
+
+test("a paragraph that opens with a quotation is not misclassified as a standalone quotation", () => {
+  const structure = parseTextStructure('“Audit quality matters,” the author argues, before relating the point to reporting incentives and firm visibility in the local market.');
+  assert.equal(structure.blocks.length, 1);
+  assert.equal(structure.blocks[0].type, "paragraph");
+});
+
+test("a true standalone quotation remains a protected quotation block", () => {
+  const structure = parseTextStructure('“Audit quality is not one thing.”');
+  assert.equal(structure.blocks[0].type, "quotation");
 });
 
 test("discourse architecture detects repeated conceptual packaging and enumeration", () => {
