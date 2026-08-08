@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { splitSentences, wordCount } from "./sentences.js";
 import { findRhetoricalScaffolding } from "./rhetoricalDiagnostics.js";
+import { analyseHumanDiscourse } from "./humanDiscourse.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -164,6 +165,7 @@ export function diagnose(text) {
   const repeatedOpenings = findRepeatedOpenings(sentences);
   const paragraphPatterns = findParagraphPatterning(text, sentences);
   const rhetoricalScaffolding = findRhetoricalScaffolding(sentences);
+  const humanDiscourse = analyseHumanDiscourse(text);
   const monotony = findMonotony(sentences);
 
   const structuralMonotony = [
@@ -192,6 +194,7 @@ export function diagnose(text) {
     rhetorical_scaffolding: rhetoricalScaffolding,
     cohesion: transitionStacking,
     evidence_alignment: [],
+    qualitative_human_discourse: humanDiscourse,
     monotony,
   };
 }
