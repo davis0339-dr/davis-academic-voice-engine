@@ -41,6 +41,8 @@ jobs:
           node --check public/fileImport.js
           node --check public/plannerObservability.js
           node --check public/rewriteVerdict.js
+          node --check public/authorialTextureUI.js
+          node --check public/detectorResearchUI.js
       - name: Run test suite
         shell: bash
         run: |
