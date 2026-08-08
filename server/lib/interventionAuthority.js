@@ -8,6 +8,7 @@ const SUBSTANTIVE_KEYS = new Set([
   "PARAGRAPH_REORDER",
   "CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT",
   "COMPRESS",
+  "DISCOURSE_REPACKAGE",
 ]);
 
 function sum(obj) {
@@ -51,6 +52,6 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     min_changed_sentence_ratio: Number(minimumChanged.toFixed(3)),
     minimum_basis: "preservation_aware_plausibility_floor",
     effective_intent: effectiveIntent || null,
-    rule: "Maximum changed-sentence breadth is an authorised disturbance ceiling, never a rewrite target. Minimum changed-sentence breadth is only a preservation-aware plausibility floor used to detect implausibly unchanged output when a demanding plan was reported as executed. High authorial-texture preservation priority lowers that floor because clean source sentences may legitimately survive even when deep repair is permitted inside diagnosed passages.",
+    rule: "Maximum changed-sentence breadth is an authorised disturbance ceiling, never a rewrite target. Minimum changed-sentence breadth is only a preservation-aware plausibility floor used to detect implausibly unchanged output when a demanding plan was reported as executed. DISCOURSE_REPACKAGE contributes to structural authority but is not a one-sentence-one-rewrite quota. High authorial-texture preservation priority lowers the minimum floor because clean source sentences may legitimately survive even when deep repair is permitted inside diagnosed passages.",
   };
 }
