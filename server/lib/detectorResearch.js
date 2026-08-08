@@ -182,7 +182,58 @@ function observationConsensus(observations) {
   };
 }
 
-function researchHypotheses(sourceProfiles, candidateProfiles, consensus) {
+function aggregateSentenceSubset(sentences, indices) {
+  const selected = indices.map((i) => sentences[i]).filter(Boolean);
+  if (!selected.length) return null;
+  return linguisticProfile(selected.join(" "));
+}
+
+function openingSentenceIndices(text) {
+  const structure = parseTextStructure(text);
+  const paragraphs = (structure.blocks || []).filter((block) => block.type === "paragraph").slice(0, 2);
+  return [...new Set(paragraphs.flatMap((block) => block.sentenceIndices || []))];
+}
+
+function flaggedSentenceAnalysis(text, consensus) {
+  const sentences = splitSentences(text);
+  const allFlagged = [...new Set(consensus.observations.flatMap((o) => o.flagged_sentence_indices || []))]
+    .filter((i) => i >= 0 && i < sentences.length)
+    .sort((a, b) => a - b);
+  if (!allFlagged.length) {
+    return {
+      available: false,
+      reason: "No sentence-level detector highlights were recorded for this candidate.",
+      flagged_sentence_indices: [],
+    };
+  }
+  const flaggedSet = new Set(allFlagged);
+  const unflagged = sentences.map((_, i) => i).filter((i) => !flaggedSet.has(i));
+  const opening = openingSentenceIndices(text);
+  const openingSet = new Set(opening);
+  const openingFlagged = allFlagged.filter((i) => openingSet.has(i));
+  const restIndices = sentences.map((_, i) => i).filter((i) => !openingSet.has(i));
+  const restFlagged = allFlagged.filter((i) => !openingSet.has(i));
+  return {
+    available: true,
+    sentence_count: sentences.length,
+    flagged_sentence_indices: allFlagged,
+    flagged_share: round(ratio(allFlagged.length, sentences.length), 3),
+    flagged_profile: aggregateSentenceSubset(sentences, allFlagged),
+    unflagged_profile: aggregateSentenceSubset(sentences, unflagged),
+    opening_two_paragraphs: {
+      sentence_count: opening.length,
+      flagged_count: openingFlagged.length,
+      flagged_share: round(ratio(openingFlagged.length, opening.length), 3),
+    },
+    remainder: {
+      sentence_count: restIndices.length,
+      flagged_count: restFlagged.length,
+      flagged_share: round(ratio(restFlagged.length, restIndices.length), 3),
+    },
+  };
+}
+
+function researchHypotheses(sourceProfiles, candidateProfiles, consensus, flaggedAnalysis) {
   const source = sourceProfiles.whole_document;
   const candidate = candidateProfiles.whole_document;
   const opening = candidateProfiles.opening_two_paragraphs;
@@ -203,6 +254,21 @@ function researchHypotheses(sourceProfiles, candidateProfiles, consensus) {
   if (opening.word_count >= 80 && opening.sentence_length_cv < candidate.sentence_length_cv * 0.75) {
     notes.push("The opening two paragraphs are more rhythmically regular than the document overall. Treat this as an empirical opening-register hypothesis and compare it with detector sentence flags; do not assume position is causative without repeated evidence.");
   }
+  if (flaggedAnalysis?.available) {
+    const openingRate = flaggedAnalysis.opening_two_paragraphs.flagged_share;
+    const restRate = flaggedAnalysis.remainder.flagged_share;
+    if (flaggedAnalysis.opening_two_paragraphs.sentence_count >= 2 && openingRate >= restRate + 0.2) {
+      notes.push(`Observed detector highlights are denser in the opening two paragraphs (${Math.round(openingRate * 100)}%) than in the remainder (${Math.round(restRate * 100)}%). Record this across more documents before treating opening position as a stable detector feature.`);
+    }
+    const flagged = flaggedAnalysis.flagged_profile;
+    const unflagged = flaggedAnalysis.unflagged_profile;
+    if (flagged && unflagged && flagged.transition_density_per_100_words > unflagged.transition_density_per_100_words + 0.5) {
+      notes.push("Flagged sentences contain more explicit transition language than unflagged sentences in this sample; test this relationship across additional detector runs.");
+    }
+    if (flagged && unflagged && flagged.abstract_noun_density_per_100_words > unflagged.abstract_noun_density_per_100_words + 1) {
+      notes.push("Flagged sentences contain a higher abstract-noun density than unflagged sentences in this sample; preserve the observation as a hypothesis rather than a universal detector rule.");
+    }
+  }
   if (consensus.disagreement) {
     notes.push("Configured/manual detectors disagree. Preserve the disagreement as evidence; do not collapse it into one authorship verdict.");
   }
@@ -216,14 +282,17 @@ export function buildDetectorResearchReport({ sourceText = "", candidateText = "
   const sourceProfiles = positionalProfiles(sourceText || candidateText);
   const candidateProfiles = positionalProfiles(candidateText || sourceText);
   const consensus = observationConsensus(Array.isArray(observations) ? observations : []);
+  const candidate = candidateText || sourceText;
+  const flaggedAnalysis = flaggedSentenceAnalysis(candidate, consensus);
   return {
-    version: "detector-research-v1",
-    purpose: "Measure linguistic and positional features associated with external detector outcomes while preserving detector disagreement and academic-content constraints. This is an observational research layer, not proof of authorship.",
+    version: "detector-research-v2",
+    purpose: "Measure linguistic, positional and sentence-highlight features associated with external detector outcomes while preserving detector disagreement and academic-content constraints. This is an observational research layer, not proof of authorship.",
     source_profiles: sourceProfiles,
     candidate_profiles: candidateProfiles,
     whole_document_delta: metricDelta(sourceProfiles.whole_document, candidateProfiles.whole_document),
     opening_delta: metricDelta(sourceProfiles.opening_two_paragraphs, candidateProfiles.opening_two_paragraphs),
     detector_consensus: consensus,
-    research_hypotheses: researchHypotheses(sourceProfiles, candidateProfiles, consensus),
+    flagged_sentence_analysis: flaggedAnalysis,
+    research_hypotheses: researchHypotheses(sourceProfiles, candidateProfiles, consensus, flaggedAnalysis),
   };
 }
