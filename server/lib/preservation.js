@@ -26,6 +26,8 @@ function extraNumericLike(sourceSpans, revisedSpans) {
 }
 
 const CITATION_YEAR_TOKEN = /(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?/gi;
+const PAREN_GROUP = /\(([^()\n]{1,360})\)/g;
+const NARRATIVE_REFERENCE = /\b([A-Z][A-Za-z'’.-]*(?:\s+(?:[A-Z][A-Za-z'’.-]*|and|&|of|the|for|in|on|et|al\.|\[[A-Z0-9&.\-]{2,12}\])){0,12})\s*\(((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)(?:\s*,\s*(?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?))*)\)/g;
 
 function canonicalAuthor(author) {
   return String(author || "")
@@ -38,42 +40,60 @@ function canonicalAuthor(author) {
     .toLowerCase();
 }
 
-function citationKeysForSpan(span) {
-  const text = String(span || "").trim();
-  if (!text) return [];
-  const parenthetical = text.startsWith("(") && text.endsWith(")");
-  const inside = parenthetical ? text.slice(1, -1) : text;
-  const segments = parenthetical ? inside.split(/\s*;\s*/) : [inside];
-  const keys = [];
-
-  for (const segment of segments) {
-    const years = segment.match(CITATION_YEAR_TOKEN) || [];
-    if (!years.length) continue;
-    const firstYearMatch = new RegExp(CITATION_YEAR_TOKEN.source, "i").exec(segment);
-    if (!firstYearMatch) continue;
-    let author = segment.slice(0, firstYearMatch.index).trim();
-    author = author.replace(/[,(\s]+$/g, "").trim();
-    if (!parenthetical && author.includes("(")) author = author.slice(0, author.lastIndexOf("(")).trim();
-    const canonical = canonicalAuthor(author);
-    if (!canonical) continue;
-    for (const year of years) keys.push(`${canonical}|${year.toLowerCase()}`);
-  }
-  return dedupe(keys);
+function keysFromAuthorYears(author, years) {
+  const canonical = canonicalAuthor(author);
+  if (!canonical) return [];
+  return dedupe((years || []).map((year) => `${canonical}|${year.toLowerCase()}`));
 }
 
-function citationIndex(citationSpans) {
+// Build citation identity from the raw passage, not from one visual citation
+// form. Parenthetical (Author, 2020) and narrative Author (2020) are the same
+// source and must not be reported as a dropped/new citation merely because the
+// grammar changed around it.
+function citationReferenceIndex(text) {
   const byKey = new Map();
-  for (const span of citationSpans || []) {
-    for (const key of citationKeysForSpan(span)) {
-      if (!byKey.has(key)) byKey.set(key, span);
+  const source = String(text || "");
+
+  let m;
+  const parenthetical = new RegExp(PAREN_GROUP);
+  while ((m = parenthetical.exec(source)) !== null) {
+    const inside = m[1].trim();
+    if (!/[A-Za-z]{2,}/.test(inside) || !CITATION_YEAR_TOKEN.test(inside)) {
+      CITATION_YEAR_TOKEN.lastIndex = 0;
+      continue;
     }
+    CITATION_YEAR_TOKEN.lastIndex = 0;
+    for (const segment of inside.split(/\s*;\s*/)) {
+      const years = segment.match(CITATION_YEAR_TOKEN) || [];
+      CITATION_YEAR_TOKEN.lastIndex = 0;
+      if (!years.length) continue;
+      const firstYear = new RegExp(CITATION_YEAR_TOKEN.source, "i").exec(segment);
+      if (!firstYear) continue;
+      const author = segment.slice(0, firstYear.index).replace(/[,(\s]+$/g, "").trim();
+      for (const key of keysFromAuthorYears(author, years)) {
+        if (!byKey.has(key)) byKey.set(key, m[0]);
+      }
+    }
+    if (m.index === parenthetical.lastIndex) parenthetical.lastIndex++;
   }
+
+  const narrative = new RegExp(NARRATIVE_REFERENCE);
+  while ((m = narrative.exec(source)) !== null) {
+    const author = m[1];
+    const years = m[2].match(CITATION_YEAR_TOKEN) || [];
+    CITATION_YEAR_TOKEN.lastIndex = 0;
+    for (const key of keysFromAuthorYears(author, years)) {
+      if (!byKey.has(key)) byKey.set(key, m[0]);
+    }
+    if (m.index === narrative.lastIndex) narrative.lastIndex++;
+  }
+
   return byKey;
 }
 
-function compareCitationMeaning(sourceSpans, revisedSpans) {
-  const sourceIndex = citationIndex(sourceSpans.citations);
-  const revisedIndex = citationIndex(revisedSpans.citations);
+function compareCitationMeaning(sourceText, revisedText) {
+  const sourceIndex = citationReferenceIndex(sourceText);
+  const revisedIndex = citationReferenceIndex(revisedText);
   const missingKeys = [...sourceIndex.keys()].filter((key) => !revisedIndex.has(key));
   const newKeys = [...revisedIndex.keys()].filter((key) => !sourceIndex.has(key));
   return {
@@ -91,7 +111,7 @@ function parseRange(range) {
 
 function rangeMeaningPresent(range, revisedText) {
   const parsed = parseRange(range);
-  if (!parsed) return revisedText.includes(range);
+  if (!parsed) return String(revisedText || "").includes(range);
   const [start, end] = parsed;
   const patterns = [
     new RegExp(`\\b${start}\\s*[-–—]\\s*${end}\\b`),
@@ -102,12 +122,15 @@ function rangeMeaningPresent(range, revisedText) {
   return patterns.some((pattern) => pattern.test(revisedText));
 }
 
-const STUDY_SUBJECT = String.raw`(?:this|the present|the proposed)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,8}study`;
-const PLANNED_STUDY = new RegExp(`\b${STUDY_SUBJECT}\s+(?:will|aims to|seeks to|is designed to|is intended to|proposes to)\b`, "gi");
+// Literal regexes are intentional here. Dynamic RegExp construction previously
+// introduced an escaping regression that caused proposal-stage checks to go
+// silent. Descriptive words between “this/the proposed” and “study” are
+// permitted so mixed-methods labels do not defeat the stage detector.
+const PLANNED_STUDY = /\b(?:this|the present|the proposed)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,8}study\s+(?:will|aims to|seeks to|is designed to|is intended to|proposes to)\b/gi;
 const PURPOSE_PLANNED = /\bthe purpose of this\b[^.!?\n]{0,180}\bstudy\s+is\s+to\s+(?:examine|investigate|assess|evaluate|analyse|analyze|determine|test|explore|estimate|explain)\b/gi;
 const PROSPECTUS_PLANNED = /\bthis prospectus\s+(?:proposes|will|aims|seeks|is designed|is intended)\b/gi;
-const PRESENT_REPORTING_STUDY = new RegExp(`\b${STUDY_SUBJECT}\s+(?:examines|investigates|assesses|evaluates|analyses|analyzes|determines|tests|adopts|uses|employs|collects|administers|measures|focuses|explores|estimates|applies|specifies)\b`, "gi");
-const COMPLETED_STUDY = new RegExp(`\b(?:${STUDY_SUBJECT}\s+(?:conducted|collected|analysed|analyzed|found|reported|showed|revealed|used|employed)|interviews?\s+(?:were|was)\s+conducted|data\s+(?:were|was)\s+collected|analysis\s+(?:was|were)\s+conducted|participants?\s+(?:were|was)\s+interviewed)\b`, "gi");
+const PRESENT_REPORTING_STUDY = /\b(?:this|the present|the proposed)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,8}study\s+(?:examines|investigates|assesses|evaluates|analyses|analyzes|determines|tests|adopts|uses|employs|collects|administers|measures|focuses|explores|estimates|applies|specifies)\b/gi;
+const COMPLETED_STUDY = /\b(?:(?:this|the present|the proposed)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,8}study\s+(?:conducted|collected|analysed|analyzed|found|reported|showed|revealed|used|employed)|interviews?\s+(?:were|was)\s+conducted|data\s+(?:were|was)\s+collected|analysis\s+(?:was|were)\s+conducted|participants?\s+(?:were|was)\s+interviewed)\b/gi;
 const FIRST_PERSON = /\b(?:I|me|my|mine|myself|we|us|our|ours|ourselves)\b/g;
 const SECTION_LABEL = /\bSection\s+\d+(?:\.\d+)*\b/gi;
 const CHAPTER_LABEL = /\bChapter\s+\d+(?:\.\d+)*\b/gi;
@@ -116,8 +139,7 @@ const NUMBER_WORDS = new Map([
   ["one", 1], ["two", 2], ["three", 3], ["four", 4], ["five", 5],
   ["six", 6], ["seven", 7], ["eight", 8], ["nine", 9], ["ten", 10],
 ]);
-const ENUMERABLE_NOUN = "(?:variables?|mechanisms?|dimensions?|components?|frameworks?|channels?|phases?|strands?|stages?|ways?|sources?|approaches?|forms?|groups?|categories?|factors?|indicators?|proxies|objectives?|questions?|hypotheses|conditions?|reasons?|effects?|features?|elements?|parts?)";
-const LIST_COUNT_RE = new RegExp(`\\b(one|two|three|four|five|six|seven|eight|nine|ten)\\s+${ENUMERABLE_NOUN}\\s+(?:(?:are|include|includes|comprise|comprises|consist|consists)\\s*(?:of\\s*)?|namely\\s*|:\\s*)([^.!?\\n]{10,500})`, "gi");
+const ENUMERABLE_NOUN = "(?:variables?|mechanisms?|characteristics?|dimensions?|components?|frameworks?|channels?|phases?|strands?|stages?|ways?|sources?|approaches?|forms?|groups?|categories?|factors?|indicators?|proxies|objectives?|questions?|hypotheses|conditions?|reasons?|effects?|features?|elements?|parts?)";
 
 function countMatches(text, regex) {
   return (String(text || "").match(regex) || []).length;
@@ -197,7 +219,15 @@ function countEnumeratedItems(rawList) {
 
 function listCountWarnings(text) {
   const warnings = [];
-  const re = new RegExp(LIST_COUNT_RE.source, "gi");
+  // Require a genuinely enumerative construction. This catches formulations
+  // such as “Six board characteristics serve as focal variables: A, B, C...”
+  // while avoiding ordinary argumentative prose such as “these two frameworks
+  // yield a causal logic: X; Y; Z”, where the colon introduces consequences,
+  // not the two frameworks themselves.
+  const re = new RegExp(
+    `\\b(one|two|three|four|five|six|seven|eight|nine|ten)\\s+(?:[A-Za-z-]+\\s+){0,3}${ENUMERABLE_NOUN}\\s+(?:(?:are|include|includes|comprise|comprises|consist|consists)\\s*(?:of\\s*)?|(?:serve|serves|function|functions)\\s+as\\s+(?:[A-Za-z-]+\\s+){0,4}${ENUMERABLE_NOUN}\\s*:|namely\\s*|:\\s*)([^.!?\\n]{10,500})`,
+    "gi"
+  );
   let m;
   while ((m = re.exec(String(text || ""))) !== null) {
     const stated = NUMBER_WORDS.get(m[1].toLowerCase());
@@ -233,7 +263,7 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     });
   }
 
-  const citationComparison = compareCitationMeaning(spans, revisedSpans);
+  const citationComparison = compareCitationMeaning(sourceText, revisedText);
   const citationsOk = citationComparison.missingKeys.length === 0;
   if (!citationsOk) {
     warnings.push({ type: "missing_citation", detail: `Citation reference(s) present in the source are absent from the revision: ${citationComparison.missingSpans.join(", ")}` });
