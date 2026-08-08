@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { rewrite } from "../lib/pipeline.js";
 import { assessExecutionCompliance, preferByExecutionCompliance } from "../lib/executionCompliance.js";
 import { selectiveResidualRework } from "../lib/residualRework.js";
+import { resolveRewriteModePolicy } from "../lib/rewriteModePolicy.js";
 import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 
@@ -39,6 +40,7 @@ function finalCandidateStatus(compliance, residual) {
 rewriteRouter.post("/rewrite", async (req, res) => {
   const requestId = randomUUID();
   const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation } = req.body || {};
+  const modePolicy = resolveRewriteModePolicy({ rewriteIntensity, naturalisation });
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string.", requestId });
@@ -64,18 +66,20 @@ rewriteRouter.post("/rewrite", async (req, res) => {
     });
   }
 
+  const runRewrite = () => rewrite({
+    sourceText: text,
+    styleFilters: styleFilters || {},
+    rewriteIntensity: modePolicy.effective_intensity,
+    grammarIntensity,
+    lengthPreference,
+    naturalisation: modePolicy.effective_naturalisation,
+  });
+
   let attempt = 0;
   let lastErr;
   while (attempt <= MAX_RETRIES) {
     try {
-      let result = await rewrite({
-        sourceText: text,
-        styleFilters: styleFilters || {},
-        rewriteIntensity,
-        grammarIntensity,
-        lengthPreference,
-        naturalisation,
-      });
+      let result = await runRewrite();
 
       let executionCompliance = assessExecutionCompliance(result);
       let reconciliationRetryUsed = false;
@@ -89,20 +93,13 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       // Preservation failures no longer masquerade as under-execution.
       if (
         !executionCompliance.execution_passed &&
-        (naturalisation || "faithful") !== "off" &&
+        modePolicy.effective_naturalisation !== "off" &&
         !qualityPipelineAlreadyRetried(result)
       ) {
         firstAttemptCompliance = executionCompliance;
         reconciliationRetryUsed = true;
         try {
-          const secondResult = await rewrite({
-            sourceText: text,
-            styleFilters: styleFilters || {},
-            rewriteIntensity,
-            grammarIntensity,
-            lengthPreference,
-            naturalisation,
-          });
+          const secondResult = await runRewrite();
           const preferred = preferByExecutionCompliance(result, secondResult);
           result = preferred.result;
           executionCompliance = preferred.compliance;
@@ -116,20 +113,11 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       }
 
       // If the candidate executed deeply but damaged protected content, make one
-      // bounded fresh attempt. This recovery is allowed even when aggressive
-      // quality correction happened inside the first pipeline call; factual
-      // preservation has priority over rewrite depth.
+      // bounded fresh attempt. Factual preservation has priority over rewrite depth.
       if (!executionCompliance.preservation_ok && !reconciliationRetryUsed) {
         preservationRecoveryUsed = true;
         try {
-          const recoveryResult = await rewrite({
-            sourceText: text,
-            styleFilters: styleFilters || {},
-            rewriteIntensity,
-            grammarIntensity,
-            lengthPreference,
-            naturalisation,
-          });
+          const recoveryResult = await runRewrite();
           const preferred = preferByExecutionCompliance(result, recoveryResult);
           result = preferred.result;
           executionCompliance = preferred.compliance;
@@ -150,7 +138,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       if (
         executionCompliance.execution_passed &&
         executionCompliance.preservation_ok &&
-        (naturalisation || "faithful") !== "off"
+        modePolicy.effective_naturalisation !== "off"
       ) {
         try {
           residualRework = await selectiveResidualRework({
@@ -190,8 +178,17 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         max_preservation_recovery_retries: 1,
       };
 
+      result.rewrite_mode_policy = modePolicy;
       result.residual_rework = residualRework;
       result.post_rewrite_diagnostics = residualRework?.after || residualRework?.before || null;
+      result.naturalisation_applied = {
+        ...(result.naturalisation_applied || {}),
+        requested_level: modePolicy.requested_naturalisation,
+        effective_generation_level: modePolicy.effective_naturalisation,
+        adaptive_human_reconstruction: modePolicy.adaptive_reconstruction,
+        universal_rewrite_authorised: modePolicy.universal_rewrite_authorised,
+        policy: modePolicy.policy,
+      };
       result.candidate_verdict = {
         execution: executionCompliance.execution_passed ? "passed" : "under-executed",
         preservation: executionCompliance.preservation_ok ? "passed" : "failed",
@@ -199,7 +196,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
           ? (residualRework.accepted ? "improved" : "unresolved_or_rejected")
           : "not_required",
         final_status: finalCandidateStatus(executionCompliance, residualRework),
-        note: "Final status separates plan execution, factual preservation and residual writing-quality risk. A deeper rewrite is never preferred solely because it changes more text.",
+        note: "Final status separates plan execution, factual preservation and residual writing-quality risk. Aggressive mode is permission for selective deep reconstruction, not compulsory rewriting, and a deeper rewrite is never preferred solely because it changes more text.",
       };
 
       return res.json({ ...result, requestId });
