@@ -90,6 +90,8 @@ function flattenMatches(result) {
 }
 
 export function normalizeCopyleaksResponse(raw) {
+  const human = Number.isFinite(Number(raw?.summary?.human)) ? Number(raw.summary.human) : null;
+  const ai = Number.isFinite(Number(raw?.summary?.ai)) ? Number(raw.summary.ai) : null;
   const sections = (raw?.results || []).map((result) => ({
     classification: result.classification === 2 ? "ai" : result.classification === 1 ? "human" : "unknown",
     probability: Number.isFinite(Number(result.probability)) ? Number(result.probability) : null,
@@ -102,12 +104,16 @@ export function normalizeCopyleaksResponse(raw) {
   for (let i = 0; i < Math.min(starts.length, lengths.length); i++) {
     explainSpans.push({ start: Number(starts[i]), length: Number(lengths[i]) });
   }
+  const predictedClass = ai !== null && human !== null ? (ai >= human ? "ai" : "human") : null;
   return {
     provider: "copyleaks",
     modelVersion: raw?.modelVersion || null,
     summary: {
-      human: Number.isFinite(Number(raw?.summary?.human)) ? Number(raw.summary.human) : null,
-      ai: Number.isFinite(Number(raw?.summary?.ai)) ? Number(raw.summary.ai) : null,
+      human,
+      ai,
+      predictedClass,
+      classProbabilities: { human, ai },
+      completelyGeneratedProb: ai,
     },
     sections,
     explain: explain ? {
