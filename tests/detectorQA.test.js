@@ -34,31 +34,46 @@ test("normalizeGptZeroResponse flags a documents[0] with none of the expected sc
   assert.match(result.parseWarning, /API shape may have changed/);
 });
 
-test("listDetectorHealth reports NOT_CONFIGURED when no key is set, without a network call", async () => {
-  const original = process.env.GPTZERO_API_KEY;
+test("listDetectorHealth reports NOT_CONFIGURED when provider credentials are absent, without a network call", async () => {
+  const originalGpt = process.env.GPTZERO_API_KEY;
+  const originalCopyleaksEmail = process.env.COPYLEAKS_EMAIL;
+  const originalCopyleaksKey = process.env.COPYLEAKS_API_KEY;
   delete process.env.GPTZERO_API_KEY;
+  delete process.env.COPYLEAKS_EMAIL;
+  delete process.env.COPYLEAKS_API_KEY;
   try {
     const health = await listDetectorHealth();
     assert.ok(health.some((h) => h.id === "gptzero" && h.state === "NOT_CONFIGURED"));
+    assert.ok(health.some((h) => h.id === "copyleaks" && h.state === "NOT_CONFIGURED"));
   } finally {
-    if (original !== undefined) process.env.GPTZERO_API_KEY = original;
+    if (originalGpt !== undefined) process.env.GPTZERO_API_KEY = originalGpt;
+    if (originalCopyleaksEmail !== undefined) process.env.COPYLEAKS_EMAIL = originalCopyleaksEmail;
+    if (originalCopyleaksKey !== undefined) process.env.COPYLEAKS_API_KEY = originalCopyleaksKey;
   }
 });
 
-test("scanWithAllConfigured returns a NOT_CONFIGURED entry and the disclaimer, never a fabricated score", async () => {
-  const original = process.env.GPTZERO_API_KEY;
+test("scanWithAllConfigured returns NOT_CONFIGURED entries and never fabricates detector scores", async () => {
+  const originalGpt = process.env.GPTZERO_API_KEY;
+  const originalCopyleaksEmail = process.env.COPYLEAKS_EMAIL;
+  const originalCopyleaksKey = process.env.COPYLEAKS_API_KEY;
   delete process.env.GPTZERO_API_KEY;
+  delete process.env.COPYLEAKS_EMAIL;
+  delete process.env.COPYLEAKS_API_KEY;
   try {
-    const { results, disclaimer } = await scanWithAllConfigured("some sample text");
+    const { results, observations, disclaimer } = await scanWithAllConfigured("some sample text");
     assert.equal(disclaimer, DISCLAIMER);
     assert.ok(results.every((r) => r.state === "NOT_CONFIGURED"));
+    assert.deepEqual(observations, []);
     assert.ok(!results.some((r) => "summary" in r && r.summary !== undefined && r.state !== "READY"));
   } finally {
-    if (original !== undefined) process.env.GPTZERO_API_KEY = original;
+    if (originalGpt !== undefined) process.env.GPTZERO_API_KEY = originalGpt;
+    if (originalCopyleaksEmail !== undefined) process.env.COPYLEAKS_EMAIL = originalCopyleaksEmail;
+    if (originalCopyleaksKey !== undefined) process.env.COPYLEAKS_API_KEY = originalCopyleaksKey;
   }
 });
 
-test("the disclaimer explicitly states Turnitin has no public API and results are never fed back into generation", () => {
-  assert.match(DISCLAIMER, /Turnitin/);
-  assert.match(DISCLAIMER, /never fed back/);
+test("the disclaimer frames detector outputs as research observations and keeps disagreement visible", () => {
+  assert.match(DISCLAIMER, /classifier observations/i);
+  assert.match(DISCLAIMER, /not proof of authorship/i);
+  assert.match(DISCLAIMER, /disagreement/i);
 });
