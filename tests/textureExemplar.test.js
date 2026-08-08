@@ -24,16 +24,23 @@ test("detector-selected texture exemplar is no longer injected in any naturalisa
   assert.ok(!aggressive.includes("TEXTURE EXEMPLAR"));
   assert.ok(!faithful.includes("TEXTURE EXEMPLAR"));
   assert.ok(!off.includes("TEXTURE EXEMPLAR"));
-});
-
-test("legacy texture hook is empty and cannot leak benchmark content into production prompts", () => {
-  assert.equal(texturePromptBlock(), "");
   assert.deepEqual(TEXTURE_EXEMPLARS, []);
 });
 
-test("aggressive prompt receives qualitative discourse guidance instead of a single-author exemplar", () => {
+test("aggressive prompt receives evidence-safe authorial guidance instead of a detector-selected sample", () => {
+  const block = texturePromptBlock();
+  assert.match(block, /AUTHORIAL RECONSTRUCTION GUIDANCE/i);
+  assert.match(block, /first two prose paragraphs/i);
+  assert.match(block, /citation scope/i);
+  assert.match(block, /methodological labels/i);
+  assert.match(block, /do not optimise for any third-party authorship classifier/i);
+});
+
+test("aggressive prompt receives qualitative discourse and authorial reconstruction guidance", () => {
   const aggressive = buildSystemPrompt({ ...base, naturalisation: "aggressive" });
   assert.match(aggressive, /independent mini-topic statements/i);
   assert.match(aggressive, /local dependency/i);
   assert.match(aggressive, /paragraph as a unit of reasoning/i);
+  assert.match(aggressive, /first two prose paragraphs/i);
+  assert.match(aggressive, /citation scope/i);
 });
