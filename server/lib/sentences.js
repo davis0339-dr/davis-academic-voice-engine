@@ -1,7 +1,8 @@
 // Sentence splitter shared by diagnostics and the planner.
-// Common academic abbreviations and numbered list/section markers are protected
-// before boundary detection so citation-heavy prose and enumerated arguments do
-// not get shredded into meaningless fragments such as a stand-alone "2.".
+// Common academic abbreviations and genuine numbered list/section markers are
+// protected before boundary detection so enumerated arguments do not get
+// shredded into fragments such as a stand-alone "2." while ordinary numeric
+// sentence endings (for example "firm 1. The evidence...") retain their stop.
 
 const PROTECT_ABBREVIATIONS = [
   "et al.",
@@ -29,11 +30,14 @@ const LIST_DOT_TOKEN = "\u0000LISTDOT\u0000";
 const STRUCTURE_BREAK_TOKEN = "\u0000STRUCTBREAK\u0000";
 
 function protectNumberedMarkers(text) {
-  // Protect 1. / 2. / 10. when the number is functioning as an enumerator or
-  // section marker. Four-digit years are intentionally excluded.
-  return text.replace(/(^|[\s\n])(\d{1,3})\.\s+(?=\S)/g, (_match, prefix, number) => {
-    return `${prefix}${number}${LIST_DOT_TOKEN} `;
-  });
+  // A numeric marker is protected only when the surrounding syntax makes it a
+  // plausible enumerator: at the start of the text/line, after a colon or
+  // semicolon introducing a list, or after terminal punctuation separating
+  // neighbouring list items. A bare number after an ordinary noun is not.
+  return text.replace(
+    /(^|\n\s*|[:;.!?]\s+)(\d{1,3})\.\s+(?=\S)/g,
+    (_match, prefix, number) => `${prefix}${number}${LIST_DOT_TOKEN} `
+  );
 }
 
 function markListHeaderBreaks(text) {
@@ -49,8 +53,10 @@ function markListHeaderBreaks(text) {
 
 export function splitSentences(text) {
   let working = String(text || "").replace(/\r\n?/g, "\n");
-  working = markListHeaderBreaks(working);
+  // Protect enumerators while their original line/colon context is still
+  // visible, then mark the narrow structural break used for list headers.
   working = protectNumberedMarkers(working);
+  working = markListHeaderBreaks(working);
 
   const placeholders = [];
   PROTECT_ABBREVIATIONS.forEach((abbr, i) => {
