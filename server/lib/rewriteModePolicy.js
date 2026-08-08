@@ -31,11 +31,9 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
 
   // Deep Authorial Reconstruction is deliberately separate from the ordinary
   // Aggressive/Adaptive setting. It is an explicit user choice to permit
-  // substantial paragraph- and sentence-level repackaging while retaining hard
-  // factual, citation, methodological and structural fidelity. It therefore does
-  // not silently collapse Deep -> Auto merely because the source already has
-  // strong texture. The underlying aggressive generation machinery is reused so
-  // the existing structural-quality gates remain active.
+  // substantial paragraph- and sentence-level redevelopment while retaining hard
+  // semantic/evidential fidelity. Strong existing texture protects the writer's
+  // intellectual content, not the current sentence skeletons.
   if (requestedNaturalisation === "authorial") {
     return {
       requested_naturalisation: "authorial",
@@ -43,14 +41,17 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
       requested_intensity: requestedIntensity,
       effective_intensity: "deep",
       preservation_priority: priority || "not_assessed",
+      preservation_basis: "semantic_evidential_fidelity",
+      surface_preservation_required: false,
       policy: "deep_authorial_reconstruction",
       universal_rewrite_authorised: false,
       adaptive_reconstruction: true,
       authorial_reconstruction: true,
+      plan_execution_priority: "material",
       opening_register_priority: "first_two_prose_paragraphs",
       detector_targeting: false,
       depth_permission: "deep_where_diagnosed",
-      rationale: "Deep Authorial Reconstruction is an explicit request for stronger structural redevelopment. Strong existing texture still protects the writer's argument, evidence, citations, methods, variables and technical language, but it does not automatically downgrade the requested depth. The first two prose paragraphs receive special register scrutiny because they establish the section's voice and reasoning frame; this is a writing-quality priority, not a detector-optimisation rule.",
+      rationale: "Deep Authorial Reconstruction is an explicit request for stronger structural redevelopment. Strong existing texture protects the writer's argument, evidence, citations, numbers, methods, variables, qualifications, epistemic strength and technical meaning, but it must not be used as a reason to freeze source sentences or silently collapse the requested depth. If the planner selects discourse reconstruction, the executor must materially rebuild the presentation while preserving those intellectual constraints. The first two prose paragraphs receive special register scrutiny because they establish the section's voice and reasoning frame; this is a writing-quality priority, not a detector-optimisation rule.",
     };
   }
 
@@ -63,6 +64,8 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
       requested_intensity: requestedIntensity,
       effective_intensity: effectiveIntensity,
       preservation_priority: priority || "not_assessed",
+      preservation_basis: "surface_and_semantic_fidelity",
+      surface_preservation_required: true,
       policy: requestedNaturalisation === "off"
         ? "clarity_only"
         : priority === "high"
@@ -71,6 +74,7 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
       universal_rewrite_authorised: false,
       adaptive_reconstruction: requestedNaturalisation !== "off",
       authorial_reconstruction: false,
+      plan_execution_priority: "selective",
       detector_targeting: false,
       depth_permission: requestedIntensity === "deep" ? "deep_where_diagnosed" : "as_planned",
       rationale: requestedNaturalisation === "off"
@@ -87,10 +91,13 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
     requested_intensity: requestedIntensity,
     effective_intensity: effectiveIntensity,
     preservation_priority: priority || "not_assessed",
+    preservation_basis: "surface_and_semantic_fidelity",
+    surface_preservation_required: true,
     policy: priority === "high" ? "authorial_preservation_targeted" : "adaptive_human_reconstruction",
     universal_rewrite_authorised: false,
     adaptive_reconstruction: true,
     authorial_reconstruction: false,
+    plan_execution_priority: "selective",
     detector_targeting: false,
     depth_permission: requestedIntensity === "deep" || requestedNaturalisation === "aggressive"
       ? "deep_where_diagnosed"
