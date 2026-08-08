@@ -25,6 +25,7 @@ jobs:
           node --check public/app.js
           node --check public/fileImport.js
           node --check public/plannerObservability.js
+          node --check public/rewriteVerdict.js
       - name: Run test suite
         shell: bash
         run: |
