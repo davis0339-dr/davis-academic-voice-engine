@@ -70,11 +70,6 @@ function flattenProtectedSpans(spans) {
     .sort((a, b) => b.length - a.length);
 }
 
-// Rewrite-depth overlap should measure the prose the engine was free to
-// rewrite, not citations/numbers/quotes/acronyms that the preservation
-// contract explicitly requires it to keep verbatim. Removing those spans
-// before n-gram comparison prevents citation-heavy academic passages from
-// being unfairly rejected simply for obeying preservation rules.
 function removeProtectedMaterial(text, protectedSpans) {
   let out = String(text || "");
   for (const span of flattenProtectedSpans(protectedSpans)) {
@@ -115,17 +110,6 @@ function lexicalContainment(a, b) {
   return intersection / Math.min(left.size, right.size);
 }
 
-// N-grams catch literal phrase reuse, but they can miss a common weak
-// paraphrase pattern: preserve the same sentence skeleton/content-word order,
-// substitute one or two words, or split one source sentence into two. This
-// metric compares each revised sentence against every source sentence after
-// protected material and stopwords are removed. A sentence is near-source
-// only when both lexical containment and ordered-token containment are high.
-//
-// The local-run measure matters because a long passage can otherwise pass the
-// aggregate ratio while leaving one paragraph (often the opening) almost
-// untouched. Aggressive revision should distribute structural change across
-// the passage rather than concentrating all of it in later paragraphs.
 function assessNearSourceSentences(sourceText, revisedText, protectedSpans) {
   const source = splitSentences(sourceText)
     .map((text) => ({ text, tokens: contentTokens(text, protectedSpans) }))
@@ -179,6 +163,8 @@ function rhetoricalIssueSummary(text) {
   return {
     issues,
     gapLabelScaffolding: issues.find((i) => i.issue === "gap_label_scaffolding") || null,
+    proxyLabelScaffolding: issues.find((i) => i.issue === "proxy_label_scaffolding") || null,
+    demonstrativeBridgeOveruse: issues.find((i) => i.issue === "demonstrative_bridge_overuse") || null,
     choppySentenceRun: issues.find((i) => i.issue === "choppy_sentence_run") || null,
   };
 }
@@ -250,21 +236,19 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
       reasons.push(`The revision contains a local run of ${nearSource.maxConsecutive} consecutive near-source sentences. Aggressive mode must distribute structural reconstruction across the passage rather than leaving one stretch substantially source-shaped.`);
     }
 
-    // A source-level rhetorical problem diagnosed by the engine must actually
-    // be resolved by aggressive revision. Grammar alone is not enough.
     if (sourceRhetorical.gapLabelScaffolding && revisedRhetorical.gapLabelScaffolding) {
       passed = false;
       reasons.push("The source's Conceptual/Theoretical/Methodological/Empirical/Contextual gap-label scaffold remains in the revision. Preserve the distinct gaps but integrate them into connected argumentation.");
+    }
+    if (sourceRhetorical.proxyLabelScaffolding && revisedRhetorical.proxyLabelScaffolding) {
+      passed = false;
+      reasons.push("The source's performance-proxy checklist remains visible in the revision. Preserve revenue growth, market share, audit quality and operational efficiency, but connect their evidence and consequences rather than presenting consecutive category-led sentences.");
     }
     if (sourceRhetorical.choppySentenceRun && revisedRhetorical.choppySentenceRun) {
       passed = false;
       reasons.push("A diagnosed consecutive micro-sentence run remains unresolved in the revision; merge or redistribute those propositions into argument-led academic cadence.");
     }
 
-    // A fixed 24% short-sentence cutoff proved too brittle on real thesis
-    // prose. Reject genuinely dominant short-sentence texture, or a
-    // moderately high share only when the overall mean has also fallen below
-    // the academic cadence floor. Long runs remain a hard signal.
     const shortDominant = shortSentenceRatio > 0.32;
     const shortAndThin = shortSentenceRatio > 0.27 && meanSentenceLength < cadenceFloor;
     if (shortDominant || shortAndThin) {
@@ -325,6 +309,10 @@ export function assessTransformationQuality(sourceText, revisedText, naturalisat
     rhetorical_resolution: {
       source_gap_label_scaffolding: Boolean(sourceRhetorical.gapLabelScaffolding),
       revised_gap_label_scaffolding: Boolean(revisedRhetorical.gapLabelScaffolding),
+      source_proxy_label_scaffolding: Boolean(sourceRhetorical.proxyLabelScaffolding),
+      revised_proxy_label_scaffolding: Boolean(revisedRhetorical.proxyLabelScaffolding),
+      source_demonstrative_bridge_overuse: Boolean(sourceRhetorical.demonstrativeBridgeOveruse),
+      revised_demonstrative_bridge_overuse: Boolean(revisedRhetorical.demonstrativeBridgeOveruse),
       source_choppy_sentence_run: Boolean(sourceRhetorical.choppySentenceRun),
       revised_choppy_sentence_run: Boolean(revisedRhetorical.choppySentenceRun),
     },
