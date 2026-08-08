@@ -28,6 +28,14 @@
     return (diag?.signals || []).map((signal) => signal.id);
   }
 
+  function relabelAggressiveMode() {
+    const select = document.getElementById("naturalisation");
+    if (!select) return;
+    const option = [...select.options].find((item) => item.value === "aggressive");
+    if (option) option.textContent = "Aggressive / Adaptive reconstruction";
+    select.title = "Aggressive mode permits deep reconstruction where diagnostics justify it; it does not force every clean sentence or paragraph to change.";
+  }
+
   function render() {
     const target = document.getElementById("tab-changes");
     if (!target || !latestRewrite?.candidate_verdict) return;
@@ -45,8 +53,10 @@
     const verdict = latestRewrite.candidate_verdict;
     const compliance = latestRewrite.execution_compliance || {};
     const residual = latestRewrite.residual_rework || null;
+    const policy = latestRewrite.rewrite_mode_policy || null;
     const beforeRisk = residual?.before?.metrics?.total_risk_score;
-    const afterRisk = residual?.after?.metrics?.total_risk_score;
+    const afterRisk = residual?.attempted_after?.metrics?.total_risk_score ?? residual?.after?.metrics?.total_risk_score;
+    const sourceRisk = residual?.source_risk_score;
     const beforeSignals = riskSignals(residual?.before);
     const afterSignals = riskSignals(residual?.after);
 
@@ -58,16 +68,18 @@
         <div class="${statusClass(verdict.residual)}"><span>Residual rework</span><strong>${esc(title(verdict.residual))}</strong></div>
         <div class="${statusClass(verdict.final_status)}"><span>Final candidate</span><strong>${esc(title(verdict.final_status))}</strong></div>
       </div>
+      ${policy ? `<div class="rv4-policy"><strong>Rewrite policy:</strong> ${esc(title(policy.policy))}. ${esc(policy.rationale || "")}</div>` : ""}
       ${residual ? `
         <div class="rv4-residual">
           <strong>Selective residual pass</strong>
-          <span>${residual.attempted ? "attempted" : "not needed"}${residual.accepted ? " · accepted" : residual.attempted ? " · original candidate retained" : ""}</span>
-          ${Number.isFinite(Number(beforeRisk)) ? `<span>risk ${esc(beforeRisk)}${Number.isFinite(Number(afterRisk)) ? ` → ${esc(afterRisk)}` : ""}</span>` : ""}
+          <span>${residual.attempted ? "attempted" : "not needed"}${residual.accepted ? " · accepted" : residual.attempted ? " · prior candidate retained" : ""}</span>
+          ${Number.isFinite(Number(sourceRisk)) ? `<span>source risk ${esc(sourceRisk)}</span>` : ""}
+          ${Number.isFinite(Number(beforeRisk)) ? `<span>candidate risk ${esc(beforeRisk)}${Number.isFinite(Number(afterRisk)) ? ` → attempted ${esc(afterRisk)}` : ""}</span>` : ""}
           ${(residual.target_blocks || []).length ? `<span>target blocks: ${residual.target_blocks.map(esc).join(", ")}</span>` : ""}
         </div>
         ${residual.reason ? `<div class="rv4-note">${esc(residual.reason)}</div>` : ""}
         ${beforeSignals.length ? `<details><summary>Residual signals before local rework (${beforeSignals.length})</summary><div class="rv4-chips">${beforeSignals.map((s) => `<span>${esc(s)}</span>`).join("")}</div></details>` : ""}
-        ${afterSignals.length ? `<details><summary>Residual signals after accepted rework (${afterSignals.length})</summary><div class="rv4-chips">${afterSignals.map((s) => `<span>${esc(s)}</span>`).join("")}</div></details>` : ""}
+        ${afterSignals.length ? `<details><summary>Residual signals in accepted candidate (${afterSignals.length})</summary><div class="rv4-chips">${afterSignals.map((s) => `<span>${esc(s)}</span>`).join("")}</div></details>` : ""}
       ` : ""}
       ${(compliance.preservation_reasons || []).length ? `<div class="rv4-alert"><strong>Preservation failure:</strong> ${compliance.preservation_reasons.map(esc).join(" ")}</div>` : ""}
       <div class="rv4-foot">${esc(verdict.note || "")}</div>
@@ -93,11 +105,15 @@
     return response;
   };
 
+  relabelAggressiveMode();
+  window.addEventListener("DOMContentLoaded", relabelAggressiveMode, { once: true });
+
   const style = document.createElement("style");
   style.textContent = `
     .rv4-panel{margin:0 0 18px;padding:16px;border:1px solid #405269;border-radius:10px;background:rgba(22,31,44,.72);line-height:1.45}
     .rv4-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}.rv4-title span{font-size:.82em;opacity:.62}
     .rv4-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:8px}.rv4-grid>div{padding:9px 10px;border-radius:7px;background:rgba(5,11,18,.42);border:1px solid #485568}.rv4-grid span{display:block;font-size:.78em;opacity:.66}.rv4-grid .good{border-color:#2c7658}.rv4-grid .warn{border-color:#9d7b34}.rv4-grid .bad{border-color:#9b4a4a}
+    .rv4-policy{margin-top:12px;padding:9px 10px;border-left:3px solid #5d79a4;background:rgba(5,11,18,.32)}
     .rv4-residual{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;padding:9px;background:rgba(5,11,18,.35);border-radius:7px}.rv4-note,.rv4-alert,.rv4-foot{margin-top:9px}.rv4-alert{padding:8px;border-left:3px solid #b35353;background:rgba(115,35,35,.2)}.rv4-foot{font-size:.82em;opacity:.68}.rv4-panel details{margin-top:9px}.rv4-panel summary{cursor:pointer;color:#a9bedf}.rv4-chips span{display:inline-block;margin:5px 5px 0 0;padding:3px 6px;border:1px solid #52617a;border-radius:5px;font-size:.8em}
   `;
   document.head.appendChild(style);
