@@ -29,6 +29,9 @@ function extraCitationLike(sourceSpans, revisedSpans) {
 const PLANNED_STUDY = /\b(?:this|the present|the proposed) study\s+(?:will|aims to|seeks to|is designed to|is intended to|proposes to)\b/gi;
 const PRESENT_REPORTING_STUDY = /\b(?:this|the present|the proposed) study\s+(?:examines|investigates|assesses|evaluates|analyses|analyzes|determines|tests|adopts|uses|employs|collects|administers|measures|focuses|explores|estimates|applies)\b/gi;
 const COMPLETED_STUDY = /\b(?:(?:this|the present|the proposed) study\s+(?:conducted|collected|analysed|analyzed|found|reported|showed|revealed|used|employed)|interviews?\s+(?:were|was)\s+conducted|data\s+(?:were|was)\s+collected|analysis\s+(?:was|were)\s+conducted|participants?\s+(?:were|was)\s+interviewed)\b/gi;
+const FIRST_PERSON = /\b(?:I|me|my|mine|myself|we|us|our|ours|ourselves)\b/g;
+const SECTION_LABEL = /\bSection\s+\d+(?:\.\d+)*\b/gi;
+const CHAPTER_LABEL = /\bChapter\s+\d+(?:\.\d+)*\b/gi;
 
 const NUMBER_WORDS = new Map([
   ["one", 1], ["two", 2], ["three", 3], ["four", 4], ["five", 5],
@@ -37,6 +40,10 @@ const NUMBER_WORDS = new Map([
 
 function countMatches(text, regex) {
   return (String(text || "").match(regex) || []).length;
+}
+
+function normalisedMatches(text, regex) {
+  return new Set((String(text || "").match(regex) || []).map((x) => x.toLowerCase()));
 }
 
 function assessStudyStage(sourceText, revisedText) {
@@ -59,6 +66,36 @@ function assessStudyStage(sourceText, revisedText) {
   };
 }
 
+function assessResearcherVoice(sourceText, revisedText) {
+  const sourceFirstPerson = countMatches(sourceText, FIRST_PERSON);
+  const revisedFirstPerson = countMatches(revisedText, FIRST_PERSON);
+  return {
+    ok: !(sourceFirstPerson === 0 && revisedFirstPerson > 0),
+    source_first_person_markers: sourceFirstPerson,
+    revised_first_person_markers: revisedFirstPerson,
+  };
+}
+
+function assessDocumentStructure(sourceText, revisedText) {
+  const sourceSections = normalisedMatches(sourceText, SECTION_LABEL);
+  const sourceChapters = normalisedMatches(sourceText, CHAPTER_LABEL);
+  const revisedSections = normalisedMatches(revisedText, SECTION_LABEL);
+  const revisedChapters = normalisedMatches(revisedText, CHAPTER_LABEL);
+
+  const newChapterLabels = [...revisedChapters].filter((x) => !sourceChapters.has(x));
+  const newSectionLabels = [...revisedSections].filter((x) => !sourceSections.has(x));
+  const sectionToChapterShift = sourceSections.size > 0 && sourceChapters.size === 0 && newChapterLabels.length > 0;
+  const chapterToSectionShift = sourceChapters.size > 0 && sourceSections.size === 0 && newSectionLabels.length > 0;
+
+  return {
+    ok: !sectionToChapterShift && !chapterToSectionShift,
+    source_sections: [...sourceSections],
+    source_chapters: [...sourceChapters],
+    new_section_labels: newSectionLabels,
+    new_chapter_labels: newChapterLabels,
+  };
+}
+
 function listCountWarnings(text) {
   const warnings = [];
   const re = /\b(one|two|three|four|five|six|seven|eight|nine|ten)\b([^:.\n]{0,120}):\s*([^.!?\n]{10,500})/gi;
@@ -71,11 +108,7 @@ function listCountWarnings(text) {
       .map((part) => part.trim())
       .filter(Boolean);
     if (list.length >= 2 && stated !== list.length) {
-      warnings.push({
-        stated,
-        observed: list.length,
-        excerpt: m[0].slice(0, 240),
-      });
+      warnings.push({ stated, observed: list.length, excerpt: m[0].slice(0, 240) });
     }
     if (m.index === re.lastIndex) re.lastIndex++;
   }
@@ -85,7 +118,6 @@ function listCountWarnings(text) {
 export function auditPreservation(sourceText, revisedText, sourceSpans) {
   const spans = sourceSpans || extractProtectedSpans(sourceText);
   const revisedSpans = extractProtectedSpans(revisedText);
-
   const warnings = [];
 
   const missingNumbers = missingFrom(spans.numbers, revisedText);
@@ -95,21 +127,14 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
   if (!numbersOk) {
     warnings.push({
       type: "missing_numeric_span",
-      detail: `Numeric/statistical spans present in source but not found verbatim in revision: ${[
-        ...missingNumbers,
-        ...missingMonetary,
-        ...missingStats,
-      ].join(", ")}`,
+      detail: `Numeric/statistical spans present in source but not found verbatim in revision: ${[...missingNumbers, ...missingMonetary, ...missingStats].join(", ")}`,
     });
   }
 
   const missingCitations = missingFrom(spans.citations, revisedText);
   const citationsOk = missingCitations.length === 0;
   if (!citationsOk) {
-    warnings.push({
-      type: "missing_citation",
-      detail: `Citations present in source but not found verbatim in revision: ${missingCitations.join(", ")}`,
-    });
+    warnings.push({ type: "missing_citation", detail: `Citations present in source but not found verbatim in revision: ${missingCitations.join(", ")}` });
   }
 
   const missingAcronyms = missingFrom(spans.acronyms, revisedText);
@@ -124,10 +149,7 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
   const missingQuotes = missingFrom(spans.quotes, revisedText);
   const quotesOk = missingQuotes.length === 0;
   if (!quotesOk) {
-    warnings.push({
-      type: "altered_quotation",
-      detail: `Quoted material present in source but not found verbatim in revision: ${missingQuotes.map((q) => `"${q}"`).join(", ")}`,
-    });
+    warnings.push({ type: "altered_quotation", detail: `Quoted material present in source but not found verbatim in revision: ${missingQuotes.map((q) => `"${q}"`).join(", ")}` });
   }
 
   const newCitations = extraCitationLike(spans, revisedSpans);
@@ -138,18 +160,11 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     (warning) => !sourceListCountWarnings.some((sourceWarning) => sourceWarning.excerpt === warning.excerpt)
   );
 
-  const newFactualClaimsDetected = newCitations.length > 0 || newNumbers.length > 0 || introducedListCountWarnings.length > 0;
   if (newCitations.length > 0) {
-    warnings.push({
-      type: "new_citation_introduced",
-      detail: `Citation-like text appears in the revision that was not in the source: ${newCitations.join(", ")}. This must not happen -- flag for manual review.`,
-    });
+    warnings.push({ type: "new_citation_introduced", detail: `Citation-like text appears in the revision that was not in the source: ${newCitations.join(", ")}. This must not happen -- flag for manual review.` });
   }
   if (newNumbers.length > 0) {
-    warnings.push({
-      type: "new_numeric_value_introduced",
-      detail: `Numeric/statistical value appears in the revision that was not in the source: ${newNumbers.join(", ")}. Verify this was not fabricated.`,
-    });
+    warnings.push({ type: "new_numeric_value_introduced", detail: `Numeric/statistical value appears in the revision that was not in the source: ${newNumbers.join(", ")}. Verify this was not fabricated.` });
   }
   for (const mismatch of introducedListCountWarnings) {
     warnings.push({
@@ -168,6 +183,30 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     });
   }
 
+  const researcherVoice = assessResearcherVoice(sourceText, revisedText);
+  if (!researcherVoice.ok) {
+    warnings.push({
+      type: "researcher_voice_shift",
+      detail: "The revision introduced first-person researcher voice (I/we/my/our) where the source did not use it. Preserve the author's established research voice unless explicitly requested otherwise.",
+    });
+  }
+
+  const documentStructure = assessDocumentStructure(sourceText, revisedText);
+  if (!documentStructure.ok) {
+    warnings.push({
+      type: "document_structure_shift",
+      detail: `The revision changed the document's structural vocabulary (for example Section versus Chapter). New labels: ${[...documentStructure.new_chapter_labels, ...documentStructure.new_section_labels].join(", ")}. Preserve the source's institutional document structure.`,
+    });
+  }
+
+  const newFactualClaimsDetected =
+    newCitations.length > 0 ||
+    newNumbers.length > 0 ||
+    introducedListCountWarnings.length > 0 ||
+    !studyStage.ok ||
+    !researcherVoice.ok ||
+    !documentStructure.ok;
+
   return {
     numbers_ok: numbersOk,
     citations_ok: citationsOk,
@@ -175,6 +214,10 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     quotes_ok: quotesOk,
     study_stage_ok: studyStage.ok,
     study_stage: studyStage,
+    researcher_voice_ok: researcherVoice.ok,
+    researcher_voice: researcherVoice,
+    document_structure_ok: documentStructure.ok,
+    document_structure: documentStructure,
     list_counts_ok: introducedListCountWarnings.length === 0,
     new_factual_claims_detected: newFactualClaimsDetected,
     warnings,
