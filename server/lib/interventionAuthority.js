@@ -64,11 +64,12 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
   // DISCOURSE_REPACKAGE is paragraph-level scope. During a genuine reconstruction
   // it can legitimately materialise as many sentence restructures/splits/merges,
   // so the sentence-operation ceiling must not incorrectly treat those concrete
-  // operations as over-editing. In authorial discourse mode, surface change may
-  // reach the whole passage if semantic/evidential preservation passes.
+  // operations as over-editing. Passage-wide surface redevelopment becomes legal
+  // when the plan itself is passage-wide; a narrower authorial plan still keeps a
+  // narrower ceiling. Semantic/evidential preservation remains mandatory either way.
   const ordinaryMaxChanged = clamp(interventionRatio + changeMargin, 0.12, 0.95);
   const ordinaryMaxSubstantive = clamp(substantiveRatio + substantiveMargin, 0.10, 0.92);
-  const authorialMaxChanged = authorialDiscourseMode ? 1 : clamp(interventionRatio + changeMargin, 0.20, 1);
+  const authorialMaxChanged = clamp(interventionRatio + changeMargin, 0.20, 1);
   const authorialStructuralEnvelope = clamp(substantiveRatio + discourseRatio + 0.15, 0.35, 1);
   const authorialMaxSubstantive = authorialDiscourseMode
     ? Math.max(ordinaryMaxSubstantive, authorialStructuralEnvelope)
@@ -99,7 +100,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
         : "preservation_aware_plausibility_floor",
     effective_intent: effectiveIntent || null,
     rule: authorialMode
-      ? "Deep Authorial Reconstruction preserves the writer's argument, evidence, citations, numbers, methods, variables, qualifications, epistemic strength and technical meaning; it does not require preservation of source sentence wording or sentence boundaries. When discourse reconstruction is planned, substantial or even passage-wide surface redevelopment is permissible if those fidelity constraints pass. The maximum remains an authority ceiling and the minimum remains only an execution safeguard against a nominal 'deep reconstruction' that returns essentially the same prose. DISCOURSE_REPACKAGE is paragraph-level scope and may legitimately produce multiple concrete sentence restructures."
+      ? "Deep Authorial Reconstruction preserves the writer's argument, evidence, citations, numbers, methods, variables, qualifications, epistemic strength, factual relationships and technical meaning; it does not require preservation of source sentence wording or sentence boundaries. When discourse reconstruction is planned, substantial or even passage-wide surface redevelopment is permissible if those fidelity constraints pass. The maximum remains an authority ceiling and the minimum remains only an execution safeguard against a nominal 'deep reconstruction' that returns essentially the same prose. DISCOURSE_REPACKAGE is paragraph-level scope and may legitimately produce multiple concrete sentence restructures."
       : "Maximum changed-sentence breadth is an authorised disturbance ceiling, never a rewrite target. Minimum changed-sentence breadth is only a preservation-aware plausibility floor used to detect implausibly unchanged output when a demanding plan was reported as executed. DISCOURSE_REPACKAGE contributes to structural authority but is not a one-sentence-one-rewrite quota. High authorial-texture preservation priority lowers the minimum floor because clean source sentences may legitimately survive even when deep repair is permitted inside diagnosed passages.",
   };
 }
