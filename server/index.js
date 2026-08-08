@@ -10,11 +10,36 @@ import { rewriteRouter } from "./routes/rewrite.js";
 import { detectorScanRouter } from "./routes/detectorScan.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { llmProvider } from "./lib/llmProvider.js";
+import {
+  securityHeaders,
+  enforceSameOrigin,
+  generalApiLimiter,
+  protectExpensiveApi,
+  expensiveConcurrencyGate,
+  validateApiPayload,
+  jsonBodyErrorHandler,
+} from "./lib/security.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-app.use(express.json({ limit: "10mb" })); // long-document jobs (Phase 3) can carry a whole thesis chapter
+app.disable("x-powered-by");
+// Render and similar reverse proxies supply the real client address in X-Forwarded-For.
+// Trust only the first proxy hop so per-IP abuse controls use the client rather than the proxy.
+app.set("trust proxy", 1);
+
+app.use(securityHeaders);
+
+// Apply abuse controls before reading potentially expensive request bodies.
+app.use("/api", generalApiLimiter, enforceSameOrigin, protectExpensiveApi, expensiveConcurrencyGate);
+
+// Long-document jobs need more room than the single editor, but neither surface
+// accepts the previous unrestricted 10 MB JSON body. Word-count limits still apply
+// inside the routes after parsing.
+app.use("/api/jobs", express.json({ limit: "1mb", strict: true, type: "application/json" }));
+app.use("/api", express.json({ limit: "512kb", strict: true, type: "application/json" }));
+app.use(jsonBodyErrorHandler);
+app.use("/api", validateApiPayload);
 
 app.use("/api", healthRouter);
 app.use("/api", styleProfilesRouter);
@@ -24,12 +49,25 @@ app.use("/api", rewriteRouter);
 app.use("/api", detectorScanRouter);
 app.use("/api", jobsRouter);
 
-app.use(express.static(path.join(__dirname, "..", "public")));
+app.use(express.static(path.join(__dirname, "..", "public"), {
+  etag: true,
+  maxAge: 0,
+  setHeaders(res) {
+    res.setHeader("Cache-Control", "no-cache");
+  },
+}));
+
+// Do not leak parser internals or stack traces to clients.
+app.use((err, req, res, _next) => {
+  const requestId = req.requestId || "unknown";
+  console.error(JSON.stringify({ event: "request_error", requestId, path: req.originalUrl, message: err?.message || "unknown error" }));
+  res.status(500).json({ error: "INTERNAL_ERROR", message: "The request could not be completed.", requestId });
+});
 
 const port = Number(process.env.PORT || 3000);
 
-// The app must start and serve the editor shell regardless of whether the
-// LLM key is configured -- Gate 0 in Section 22 of the build handoff.
+// The editor shell still starts when the provider key is absent. Provider-backed
+// routes then return NOT_CONFIGURED rather than exposing or fabricating credentials.
 app.listen(port, () => {
   console.log(`davis-academic-voice-engine listening on port ${port}`);
   console.log(`LLM configured: ${llmProvider.isConfigured() ? "yes" : "no (server will report NOT_CONFIGURED, this is expected pre-deploy)"}`);

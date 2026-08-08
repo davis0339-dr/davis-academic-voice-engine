@@ -18,6 +18,56 @@ const TRANSIENT_CODES = new Set([
 ]);
 const PROVIDER_BLOCKING_CODES = new Set(["PROVIDER_BILLING_REQUIRED", "AUTH_FAILED", "NOT_CONFIGURED"]);
 
+function intEnv(name, fallback, min, max) {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+const MAX_ACTIVE_JOBS = intEnv("MAX_ACTIVE_LONGDOC_JOBS", 2, 1, 10);
+const MAX_STORED_JOBS = intEnv("MAX_STORED_LONGDOC_JOBS", 24, 4, 200);
+const JOB_TTL_MS = intEnv("LONGDOC_JOB_TTL_MINUTES", 120, 15, 1440) * 60 * 1000;
+const COMPLETED_JOB_TTL_MS = intEnv("COMPLETED_JOB_TTL_MINUTES", 30, 5, 240) * 60 * 1000;
+
+function isActive(job) {
+  return job && (job.status === "queued" || job.status === "processing");
+}
+
+function activeJobCount(excludeJobId = null) {
+  let count = 0;
+  for (const job of jobs.values()) {
+    if (job.id !== excludeJobId && isActive(job)) count += 1;
+  }
+  return count;
+}
+
+function pruneJobs(now = Date.now()) {
+  for (const [id, job] of jobs) {
+    if (isActive(job)) continue;
+    const terminalAt = Date.parse(job.completedAt || job.createdAt || 0);
+    const ttl = job.completedAt ? COMPLETED_JOB_TTL_MS : JOB_TTL_MS;
+    if (!Number.isFinite(terminalAt) || now - terminalAt >= ttl) jobs.delete(id);
+  }
+
+  if (jobs.size <= MAX_STORED_JOBS) return;
+  const removable = [...jobs.values()]
+    .filter((job) => !isActive(job))
+    .sort((a, b) => Date.parse(a.completedAt || a.createdAt || 0) - Date.parse(b.completedAt || b.createdAt || 0));
+  while (jobs.size > MAX_STORED_JOBS && removable.length) {
+    const job = removable.shift();
+    jobs.delete(job.id);
+  }
+}
+
+const pruneTimer = setInterval(pruneJobs, 5 * 60 * 1000);
+pruneTimer.unref?.();
+
+function capacityError(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -192,9 +242,6 @@ async function processJob(jobId) {
         message: chunk.error.message,
         chunkIndex: chunk.index,
       };
-      // Stop on the first account/configuration failure. The remaining chunks
-      // stay queued. After the provider issue is fixed, Retry on this one
-      // failed chunk resumes the normal job loop and continues the rest.
       job.completedAt = new Date().toISOString();
       return;
     }
@@ -203,6 +250,14 @@ async function processJob(jobId) {
 }
 
 export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation }) {
+  pruneJobs();
+  if (activeJobCount() >= MAX_ACTIVE_JOBS) {
+    throw capacityError("JOB_CONCURRENCY_LIMIT", `Long Document is already processing the safe maximum of ${MAX_ACTIVE_JOBS} concurrent job(s). Retry after an active job finishes.`);
+  }
+  if (jobs.size >= MAX_STORED_JOBS) {
+    throw capacityError("JOB_STORE_FULL", "The temporary long-document job store is full. Retry after older jobs expire.");
+  }
+
   const documentMap = buildDocumentMap(text);
   const { method, chunks, targetWords, hardMaxWords } = chunkDocument(text, documentMap);
 
@@ -248,14 +303,17 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
 }
 
 export function getJob(jobId) {
+  pruneJobs();
   return jobs.get(jobId) || null;
 }
 
 export function retryChunk(jobId, chunkIndex) {
+  pruneJobs();
   const job = jobs.get(jobId);
   if (!job) return { error: "JOB_NOT_FOUND" };
   const chunk = job.chunks.find((c) => c.index === chunkIndex);
   if (!chunk) return { error: "CHUNK_NOT_FOUND" };
+  if (!isActive(job) && activeJobCount(jobId) >= MAX_ACTIVE_JOBS) return { error: "JOB_CONCURRENCY_LIMIT" };
 
   chunk.status = "queued";
   chunk.error = null;
@@ -298,6 +356,7 @@ export function summarizeJob(job) {
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     completedAt: job.completedAt,
+    expiresAfterMinutes: job.completedAt ? Math.round(COMPLETED_JOB_TTL_MS / 60000) : Math.round(JOB_TTL_MS / 60000),
     chunkMethod: job.chunkMethod,
     chunkPolicy: job.chunkPolicy,
     progress: { chunkCount, doneCount, failedCount, processingCount, passthroughCount, averageChunkDurationMs, estimatedRemainingMs },
