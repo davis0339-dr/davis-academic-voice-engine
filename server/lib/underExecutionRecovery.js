@@ -16,9 +16,10 @@ export function shouldAttemptAuthorialExecutionRecovery({
   sourceRetainedForSafety = false,
   overExecutionRecoveryUsed = false,
 } = {}) {
+  const deepAuthorialAllowed = modePolicy?.authorial_reconstruction &&
+    (!modePolicy?.requested_intensity || modePolicy.requested_intensity === "deep");
   return Boolean(
-    modePolicy?.authorial_reconstruction &&
-    modePolicy?.requested_intensity === "deep" &&
+    deepAuthorialAllowed &&
     !sourceRetainedForSafety &&
     !overExecutionRecoveryUsed &&
     compliance?.preservation_ok &&
