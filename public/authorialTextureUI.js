@@ -123,3 +123,13 @@
   script.defer = true;
   document.head.appendChild(script);
 })();
+
+// Keep visible evidence-file options synchronised with parser capabilities.
+(() => {
+  if (document.querySelector('script[data-research-studio-capabilities-ui="true"]')) return;
+  const script = document.createElement("script");
+  script.src = "/researchStudioCapabilitiesUI.js";
+  script.dataset.researchStudioCapabilitiesUi = "true";
+  script.defer = true;
+  document.head.appendChild(script);
+})();
