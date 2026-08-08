@@ -3,6 +3,7 @@ import { extractProtectedSpans } from "./protect.js";
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+)$/;
 const NUMBERED_HEADING = /^(\d+(?:\.\d+)*)\s+([A-Z][^.!?]{2,80})$/;
 const INSTITUTIONAL_HEADING = /^(Section|Chapter)\s+(\d+(?:\.\d+)*)\s*:\s*([A-Z][^.!?]{1,100})$/i;
+const STANDALONE_INSTITUTIONAL_HEADING = /^(Section|Chapter)\s+(\d+(?:\.\d+)*)$/i;
 const RESEARCH_QUESTION_HEADING = /^Research Question\s+\d+(?:[A-Za-z])?$/i;
 const ALLCAPS_HEADING = /^[A-Z][A-Z0-9 ,'&\-:]{2,79}$/;
 const SMALL_TITLE_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "vs", "with"]);
@@ -62,6 +63,16 @@ function headingLevel(line) {
     return {
       level: depth,
       text: `${institutional[1]} ${institutional[2]}: ${institutional[3]}`.trim(),
+      style: "institutional_numbered",
+    };
+  }
+
+  const standaloneInstitutional = line.match(STANDALONE_INSTITUTIONAL_HEADING);
+  if (standaloneInstitutional) {
+    const depth = standaloneInstitutional[2].split(".").length;
+    return {
+      level: depth,
+      text: `${standaloneInstitutional[1]} ${standaloneInstitutional[2]}`.trim(),
       style: "institutional_numbered",
     };
   }
