@@ -29,6 +29,13 @@ function baseResult(overrides = {}) {
   };
 }
 
+const highPreservationAuthority = {
+  preservation_priority: "high",
+  min_changed_sentence_ratio: 0.35,
+  max_changed_sentence_ratio: 0.95,
+  max_substantive_operation_ratio: 0.92,
+};
+
 test("passes execution when model work broadly matches a demanding discourse-reconstruction plan", () => {
   const result = assessExecutionCompliance(baseResult());
   assert.equal(result.execution_passed, true);
@@ -59,15 +66,72 @@ test("flags the observed 41-planned-versus-24-executed mismatch as under-executi
   assert.equal(result.planned.intervention, 41);
   assert.equal(result.reported.intervention, 24);
   assert.ok(result.intervention_coverage < 0.67);
-  assert.ok(result.execution_reasons.some((reason) => /planner's intervention load/i.test(reason)));
+  assert.ok(result.under_execution_codes.includes("PLAN_INTERVENTION_COVERAGE"));
 });
 
-test("uses independently measured unchanged-sentence evidence rather than trusting edit counts alone", () => {
+test("does not convert a high-preservation 95% maximum ceiling into a rewrite target", () => {
   const result = assessExecutionCompliance(baseResult({
+    intervention_plan_summary: { SENTENCE_RESTRUCTURE: 34, SPLIT_OR_MERGE: 5 },
+    edit_summary: {
+      kept: 0,
+      micro_edits: 0,
+      sentence_restructures: 35,
+      split_or_merge: 4,
+      paragraph_reorders: 0,
+      flags_for_author: [],
+    },
+    transformation_quality: { unchanged_sentence_ratio: 0.41 },
+    intervention_authority: highPreservationAuthority,
+  }));
+
+  assert.equal(result.execution_passed, true);
+  assert.equal(result.intervention_coverage, 1);
+  assert.equal(result.structural_coverage, 1);
+  assert.equal(result.changed_sentence_ratio, 0.59);
+  assert.equal(result.minimum_changed_sentence_ratio, 0.35);
+  assert.equal(result.changed_sentence_ceiling, 0.95);
+  assert.ok(!result.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"));
+});
+
+test("independent source/revision evidence still catches implausibly unchanged output below the preservation-aware floor", () => {
+  const result = assessExecutionCompliance(baseResult({
+    intervention_plan_summary: { SENTENCE_RESTRUCTURE: 34, SPLIT_OR_MERGE: 5 },
+    edit_summary: {
+      kept: 0,
+      micro_edits: 0,
+      sentence_restructures: 35,
+      split_or_merge: 4,
+      paragraph_reorders: 0,
+      flags_for_author: [],
+    },
     transformation_quality: { unchanged_sentence_ratio: 0.9 },
+    intervention_authority: highPreservationAuthority,
   }));
   assert.equal(result.execution_passed, false);
-  assert.ok(result.execution_reasons.some((reason) => /independent source\/revision comparison/i.test(reason)));
+  assert.ok(result.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"));
+  assert.ok(result.execution_reasons.some((reason) => /plausibility floor/i.test(reason)));
+});
+
+test("discourse-repackage scope is not treated as 34 obligatory sentence rewrites", () => {
+  const result = assessExecutionCompliance(baseResult({
+    intervention_plan_summary: { DISCOURSE_REPACKAGE: 34, SPLIT_OR_MERGE: 5 },
+    edit_summary: {
+      kept: 25,
+      micro_edits: 0,
+      sentence_restructures: 10,
+      split_or_merge: 4,
+      paragraph_reorders: 0,
+      flags_for_author: [],
+    },
+    transformation_quality: { unchanged_sentence_ratio: 0.41 },
+    intervention_authority: highPreservationAuthority,
+  }));
+
+  assert.equal(result.planned.discourseRepackage, 34);
+  assert.equal(result.planned.intervention, 5);
+  assert.equal(result.planned.materialIntervention, 39);
+  assert.equal(result.execution_passed, true);
+  assert.ok(result.warnings.some((reason) => /paragraph-level DISCOURSE_REPACKAGE/i.test(reason)));
 });
 
 test("does not force a retry-level failure for a tiny, mostly-KEEP polish plan", () => {

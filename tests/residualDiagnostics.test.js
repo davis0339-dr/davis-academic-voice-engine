@@ -52,3 +52,21 @@ test("detects taxonomy pressure without claiming that every substantive list mus
   assert.ok(signal);
   assert.match(signal.action, /Keep classifications that genuinely belong to the source or product design/i);
 });
+
+test("rechecks document-level architecture so unresolved discourse reconstruction is not mistaken for successful sentence rewriting", () => {
+  const text = [
+    "Three principal findings emerge from the analysis. First, governance appears relevant. Second, the relationship varies by leverage. Third, creditor responses differ across conditions.",
+    "Three practical implications follow from the evidence. First, boards should not assume one universal effect. Second, lenders may interpret the same mechanism differently. Third, financing context remains important.",
+    "Three theoretical points organise the explanation. First, agency conflict affects creditor risk. Second, information asymmetry affects pricing. Third, governance signals can be conditional.",
+    "Three conclusions therefore follow from the discussion. First, the evidence is mixed. Second, the mechanisms are context dependent. Third, further integrated analysis is warranted.",
+  ].join("\n\n");
+
+  const result = analyseResidualWriting(text);
+  const ids = result.signals.map((signal) => signal.id);
+  assert.equal(result.measurement_version, "residual-writing-v2");
+  assert.ok(ids.includes("argument_packaging"));
+  assert.ok(ids.includes("enumeration_saturation"));
+  assert.ok(result.metrics.discourse_architecture_signal_count >= 2);
+  assert.ok(result.target_blocks.length > 0);
+  assert.equal(result.should_rework, true);
+});

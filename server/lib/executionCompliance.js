@@ -1,7 +1,8 @@
 // Deterministic audit of whether a model response actually followed the planner's
-// requested intervention. This is not an authorship detector. Execution depth,
-// execution breadth and factual preservation are separate verdicts: a candidate
-// can fail because it changed too little OR because it disturbed too much.
+// requested intervention. This is not an authorship detector. Concrete sentence
+// operations, paragraph-level discourse scope, visible change breadth and factual
+// preservation are deliberately separated so "different" is never a proxy for
+// "executed well".
 
 const SUBSTANTIVE_LEVELS = new Set([
   "SENTENCE_RESTRUCTURE",
@@ -10,6 +11,7 @@ const SUBSTANTIVE_LEVELS = new Set([
   "CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT",
   "COMPRESS",
 ]);
+const DISCOURSE_REPACKAGE_LEVEL = "DISCOURSE_REPACKAGE";
 
 function sumValues(obj) {
   return Object.values(obj || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
@@ -29,9 +31,14 @@ function plannedCounts(result) {
   const total = sumValues(summary);
   const keep = Number(summary.KEEP || 0);
   const micro = Number(summary.MICRO_EDIT || 0);
+  const discourseRepackage = Number(summary[DISCOURSE_REPACKAGE_LEVEL] || 0);
   const substantive = [...SUBSTANTIVE_LEVELS].reduce((sum, key) => sum + Number(summary[key] || 0), 0);
-  const intervention = Math.max(0, total - keep);
-  return { total, keep, micro, substantive, intervention };
+  // DISCOURSE_REPACKAGE identifies material that belongs to a paragraph-level
+  // reconstruction. It authorises structural handling but does not demand one
+  // independently countable rewrite per source sentence.
+  const intervention = Math.max(0, total - keep - discourseRepackage);
+  const materialIntervention = Math.max(0, total - keep);
+  return { total, keep, micro, substantive, discourseRepackage, intervention, materialIntervention };
 }
 
 function reportedCounts(result) {
@@ -127,7 +134,9 @@ function assessSurgicalCompliance(result) {
       keep: 0,
       micro: proposedClear,
       substantive: 0,
+      discourseRepackage: 0,
       intervention: proposedClear,
+      materialIntervention: proposedClear,
     },
     reported: {
       total: applied,
@@ -144,11 +153,14 @@ function assessSurgicalCompliance(result) {
     planned_keep_ratio: 0,
     unchanged_sentence_ratio: unchangedSentenceRatio,
     changed_sentence_ratio: changedSentenceRatio === null ? null : Number(changedSentenceRatio.toFixed(3)),
+    minimum_changed_sentence_ratio: null,
     unchanged_sentence_ceiling: null,
     changed_sentence_ceiling: Number(changedCeiling.toFixed(3)),
     substantive_operation_ratio: 0,
     substantive_operation_ceiling: 0,
     reasons,
+    under_execution_codes: partial ? ["SURGICAL_PARTIAL"] : [],
+    over_execution_codes: [],
     under_execution_reasons: partial ? reasons.filter((r) => /Only \d+ of \d+/.test(r)) : [],
     over_execution_reasons: [],
     execution_reasons: reasons,
@@ -173,6 +185,7 @@ export function assessExecutionCompliance(result) {
   const interventionCoverage = ratio(reported.intervention, planned.intervention);
   const structuralCoverage = ratio(reported.substantive, planned.substantive);
   const planKeepRatio = ratio(planned.keep, planned.total, 0);
+  const materialInterventionRatio = ratio(planned.materialIntervention, planned.total, 0);
   const unchangedSentenceRatio = Number.isFinite(quality.unchanged_sentence_ratio)
     ? Number(quality.unchanged_sentence_ratio)
     : null;
@@ -180,26 +193,53 @@ export function assessExecutionCompliance(result) {
   const reportedSubstantiveRatio = planned.total ? reported.substantive / planned.total : 0;
 
   const underReasons = [];
+  const underCodes = [];
   const overReasons = [];
+  const overCodes = [];
   const warnings = [];
+  const addUnder = (code, reason) => {
+    underCodes.push(code);
+    underReasons.push(reason);
+  };
+  const addOver = (code, reason) => {
+    overCodes.push(code);
+    overReasons.push(reason);
+  };
 
   if (planned.intervention >= 8 && interventionCoverage < 0.67) {
-    underReasons.push(`Only ${(interventionCoverage * 100).toFixed(0)}% of the planner's intervention load is represented in the model edit summary.`);
+    addUnder("PLAN_INTERVENTION_COVERAGE", `Only ${(interventionCoverage * 100).toFixed(0)}% of the planner's concrete sentence-operation load is represented in the model edit summary.`);
   } else if (planned.intervention >= 8 && interventionCoverage < 0.80) {
-    warnings.push(`Planner-to-model intervention coverage is ${(interventionCoverage * 100).toFixed(0)}%; acceptable but below the preferred 80% execution band.`);
+    warnings.push(`Planner-to-model concrete intervention coverage is ${(interventionCoverage * 100).toFixed(0)}%; acceptable but below the preferred 80% execution band.`);
   }
 
   if (planned.substantive >= 6 && structuralCoverage < 0.60) {
-    underReasons.push(`Only ${(structuralCoverage * 100).toFixed(0)}% of planned substantive restructuring is represented in the model edit summary.`);
+    addUnder("PLAN_STRUCTURAL_COVERAGE", `Only ${(structuralCoverage * 100).toFixed(0)}% of planned concrete substantive restructuring is represented in the model edit summary.`);
   }
 
   if (effectiveIntent === "discourse_reconstruction" && planned.substantive >= 6 && structuralCoverage < 0.67) {
-    underReasons.push("The effective intervention is discourse reconstruction, but the returned structural edit count does not reflect enough of that plan.");
+    addUnder("DISCOURSE_CONCRETE_COVERAGE", "The effective intervention is discourse reconstruction, but the concrete sentence operations explicitly planned inside it were not represented sufficiently in the returned edit summary.");
   }
 
-  const unchangedCeiling = Math.min(0.78, planKeepRatio + 0.25);
-  if (planned.substantive >= 8 && unchangedSentenceRatio !== null && unchangedSentenceRatio > unchangedCeiling) {
-    underReasons.push(`Independent source/revision comparison finds ${(unchangedSentenceRatio * 100).toFixed(0)}% of source sentences unchanged, above the ${(unchangedCeiling * 100).toFixed(0)}% ceiling implied by this plan's intervention requirement.`);
+  if (planned.discourseRepackage > 0) {
+    warnings.push(`${planned.discourseRepackage} planner unit(s) belong to paragraph-level DISCOURSE_REPACKAGE scope. Their success is evaluated through post-rewrite discourse diagnostics rather than a one-source-sentence/one-rewrite count.`);
+  }
+
+  const fallbackMinimumChanged = Math.max(0, materialInterventionRatio - 0.50);
+  const minChangedSentenceRatio = Number.isFinite(Number(authority.min_changed_sentence_ratio))
+    ? clamp01(Number(authority.min_changed_sentence_ratio))
+    : fallbackMinimumChanged;
+  const unchangedCeiling = clamp01(1 - minChangedSentenceRatio);
+
+  if (
+    planned.materialIntervention >= 8 &&
+    minChangedSentenceRatio > 0 &&
+    changedSentenceRatio !== null &&
+    changedSentenceRatio + 0.03 < minChangedSentenceRatio
+  ) {
+    addUnder(
+      "VISIBLE_CHANGE_FLOOR",
+      `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences visibly changed, below the ${Math.round(minChangedSentenceRatio * 100)}% preservation-aware plausibility floor. This floor is a safeguard against a falsely reported execution, not a target to maximise.`
+    );
   }
 
   const maxChangedSentenceRatio = Number.isFinite(Number(authority.max_changed_sentence_ratio))
@@ -207,20 +247,20 @@ export function assessExecutionCompliance(result) {
     : Math.min(0.95, 1 - planKeepRatio + 0.35);
   const maxSubstantiveRatio = Number.isFinite(Number(authority.max_substantive_operation_ratio))
     ? Number(authority.max_substantive_operation_ratio)
-    : Math.min(0.92, ratio(planned.substantive, planned.total, 0) + 0.30);
+    : Math.min(0.92, ratio(planned.substantive + planned.discourseRepackage, planned.total, 0) + 0.30);
 
   if (planned.total >= 8 && changedSentenceRatio !== null && changedSentenceRatio > maxChangedSentenceRatio + 0.03) {
-    overReasons.push(`Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, above the ${Math.round(maxChangedSentenceRatio * 100)}% maximum breadth authorised by this plan.`);
+    addOver("MAX_CHANGED_SENTENCE_BREADTH", `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, above the ${Math.round(maxChangedSentenceRatio * 100)}% maximum breadth authorised by this plan.`);
   }
 
   if (planned.total >= 8 && reportedSubstantiveRatio > maxSubstantiveRatio + 0.12) {
-    overReasons.push(`Model-reported substantive operations equal ${(reportedSubstantiveRatio * 100).toFixed(0)}% of planner units, above the ${Math.round(maxSubstantiveRatio * 100)}% structural breadth ceiling after the split/merge tolerance.`);
+    addOver("MAX_SUBSTANTIVE_BREADTH", `Model-reported substantive operations equal ${(reportedSubstantiveRatio * 100).toFixed(0)}% of planner units, above the ${Math.round(maxSubstantiveRatio * 100)}% structural breadth ceiling after the split/merge tolerance.`);
   }
 
   if (planned.total > 0 && reported.total > 0) {
     const countDrift = Math.abs(reported.total - planned.total) / planned.total;
     if (countDrift > 0.35) {
-      warnings.push("Model edit-count totals differ substantially from the planner unit count; split/merge operations may explain part of the difference, so counts are supporting rather than sole evidence.");
+      warnings.push("Model edit-count totals differ substantially from the planner unit count; split/merge and paragraph-level repackaging can explain part of the difference, so counts are supporting rather than sole evidence.");
     }
   }
 
@@ -228,6 +268,9 @@ export function assessExecutionCompliance(result) {
   const status = executionStatus(underReasons, overReasons);
   const executionPassed = status === "passed";
 
+  const minimumBreadthScore = changedSentenceRatio === null || minChangedSentenceRatio <= 0 || changedSentenceRatio >= minChangedSentenceRatio
+    ? 1
+    : clamp01(changedSentenceRatio / Math.max(0.05, minChangedSentenceRatio));
   const breadthScore = changedSentenceRatio === null || changedSentenceRatio <= maxChangedSentenceRatio
     ? 1
     : clamp01(1 - (changedSentenceRatio - maxChangedSentenceRatio) / Math.max(0.15, maxChangedSentenceRatio));
@@ -238,7 +281,7 @@ export function assessExecutionCompliance(result) {
   const executionScoreComponents = [
     interventionCoverage,
     structuralCoverage,
-    unchangedSentenceRatio === null ? 1 : clamp01(1 - Math.max(0, unchangedSentenceRatio - planKeepRatio)),
+    minimumBreadthScore,
     breadthScore,
     substantiveBreadthScore,
   ];
@@ -246,7 +289,7 @@ export function assessExecutionCompliance(result) {
   const overallScore = Number(((executionScore * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3));
 
   return {
-    version: "planner-execution-compliance-v3",
+    version: "planner-execution-compliance-v4",
     passed: executionPassed,
     execution_passed: executionPassed,
     execution_status: status,
@@ -266,17 +309,20 @@ export function assessExecutionCompliance(result) {
     planned_keep_ratio: Number(planKeepRatio.toFixed(3)),
     unchanged_sentence_ratio: unchangedSentenceRatio,
     changed_sentence_ratio: changedSentenceRatio === null ? null : Number(changedSentenceRatio.toFixed(3)),
+    minimum_changed_sentence_ratio: Number(minChangedSentenceRatio.toFixed(3)),
     unchanged_sentence_ceiling: Number(unchangedCeiling.toFixed(3)),
     changed_sentence_ceiling: Number(maxChangedSentenceRatio.toFixed(3)),
     substantive_operation_ratio: Number(reportedSubstantiveRatio.toFixed(3)),
     substantive_operation_ceiling: Number(maxSubstantiveRatio.toFixed(3)),
     reasons: [...underReasons, ...overReasons],
+    under_execution_codes: underCodes,
+    over_execution_codes: overCodes,
     under_execution_reasons: underReasons,
     over_execution_reasons: overReasons,
     execution_reasons: [...underReasons, ...overReasons],
     preservation_reasons: preservation.reasons,
     warnings,
-    note: "Execution compliance enforces both the planner's minimum required work and its maximum authorised disturbance. Preservation is assessed separately. None of these verdicts establishes authorship.",
+    note: "Execution compliance distinguishes concrete planner coverage, paragraph-level discourse scope, a preservation-aware minimum visible-change plausibility floor, and a maximum authorised disturbance ceiling. The minimum is not a rewrite quota and the maximum is not a target. Preservation is assessed separately; none of these verdicts establishes authorship.",
   };
 }
 

@@ -58,6 +58,7 @@ const LEVELS = Object.freeze({
   PARAGRAPH_REORDER: "PARAGRAPH_REORDER",
   CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT: "CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT",
   COMPRESS: "COMPRESS",
+  DISCOURSE_REPACKAGE: "DISCOURSE_REPACKAGE",
   FLAG_FOR_AUTHOR: "FLAG_FOR_AUTHOR",
 });
 
@@ -375,13 +376,14 @@ function planSentence(sentence, index, diagnostics, options) {
   if (s.architectureIssue && (naturalisation === "aggressive" || intensity === "deep" || intent.effective === INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION)) {
     reasons.push(`Document-level pattern (${s.architectureIssue.id}): ${s.architectureIssue.interpretation}`);
     reasons.push(s.architectureIssue.action);
-    return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons, preservationClass, decisionCode: "REWRITE_PATTERN" };
+    reasons.push("This is discourse-level scope: execute the paragraph action first rather than treating the source sentence as an obligatory standalone rewrite.");
+    return { level: LEVELS.DISCOURSE_REPACKAGE, reasons, preservationClass, decisionCode: "DISCOURSE_SCOPE" };
   }
 
   if (paragraphDecision?.actions.includes(PARAGRAPH_ACTIONS.REBUILD_DISCOURSE) &&
       (naturalisation === "aggressive" || intent.effective === INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION)) {
-    reasons.push("Sentence belongs to a paragraph selected for discourse reconstruction. Preserve its proposition/evidence, but do not keep the original sentence architecture merely because it is fluent.");
-    return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons, preservationClass, decisionCode: "REWRITE_PATTERN" };
+    reasons.push("Sentence belongs to a paragraph selected for discourse reconstruction. Preserve its proposition/evidence while allowing the paragraph-level operation to keep, move, merge, split or recast it as needed. Do not convert the paragraph action into a one-sentence-one-rewrite quota.");
+    return { level: LEVELS.DISCOURSE_REPACKAGE, reasons, preservationClass, decisionCode: "DISCOURSE_SCOPE" };
   }
 
   if (s.demonstrativeBridgeIssue && naturalisation === "aggressive") {
@@ -398,7 +400,7 @@ function planSentence(sentence, index, diagnostics, options) {
       reasons.push("Aggressive naturalisation: diagnosed wording/structure requires substantive reconstruction.");
       return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons, preservationClass, decisionCode: "REWRITE_PATTERN" };
     }
-    reasons.push("Aggressive naturalisation authorises structural restyling; preserve factual/technical content but do not leave a clean sentence verbatim solely because its grammar is correct.");
+    reasons.push("Aggressive naturalisation authorises structural restyling where no higher-level discourse action already governs the material; preserve factual/technical content and avoid cosmetic synonym swapping.");
     return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons, preservationClass, decisionCode: LEVELS.SENTENCE_RESTRUCTURE };
   }
 
@@ -484,7 +486,8 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
   const architectureSignals = diagnostics.discourse_architecture?.signals || [];
   const trainingPrinciples = [
     "Intent before intervention: diagnose what the writer needs before choosing rewrite depth.",
-    "Judge local sentences in global context: an individually strong sentence may still require change when it contributes to repetitive document architecture.",
+    "Judge local sentences in global context: an individually strong sentence may still participate in a paragraph-level reconstruction when it contributes to repetitive document architecture.",
+    "A discourse-level action is not a quota requiring every source sentence in that paragraph to be independently rewritten; preserve, move, merge, split or recast material according to the paragraph's reasoning needs.",
     "Preserve authorial reasoning, evidence, technical meaning and lexical identity; do not confuse human variation with deliberate errors or randomisation.",
     "Prefer evidence-assembled reasoning over pre-packaged claim/explanation/implication templates when the source supports that development.",
     "Contextual grounding must come from the source, supplied context or verifiable user material; never invent local realities to make prose appear situated.",
@@ -514,7 +517,7 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
   }, {});
 
   return {
-    plannerVersion: "intent-discourse-v2",
+    plannerVersion: "intent-discourse-v3",
     sequence: PLANNER_SEQUENCE,
     intensity,
     lengthPreference: length,

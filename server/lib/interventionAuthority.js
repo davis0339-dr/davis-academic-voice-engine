@@ -1,6 +1,6 @@
-// Derives the maximum amount of document disturbance authorised by a planner
-// result and the source's preservation priority. Used by compliance after model
-// generation so over-editing can fail just as under-editing can fail.
+// Derives the amount of document disturbance authorised by a planner result and
+// the source's preservation priority. Maximum breadth is a hard ceiling; minimum
+// breadth is only a preservation-aware plausibility floor. Neither is a target.
 
 const SUBSTANTIVE_KEYS = new Set([
   "SENTENCE_RESTRUCTURE",
@@ -8,6 +8,7 @@ const SUBSTANTIVE_KEYS = new Set([
   "PARAGRAPH_REORDER",
   "CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT",
   "COMPRESS",
+  "DISCOURSE_REPACKAGE",
 ]);
 
 function sum(obj) {
@@ -32,10 +33,12 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
 
   const changeMargin = priority === "high" ? 0.18 : priority === "medium" ? 0.28 : 0.40;
   const substantiveMargin = priority === "high" ? 0.12 : priority === "medium" ? 0.20 : 0.30;
+  const minimumSlack = priority === "high" ? 0.65 : priority === "medium" ? 0.50 : 0.35;
   const breadth = priority === "high" ? "targeted" : priority === "medium" ? "selective" : "broad_if_diagnosed";
+  const minimumChanged = Math.max(0, interventionRatio - minimumSlack);
 
   return {
-    version: "intervention-authority-v1",
+    version: "intervention-authority-v2",
     preservation_priority: priority,
     breadth,
     depth_permission: requestedIntensity === "deep" || requestedNaturalisation === "aggressive"
@@ -46,8 +49,9 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     planned_substantive_ratio: Number(substantiveRatio.toFixed(3)),
     max_changed_sentence_ratio: Number(clamp(interventionRatio + changeMargin, 0.12, 0.95).toFixed(3)),
     max_substantive_operation_ratio: Number(clamp(substantiveRatio + substantiveMargin, 0.10, 0.92).toFixed(3)),
-    min_changed_sentence_ratio: Number(Math.max(0, interventionRatio - 0.18).toFixed(3)),
+    min_changed_sentence_ratio: Number(minimumChanged.toFixed(3)),
+    minimum_basis: "preservation_aware_plausibility_floor",
     effective_intent: effectiveIntent || null,
-    rule: "The planner authorises both a minimum necessary intervention and a maximum disturbance ceiling. High authorial-texture preservation priority narrows breadth even when deep reconstruction is permitted inside selected passages.",
+    rule: "Maximum changed-sentence breadth is an authorised disturbance ceiling, never a rewrite target. Minimum changed-sentence breadth is only a preservation-aware plausibility floor used to detect implausibly unchanged output when a demanding plan was reported as executed. DISCOURSE_REPACKAGE contributes to structural authority but is not a one-sentence-one-rewrite quota. High authorial-texture preservation priority lowers the minimum floor because clean source sentences may legitimately survive even when deep repair is permitted inside diagnosed passages.",
   };
 }

@@ -33,14 +33,16 @@ test("clean, technical, citation-and-number-heavy prose is mostly left as KEEP w
   assert.ok(plan.items.every((i) => i.level === LEVELS.KEEP));
 });
 
-test("aggressive naturalisation overrides KEEP even for technically clean prose", () => {
+test("aggressive naturalisation overrides KEEP through paragraph-level discourse scope without forcing standalone sentence rewrites", () => {
   const plan = buildInterventionPlan(diagnose(cleanTechnicalText), {
     rewriteIntensity: "auto",
     lengthPreference: "auto",
     naturalisation: "aggressive",
   });
   assert.ok(plan.items.every((i) => i.level !== LEVELS.KEEP));
-  assert.ok(plan.items.some((i) => i.level === LEVELS.SENTENCE_RESTRUCTURE));
+  assert.ok(plan.items.some((i) =>
+    i.level === LEVELS.DISCOURSE_REPACKAGE || i.level === LEVELS.SENTENCE_RESTRUCTURE
+  ));
 });
 
 test("aggressive naturalisation alone does not authorise paragraph reordering", () => {

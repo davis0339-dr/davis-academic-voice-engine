@@ -72,13 +72,13 @@ test("auto mode recommends discourse reconstruction when global architecture is 
     lengthPreference: "maintain",
     naturalisation: "faithful",
   });
-  assert.equal(plan.plannerVersion, "intent-discourse-v2");
+  assert.equal(plan.plannerVersion, "intent-discourse-v3");
   assert.deepEqual(plan.sequence, [...PLANNER_SEQUENCE]);
   assert.equal(plan.intent.recommended, INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION);
   assert.equal(plan.intent.effective, INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION);
   assert.ok(plan.discourseArchitectureSignalCount >= 2);
-  assert.ok(plan.items.filter((item) => item.level === LEVELS.SENTENCE_RESTRUCTURE).length >= 8);
-  assert.ok(plan.items.some((item) => item.decisionCode === "REWRITE_PATTERN"));
+  assert.ok(plan.items.filter((item) => item.level === LEVELS.DISCOURSE_REPACKAGE).length >= 8);
+  assert.ok(plan.items.some((item) => item.decisionCode === "DISCOURSE_SCOPE"));
   assert.ok(plan.paragraphPlan.some((item) =>
     item.actions.includes(PARAGRAPH_ACTIONS.REDUCE_SIGNPOSTING) ||
     item.actions.includes(PARAGRAPH_ACTIONS.REBUILD_DISCOURSE)
@@ -97,15 +97,17 @@ test("KEEP now records why technically clean evidence is being preserved", () =>
   assert.ok(plan.items.every((item) => item.decisionCode === KEEP_CLASSES.KEEP_EVIDENCE));
 });
 
-test("deep aggressive mode does not allow a KEEP-heavy plan for ordinary prose", () => {
-  const text = "The discussion is already clear. The paragraphs are grammatically correct. The wording remains formal. The argument is easy to follow.";
+test("deep aggressive mode gives paragraph rebuild scope without turning that scope into a sentence quota", () => {
+  const text = "The discussion develops a coherent explanation of the financing issue while retaining the distinctions that matter for interpretation. The supporting propositions are already expressed in clear academic language and do not contain a local grammatical defect. The paragraph therefore provides a useful case for testing whether deep permission is represented as discourse scope rather than compulsory sentence replacement.";
   const plan = buildInterventionPlan(diagnose(text), {
     rewriteIntensity: "deep",
     lengthPreference: "maintain",
     naturalisation: "aggressive",
   });
   const keepCount = plan.items.filter((item) => item.level === LEVELS.KEEP).length;
+  const discourseScopeCount = plan.items.filter((item) => item.level === LEVELS.DISCOURSE_REPACKAGE).length;
   assert.equal(plan.intent.effective, INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION);
   assert.equal(keepCount, 0);
+  assert.ok(discourseScopeCount > 0);
   assert.ok(plan.paragraphPlan.some((item) => item.actions.includes(PARAGRAPH_ACTIONS.REBUILD_DISCOURSE)));
 });
