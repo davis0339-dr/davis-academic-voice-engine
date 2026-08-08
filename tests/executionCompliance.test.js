@@ -29,9 +29,11 @@ function baseResult(overrides = {}) {
   };
 }
 
-test("passes when model execution broadly matches a demanding discourse-reconstruction plan", () => {
+test("passes execution when model work broadly matches a demanding discourse-reconstruction plan", () => {
   const result = assessExecutionCompliance(baseResult());
-  assert.equal(result.passed, true);
+  assert.equal(result.execution_passed, true);
+  assert.equal(result.preservation_ok, true);
+  assert.equal(result.candidate_status, "accepted");
   assert.equal(result.planned.intervention, 41);
   assert.equal(result.reported.intervention, 41);
   assert.equal(result.intervention_coverage, 1);
@@ -51,19 +53,21 @@ test("flags the observed 41-planned-versus-24-executed mismatch as under-executi
     transformation_quality: { unchanged_sentence_ratio: 0.62 },
   }));
 
-  assert.equal(result.passed, false);
+  assert.equal(result.execution_passed, false);
+  assert.equal(result.preservation_ok, true);
+  assert.equal(result.candidate_status, "execution_under");
   assert.equal(result.planned.intervention, 41);
   assert.equal(result.reported.intervention, 24);
   assert.ok(result.intervention_coverage < 0.67);
-  assert.ok(result.reasons.some((reason) => /planner's intervention load/i.test(reason)));
+  assert.ok(result.execution_reasons.some((reason) => /planner's intervention load/i.test(reason)));
 });
 
 test("uses independently measured unchanged-sentence evidence rather than trusting edit counts alone", () => {
   const result = assessExecutionCompliance(baseResult({
     transformation_quality: { unchanged_sentence_ratio: 0.9 },
   }));
-  assert.equal(result.passed, false);
-  assert.ok(result.reasons.some((reason) => /independent source\/revision comparison/i.test(reason)));
+  assert.equal(result.execution_passed, false);
+  assert.ok(result.execution_reasons.some((reason) => /independent source\/revision comparison/i.test(reason)));
 });
 
 test("does not force a retry-level failure for a tiny, mostly-KEEP polish plan", () => {
@@ -80,7 +84,27 @@ test("does not force a retry-level failure for a tiny, mostly-KEEP polish plan",
     },
     transformation_quality: { unchanged_sentence_ratio: 0.8 },
   }));
+  assert.equal(result.execution_passed, true);
+});
+
+test("deep execution can pass while factual preservation fails, without being mislabeled under-executed", () => {
+  const result = assessExecutionCompliance(baseResult({
+    preservation: {
+      numbers_ok: true,
+      citations_ok: true,
+      technical_terms_ok: true,
+      quotes_ok: false,
+      study_stage_ok: true,
+      new_factual_claims_detected: false,
+    },
+  }));
+
+  assert.equal(result.execution_passed, true);
   assert.equal(result.passed, true);
+  assert.equal(result.preservation_ok, false);
+  assert.equal(result.candidate_status, "preservation_failed");
+  assert.equal(result.execution_reasons.length, 0);
+  assert.ok(result.preservation_reasons.some((reason) => /quoted material/i.test(reason)));
 });
 
 test("prefers a compliant second attempt when preservation remains intact", () => {
@@ -100,7 +124,7 @@ test("prefers a compliant second attempt when preservation remains intact", () =
   const preferred = preferByExecutionCompliance(first, second);
   assert.equal(preferred.selected, "second");
   assert.equal(preferred.result.revised_text, "second");
-  assert.equal(preferred.compliance.passed, true);
+  assert.equal(preferred.compliance.execution_passed, true);
 });
 
 test("never prefers a deeper rewrite that breaks preservation", () => {
