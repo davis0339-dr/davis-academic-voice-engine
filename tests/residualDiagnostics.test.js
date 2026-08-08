@@ -42,12 +42,12 @@ test("flags repeated rhetorical valuation when sentences mainly announce importa
 
 test("flags low propositional yield when meta commentary dominates a short passage", () => {
   const text = [
-    "That distinction matters. This means the next step matters. Another major breakthrough followed.",
+    "That distinction matters. That distinction matters. That distinction matters. That distinction matters.",
     "The actual evidence is discussed in the following paragraph.",
   ].join("\n\n");
 
   const result = analyseResidualWriting(text);
-  assert.ok(result.metrics.low_propositional_yield_count >= 2);
+  assert.ok(result.metrics.low_propositional_yield_count >= 3);
   assert.ok(result.signals.some((signal) => signal.id === "low_propositional_yield"));
 });
 
