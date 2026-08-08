@@ -46,7 +46,11 @@ test("qualitative discourse signals reach the intervention planner as document g
   assert.ok(plan.documentGuidance.some((item) => item.includes("templated") || item.includes("evidence")));
 });
 
-test("single detector-selected texture exemplar is retired from production", () => {
+test("single detector-selected texture exemplar remains retired while general authorial guidance is permitted", () => {
   assert.equal(TEXTURE_EXEMPLARS.length, 0);
-  assert.equal(texturePromptBlock(), "");
+  const guidance = texturePromptBlock();
+  assert.match(guidance, /AUTHORIAL RECONSTRUCTION GUIDANCE/i);
+  assert.match(guidance, /first two prose paragraphs/i);
+  assert.match(guidance, /Do not optimise for any third-party authorship classifier/i);
+  assert.ok(!guidance.includes("TEXTURE EXEMPLAR"));
 });
