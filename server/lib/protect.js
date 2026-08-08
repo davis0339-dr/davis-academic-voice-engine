@@ -15,7 +15,8 @@ const NUMBERED_CITATION = /\[\d+(?:,\s*\d+)*(?:-\d+)?\]/g;
 
 // Numeric ranges encode one factual relation, not two independent numbers.
 // Keep the exact source form so 2015-2024 cannot silently become "2015, 2024"
-// and NAICS 31-33 cannot lose sector 32.
+// and NAICS 31-33 cannot lose sector 32. We ALSO retain the two endpoints in
+// the ordinary numbers list for backward-compatible numeric auditing.
 const NUMERIC_RANGE = /\b\d{1,4}\s*[-–—]\s*\d{1,4}\b/g;
 
 // A minus sign is treated as a sign only when it is not the separator in a
@@ -79,7 +80,7 @@ export function extractProtectedSpans(text) {
   const ranges = dedupe(matchAll(NUMERIC_RANGE, text));
 
   let numberScratch = text;
-  for (const c of [...citations, ...statNotation, ...monetary, ...ranges]) {
+  for (const c of [...citations, ...statNotation, ...monetary]) {
     numberScratch = numberScratch.split(c).join(" ");
   }
   const numbers = dedupe(
