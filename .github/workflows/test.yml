@@ -24,6 +24,7 @@ jobs:
         run: |
           node --check public/app.js
           node --check public/fileImport.js
+          node --check public/plannerObservability.js
       - name: Run test suite
         shell: bash
         run: |
