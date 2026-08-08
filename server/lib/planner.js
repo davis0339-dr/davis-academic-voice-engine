@@ -35,6 +35,12 @@ function sentenceSignals(sentence, index, diagnostics) {
   const gapScaffoldIssue = (diagnostics.rhetorical_scaffolding || []).find(
     (m) => m.issue === "gap_label_scaffolding" && issueCoversSentence(m, index)
   );
+  const proxyScaffoldIssue = (diagnostics.rhetorical_scaffolding || []).find(
+    (m) => m.issue === "proxy_label_scaffolding" && issueCoversSentence(m, index)
+  );
+  const demonstrativeBridgeIssue = (diagnostics.rhetorical_scaffolding || []).find(
+    (m) => m.issue === "demonstrative_bridge_overuse" && issueCoversSentence(m, index)
+  );
   const choppyRunIssue = (diagnostics.rhetorical_scaffolding || []).find(
     (m) => m.issue === "choppy_sentence_run" && issueCoversSentence(m, index)
   );
@@ -46,6 +52,8 @@ function sentenceSignals(sentence, index, diagnostics) {
     hasRepeatedOpening,
     hasRepeatedParagraphFrame,
     gapScaffoldIssue,
+    proxyScaffoldIssue,
+    demonstrativeBridgeIssue,
     choppyRunIssue,
     isPlaceholder,
   };
@@ -65,6 +73,11 @@ function planSentence(sentence, index, diagnostics, intensity, lengthPreference,
     return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons };
   }
 
+  if (s.proxyScaffoldIssue) {
+    reasons.push("This sentence is part of a consecutive Revenue Growth/Market Share/Audit Quality/Operational Efficiency category scaffold. Preserve every performance dimension and its evidence, but connect the dimensions through consequence and comparison rather than repeating a category-led checklist structure.");
+    return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons };
+  }
+
   if (s.choppyRunIssue) {
     reasons.push("This sentence is part of a consecutive micro-sentence run. Merge or redistribute the reasoning so short sentences arise from argument, not manufactured rhythm variation.");
     return { level: LEVELS.SPLIT_OR_MERGE, reasons };
@@ -75,6 +88,14 @@ function planSentence(sentence, index, diagnostics, intensity, lengthPreference,
     return { level: LEVELS.SPLIT_OR_MERGE, reasons };
   }
 
+  if (s.demonstrativeBridgeIssue && naturalisation === "aggressive") {
+    reasons.push("This sentence sits inside a cluster of repeated demonstrative bridge subjects such as ‘This …’ or ‘These …’. Keep the referential connection, but vary how the sentence grows from the preceding evidence so cohesion is not mechanically signposted.");
+    return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons };
+  }
+
+  // Critical interaction rule: aggressive naturalisation cannot coexist with
+  // a KEEP-heavy plan. Protected facts are preserved separately by Pass A/E;
+  // here the user has explicitly authorised structural restyling.
   if (naturalisation === "aggressive") {
     if (lengthPreference === "concise" && s.hasGenericPhrase) {
       reasons.push("Aggressive naturalisation plus Concise preference: compress formulaic padding and rebuild the sentence.");
@@ -156,7 +177,7 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
   // Paragraph reordering is suggested only when a paragraph-level pattern was
   // actually diagnosed. This protects funnel logic and claim-evidence order.
   const paragraphReorderSuggested = diagnostics.structural_monotony.some(
-    (m) => m.issue === "uniform_paragraph_length" || m.issue === "repeated_paragraph_opening_frame" || m.issue === "gap_label_scaffolding"
+    (m) => m.issue === "uniform_paragraph_length" || m.issue === "repeated_paragraph_opening_frame" || m.issue === "gap_label_scaffolding" || m.issue === "proxy_label_scaffolding"
   );
 
   const summary = items.reduce((acc, item) => {
