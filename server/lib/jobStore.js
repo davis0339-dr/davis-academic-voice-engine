@@ -64,6 +64,30 @@ function finishChunkTiming(chunk) {
   }
 }
 
+function completePassthroughChunk(chunk) {
+  chunk.status = "done";
+  chunk.error = null;
+  chunk.startedAt = chunk.startedAt || new Date().toISOString();
+  chunk.revisedText = chunk.sourceText;
+  chunk.editSummary = {
+    kept: 1,
+    micro_edits: 0,
+    sentence_restructures: 0,
+    split_or_merge: 0,
+    paragraph_reorders: 0,
+    flags_for_author: [],
+  };
+  chunk.preservation = auditPreservation(chunk.sourceText, chunk.sourceText);
+  chunk.transformationQuality = {
+    level: "passthrough",
+    passed: true,
+    reasons: [],
+    note: "Formal academic structure preserved verbatim; no LLM rewrite was attempted.",
+  };
+  chunk.languageQuality = null;
+  finishChunkTiming(chunk);
+}
+
 function finalizeIfComplete(job) {
   if (job.providerBlock) return;
   const allAttempted = job.chunks.every((c) => c.status === "done" || c.status === "failed");
@@ -86,6 +110,11 @@ async function processChunk(job, chunk) {
   chunk.startedAt = new Date().toISOString();
   chunk.completedAt = null;
   chunk.durationMs = null;
+
+  if (chunk.rewriteMode === "passthrough") {
+    completePassthroughChunk(chunk);
+    return;
+  }
 
   const inferredSection = inferSectionFromHeading(chunk.heading);
   const chunkStyleFilters = { ...(job.options.styleFilters || {}) };
@@ -163,9 +192,6 @@ async function processJob(jobId) {
         message: chunk.error.message,
         chunkIndex: chunk.index,
       };
-      // Stop immediately. Do not burn through the remaining chunks with the
-      // same non-retryable account/configuration failure. They stay queued and
-      // can continue after the provider issue is fixed and Retry is clicked.
       return;
     }
   }
@@ -240,9 +266,6 @@ export function retryChunk(jobId, chunkIndex) {
   job.documentPreservation = null;
   job.providerBlock = null;
 
-  // Resume the normal job loop so a provider-blocked job continues with the
-  // failed chunk and then all still-queued chunks after credits/configuration
-  // are restored. The HTTP request returns immediately.
   processJob(jobId).catch((err) => {
     job.status = "failed";
     job.fatalError = err.message;
@@ -257,6 +280,7 @@ export function summarizeJob(job) {
   const doneCount = job.chunks.filter((c) => c.status === "done").length;
   const failedCount = job.chunks.filter((c) => c.status === "failed").length;
   const processingCount = job.chunks.filter((c) => c.status === "processing").length;
+  const passthroughCount = job.chunks.filter((c) => c.rewriteMode === "passthrough").length;
   const completedDurations = job.chunks.map((c) => c.durationMs).filter((n) => Number.isFinite(n) && n > 0);
   const averageChunkDurationMs = completedDurations.length
     ? Math.round(completedDurations.reduce((a, b) => a + b, 0) / completedDurations.length)
@@ -272,7 +296,7 @@ export function summarizeJob(job) {
     completedAt: job.completedAt,
     chunkMethod: job.chunkMethod,
     chunkPolicy: job.chunkPolicy,
-    progress: { chunkCount, doneCount, failedCount, processingCount, averageChunkDurationMs, estimatedRemainingMs },
+    progress: { chunkCount, doneCount, failedCount, processingCount, passthroughCount, averageChunkDurationMs, estimatedRemainingMs },
     documentMap: {
       title: job.documentMap.title,
       headingCount: job.documentMap.headings.length,
@@ -283,6 +307,7 @@ export function summarizeJob(job) {
       index: c.index,
       heading: c.heading,
       inferredSection: c.inferredSection,
+      rewriteMode: c.rewriteMode || "rewrite",
       wordCount: c.wordCount,
       status: c.status,
       attempts: c.attempts,
