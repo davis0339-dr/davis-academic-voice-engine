@@ -16,7 +16,10 @@ const NUMBERED_CITATION = /\[\d+(?:,\s*\d+)*(?:-\d+)?\]/g;
 // for backward-compatible auditing, but the range is removed before ordinary
 // number matching so the separator is never misread as a minus sign.
 const NUMERIC_RANGE = /\b\d{1,4}\s*[-–—]\s*\d{1,4}\b/g;
-const PERCENT_OR_DECIMAL = /-?\d+(?:,\d{3})*(?:\.\d+)?%?/g;
+// A hyphen inside an ordinary lexical construction such as "post-2015" is not
+// a minus sign. If matching cannot begin at the hyphen because it follows a
+// letter, the engine may still capture the factual year itself as positive 2015.
+const PERCENT_OR_DECIMAL = /(?<![A-Za-z])-?\d+(?:,\d{3})*(?:\.\d+)?%?/g;
 
 const MONETARY =
   /(?:[$£€₦]\s?|(?:USD|NGN|GBP|EUR)\s+)\d+(?:,\d{3})*(?:\.\d+)?(?:\s?(?:million|billion|thousand|m|bn|k))?/gi;
