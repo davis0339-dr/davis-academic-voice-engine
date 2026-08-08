@@ -144,3 +144,57 @@ test("never prefers a deeper rewrite that breaks preservation", () => {
   assert.equal(preferred.selected, "first");
   assert.equal(preferred.result.revised_text, "safe");
 });
+
+test("surgical recovery supersedes the rejected broad plan for execution scoring", () => {
+  const result = assessExecutionCompliance(baseResult({
+    intervention_plan_summary: { KEEP: 36, SPLIT_OR_MERGE: 9 },
+    edit_summary: {
+      kept: 37,
+      micro_edits: 8,
+      sentence_restructures: 0,
+      split_or_merge: 0,
+      paragraph_reorders: 0,
+      flags_for_author: [],
+    },
+    transformation_quality: { unchanged_sentence_ratio: 0.82 },
+    surgical_recovery: {
+      attempted: true,
+      applied_edit_count: 8,
+      considered_clear_edit_count: 9,
+      execution_status: "surgical_plan_passed",
+      execution_passed: true,
+      max_changed_sentence_ratio: 0.38,
+      rejected_edits: [{ rejected_reason: "optional_style_edit" }],
+    },
+  }));
+
+  assert.equal(result.version, "surgical-defect-compliance-v1");
+  assert.equal(result.planner_superseded, true);
+  assert.equal(result.execution_passed, true);
+  assert.equal(result.execution_status, "surgical_plan_passed");
+  assert.equal(result.planned.intervention, 9);
+  assert.equal(result.reported.intervention, 8);
+  assert.equal(result.superseded_plan.intervention, 9);
+});
+
+test("surgical recovery remains visibly partial when too many clear proposals are rejected", () => {
+  const result = assessExecutionCompliance(baseResult({
+    intervention_plan_summary: { KEEP: 36, SPLIT_OR_MERGE: 9 },
+    transformation_quality: { unchanged_sentence_ratio: 0.96 },
+    surgical_recovery: {
+      attempted: true,
+      applied_edit_count: 2,
+      considered_clear_edit_count: 10,
+      execution_status: "surgical_partial",
+      execution_passed: false,
+      max_changed_sentence_ratio: 0.38,
+      rejected_edits: new Array(8).fill({ rejected_reason: "replacement_not_surgical" }),
+    },
+  }));
+
+  assert.equal(result.execution_passed, false);
+  assert.equal(result.execution_status, "surgical_partial");
+  assert.equal(result.under_executed, true);
+  assert.equal(result.planner_superseded, true);
+  assert.ok(result.execution_reasons.some((reason) => /2 of 10/i.test(reason)));
+});
