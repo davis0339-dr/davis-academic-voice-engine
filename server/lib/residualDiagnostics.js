@@ -5,6 +5,7 @@
 
 import { splitSentences, wordCount } from "./sentences.js";
 import { parseTextStructure } from "./textStructure.js";
+import { analyseDiscourseArchitecture } from "./discourseArchitecture.js";
 
 const DISCOURSE_MANAGEMENT_RE = /(?:\bthat\s+(?:distinction|difference|result|finding|lesson|insight)\s+(?:matters|is|was)\b|\bthat\s+(?:taught|forced|led|pushed)\s+(?:us|me)\b|\bthis\s+(?:means|matters|shows|changes|demonstrates|suggests|reveals)\b|\banother\s+(?:major\s+)?(?:breakthrough|insight|lesson|advance)\b|\bwhere\s+we\s+are\s+now\b|\bthe\s+next\s+(?:step|stage|phase|development|coding\s+work)\b|\bto\s+answer\s+(?:the\s+question\s+)?directly\b)/i;
 const RETROSPECTIVE_NEATNESS_RE = /(?:\b(?:this|that)\s+(?:led|taught|forced|pushed)\s+(?:us|me)\s+(?:toward|to|into)\b|\bthen\s+came\b|\bthe\s+(?:first|second|third|other|next)\s+(?:major\s+)?(?:breakthrough|lesson|insight|achievement|stage)\b)/i;
@@ -14,6 +15,15 @@ const ABSTRACT_NOUN_RE = /\b[A-Za-z]{5,}(?:tion|sion|ment|ance|ence|ity|isation|
 const TAXONOMY_RE = /\b(?:distinguish(?:es|ing)?\s+(?:between|among)|classified?\s+into|divided\s+into|comprises?|consists?\s+of|(?:two|three|four|five|six|seven)\s+(?:types|categories|levels|modes|treatments|dimensions|stages|layers|signals|classes|forms))\b/i;
 const EVIDENCE_RE = /(?:\([^)\n]{0,180}(?:18|19|20)\d{2}[a-z]?[^)\n]*\)|\b[A-Z][A-Za-z'’-]+(?:\s+et al\.)?\s*\((?:18|19|20)\d{2}[a-z]?\)|\b\d+(?:\.\d+)?%\b|\b(?:because|whereas|although|while|given|since|when|if)\b)/i;
 const TECHNICAL_TOKEN_RE = /(?:`[^`]+`|\b[A-Z]{2,}\b|\b(?:regression|estimator|coefficient|hypothesis|construct|variable|panel|logit|logistic|OLS|GLS|ANOVA|SEM|IFRS|IAS|corpus|planner|discourse)\b)/i;
+
+const ARCHITECTURE_WEIGHTS = Object.freeze({
+  argument_packaging: 2,
+  enumeration_saturation: 1,
+  transition_saturation: 2,
+  aphoristic_compression: 1,
+  rhetorical_symmetry: 1,
+  closure_regularisation: 2,
+});
 
 function ratio(numerator, denominator) {
   return denominator ? Number((numerator / denominator).toFixed(4)) : 0;
@@ -48,6 +58,7 @@ function unique(values) {
 export function analyseResidualWriting(text) {
   const sentences = splitSentences(text);
   const structure = parseTextStructure(text);
+  const architecture = analyseDiscourseArchitecture(text, structure);
 
   const management = [];
   const retrospective = [];
@@ -155,6 +166,21 @@ export function analyseResidualWriting(text) {
     );
   }
 
+  // Close the planner/executor loop: the same document-level architecture class
+  // that can trigger REBUILD_DISCOURSE before generation is measured again on
+  // the candidate. This makes residual rework depend on unresolved discourse,
+  // not on how many source sentences happened to change.
+  for (const signal of architecture.signals || []) {
+    addSignal(
+      signal.id,
+      signal.severity,
+      signal.sentenceIndices || [],
+      signal.interpretation,
+      signal.action,
+      ARCHITECTURE_WEIGHTS[signal.id] || 1
+    );
+  }
+
   const blockScores = new Map();
   for (const signal of signals) {
     const blockIndices = blocksForSentenceIndices(structure, signal.sentenceIndices || []);
@@ -179,10 +205,11 @@ export function analyseResidualWriting(text) {
   const totalRiskScore = signals.reduce((sum, signal) => sum + (signal.weight || 1) * Math.max(1, signal.sentenceIndices?.length || 1), 0);
 
   return {
-    measurement_version: "residual-writing-v1",
+    measurement_version: "residual-writing-v2",
     sentence_count: sentences.length,
     block_count: structure.block_count,
     signals,
+    discourse_architecture: architecture,
     metrics: {
       discourse_management_count: management.length,
       retrospective_neatness_count: retrospective.length,
@@ -191,12 +218,13 @@ export function analyseResidualWriting(text) {
       nominalisation_dense_count: nominalisationDense.length,
       taxonomy_pressure_count: taxonomy.length,
       low_propositional_yield_count: lowYield.length,
+      discourse_architecture_signal_count: architecture.signals?.length || 0,
       ordinary_content_sentence_count: ordinaryContent.length,
       total_risk_score: totalRiskScore,
     },
     ordinary_content_sentence_indices: ordinaryContent,
     target_blocks: targetBlocks,
     should_rework: targetBlocks.length > 0 && totalRiskScore >= 6,
-    note: "Residual diagnostics evaluate the candidate revision itself. They are used to decide whether selective local rework is warranted; they are not authorship probabilities or detector-score targets.",
+    note: "Residual diagnostics evaluate the candidate revision itself, including document-level discourse architecture that may have triggered the original planner. They decide whether selective local rework is warranted; they are not authorship probabilities or detector-score targets.",
   };
 }
