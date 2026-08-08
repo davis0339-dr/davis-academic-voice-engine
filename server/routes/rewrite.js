@@ -6,6 +6,8 @@ import { selectiveResidualRework } from "../lib/residualRework.js";
 import { resolveRewriteModePolicy } from "../lib/rewriteModePolicy.js";
 import { assessSourceBeforeRewrite } from "../lib/sourceAssessment.js";
 import { deriveInterventionAuthority } from "../lib/interventionAuthority.js";
+import { extractProtectedSpans } from "../lib/protect.js";
+import { auditPreservation } from "../lib/preservation.js";
 import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 
@@ -31,7 +33,12 @@ function qualityPipelineAlreadyRetried(result) {
   );
 }
 
-function finalCandidateStatus(compliance, residual) {
+function planUnitCount(result) {
+  return Object.values(result?.intervention_plan_summary || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
+}
+
+function finalCandidateStatus(compliance, residual, sourceRetainedForSafety = false) {
+  if (sourceRetainedForSafety) return "source_retained_for_safety";
   if (!compliance?.execution_passed && !compliance?.preservation_ok) return "execution_and_preservation_failed";
   if (!compliance?.execution_passed) {
     if (compliance?.execution_status === "over-executed") return "execution_over";
@@ -80,14 +87,19 @@ rewriteRouter.post("/rewrite", async (req, res) => {
     authorialTexture: sourceAssessment.authorial_texture,
   });
 
-  const runRewrite = () => rewrite({
+  const runRewriteWith = ({
+    intensity = modePolicy.effective_intensity,
+    naturalisationLevel = modePolicy.effective_naturalisation,
+  } = {}) => rewrite({
     sourceText: text,
     styleFilters: styleFilters || {},
-    rewriteIntensity: modePolicy.effective_intensity,
+    rewriteIntensity: intensity,
     grammarIntensity,
     lengthPreference,
-    naturalisation: modePolicy.effective_naturalisation,
+    naturalisation: naturalisationLevel,
   });
+
+  const runRewrite = () => runRewriteWith();
 
   function enrichForCompliance(result) {
     const authority = deriveInterventionAuthority({
@@ -121,12 +133,76 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       let reconciliationRetryError = null;
       let preservationRecoveryUsed = false;
       let preservationRecoveryError = null;
+      let overExecutionRecoveryUsed = false;
+      let overExecutionRecoveryError = null;
+      let sourceRetainedForSafety = false;
+      let rejectedOverExecution = null;
       let firstAttemptCompliance = null;
       let selectedAttempt = "first";
+
+      // HIGH-PRESERVATION SAFETY: if the model ignores a targeted plan and edits
+      // beyond the authorised breadth, make one stricter clarity-only attempt.
+      // If that also over-edits, return the original source rather than silently
+      // handing the user a damaged "improvement".
+      if (
+        executionCompliance.over_executed &&
+        sourceAssessment.authorial_texture?.preservation_priority === "high"
+      ) {
+        overExecutionRecoveryUsed = true;
+        const originalOverExecution = executionCompliance;
+        try {
+          const conservativeResult = enrichForCompliance(await runRewriteWith({
+            intensity: "auto",
+            naturalisationLevel: "off",
+          }));
+          const conservativeCompliance = assessExecutionCompliance(conservativeResult);
+          if (conservativeCompliance.execution_passed && conservativeCompliance.preservation_ok) {
+            result = conservativeResult;
+            executionCompliance = conservativeCompliance;
+            selectedAttempt = "over-execution-recovery";
+          } else {
+            rejectedOverExecution = {
+              first_attempt: originalOverExecution,
+              conservative_attempt: conservativeCompliance,
+            };
+          }
+        } catch (retryErr) {
+          overExecutionRecoveryError = {
+            code: retryErr.code || retryErr.healthState || "OVER_EXECUTION_RECOVERY_FAILED",
+            message: retryErr.message || "The conservative over-execution recovery failed.",
+          };
+        }
+
+        if (executionCompliance.over_executed) {
+          rejectedOverExecution = rejectedOverExecution || { first_attempt: originalOverExecution };
+          sourceRetainedForSafety = true;
+          const attemptedSummary = result.edit_summary;
+          const units = planUnitCount(result);
+          result = {
+            ...result,
+            revised_text: text,
+            attempted_edit_summary: attemptedSummary,
+            edit_summary: {
+              kept: units,
+              micro_edits: 0,
+              sentence_restructures: 0,
+              split_or_merge: 0,
+              paragraph_reorders: 0,
+              flags_for_author: ["The attempted revision exceeded the authorised intervention breadth, so the original source was retained for safety."],
+            },
+            preservation: auditPreservation(text, text, extractProtectedSpans(text)),
+            safety_fallback: {
+              source_retained: true,
+              reason: "Both the planned rewrite and any conservative recovery failed the maximum intervention-breadth safeguard. The original source is safer than an over-edited candidate.",
+            },
+          };
+        }
+      }
 
       // Reconciliation retries address UNDER-execution only. A model that edited
       // too much must not be rewarded with another broad whole-document rewrite.
       if (
+        !sourceRetainedForSafety &&
         executionCompliance.under_executed &&
         !executionCompliance.over_executed &&
         modePolicy.effective_naturalisation !== "off" &&
@@ -149,7 +225,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       }
 
       // If protected content was damaged, make one bounded fresh attempt.
-      if (!executionCompliance.preservation_ok && !reconciliationRetryUsed) {
+      if (!sourceRetainedForSafety && !executionCompliance.preservation_ok && !reconciliationRetryUsed) {
         preservationRecoveryUsed = true;
         try {
           const recoveryResult = enrichForCompliance(await runRewrite());
@@ -169,6 +245,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       // are acceptable do we repair residual machine-shaped discourse locally.
       let residualRework = null;
       if (
+        !sourceRetainedForSafety &&
         executionCompliance.execution_passed &&
         executionCompliance.preservation_ok &&
         modePolicy.effective_naturalisation !== "off"
@@ -205,10 +282,15 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         reconciliation_retry_error: reconciliationRetryError,
         preservation_recovery_used: preservationRecoveryUsed,
         preservation_recovery_error: preservationRecoveryError,
-        selected_attempt: selectedAttempt,
+        over_execution_recovery_used: overExecutionRecoveryUsed,
+        over_execution_recovery_error: overExecutionRecoveryError,
+        source_retained_for_safety: sourceRetainedForSafety,
+        rejected_over_execution: rejectedOverExecution,
+        selected_attempt: sourceRetainedForSafety ? "source-safety-fallback" : selectedAttempt,
         first_attempt: firstAttemptCompliance,
         max_reconciliation_retries: 1,
         max_preservation_recovery_retries: 1,
+        max_over_execution_recovery_retries: 1,
       };
 
       result.rewrite_mode_policy = modePolicy;
@@ -227,13 +309,19 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         policy: modePolicy.policy,
       };
       result.candidate_verdict = {
-        execution: executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
-        preservation: executionCompliance.preservation_ok ? "passed" : "failed",
-        residual: residualRework?.attempted
-          ? (residualRework.accepted ? "improved" : "unresolved_or_rejected")
-          : "not_required",
-        final_status: finalCandidateStatus(executionCompliance, residualRework),
-        note: "Final status separates minimum execution, maximum authorised breadth, factual preservation and residual writing-quality risk. Strong existing authorial texture narrows breadth; Deep/Aggressive remains permission for deep repair only where diagnostics justify it.",
+        execution: sourceRetainedForSafety
+          ? "over-executed-candidate-rejected"
+          : executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
+        preservation: sourceRetainedForSafety ? "source-preserved" : executionCompliance.preservation_ok ? "passed" : "failed",
+        residual: sourceRetainedForSafety
+          ? "not_run_on_rejected_candidate"
+          : residualRework?.attempted
+            ? (residualRework.accepted ? "improved" : "unresolved_or_rejected")
+            : "not_required",
+        final_status: finalCandidateStatus(executionCompliance, residualRework, sourceRetainedForSafety),
+        note: sourceRetainedForSafety
+          ? "The model exceeded the maximum authorised intervention breadth for a high-preservation source. The attempted rewrite was rejected and the original source was returned rather than sacrificing authorial texture."
+          : "Final status separates minimum execution, maximum authorised breadth, factual preservation and residual writing-quality risk. Strong existing authorial texture narrows breadth; Deep/Aggressive remains permission for deep repair only where diagnostics justify it.",
       };
 
       return res.json({ ...result, requestId });
