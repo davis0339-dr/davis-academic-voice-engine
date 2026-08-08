@@ -36,6 +36,7 @@ jobs:
           fi
       - name: Check browser JavaScript syntax
         run: |
+          node --check public/safeDom.js
           node --check public/app.js
           node --check public/fileImport.js
           node --check public/plannerObservability.js
