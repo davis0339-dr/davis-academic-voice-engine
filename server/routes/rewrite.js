@@ -8,6 +8,8 @@ import { assessSourceBeforeRewrite } from "../lib/sourceAssessment.js";
 import { deriveInterventionAuthority } from "../lib/interventionAuthority.js";
 import { extractProtectedSpans } from "../lib/protect.js";
 import { auditPreservation } from "../lib/preservation.js";
+import { assessTransformationQuality } from "../lib/transformationQuality.js";
+import { surgicalHumanEdit } from "../lib/surgicalHumanEdit.js";
 import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 
@@ -38,7 +40,7 @@ function planUnitCount(result) {
 }
 
 function finalCandidateStatus(compliance, residual, sourceRetainedForSafety = false) {
-  if (sourceRetainedForSafety) return "source_retained_for_safety";
+  if (sourceRetainedForSafety) return "no_safe_edit_available";
   if (!compliance?.execution_passed && !compliance?.preservation_ok) return "execution_and_preservation_failed";
   if (!compliance?.execution_passed) {
     if (compliance?.execution_status === "over-executed") return "execution_over";
@@ -135,48 +137,86 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       let preservationRecoveryError = null;
       let overExecutionRecoveryUsed = false;
       let overExecutionRecoveryError = null;
+      let surgicalRecovery = null;
       let sourceRetainedForSafety = false;
       let rejectedOverExecution = null;
       let firstAttemptCompliance = null;
       let selectedAttempt = "first";
 
-      // HIGH-PRESERVATION SAFETY: if the model ignores a targeted plan and edits
-      // beyond the authorised breadth, make one stricter clarity-only attempt.
-      // If that also over-edits, return the original source rather than silently
-      // handing the user a damaged "improvement".
+      // HIGH-PRESERVATION SAFETY: a model that over-edits a human-textured
+      // source is not allowed to trigger another whole-document paraphrase.
+      // Instead, recover through exact local source-span edits. Only grammar or
+      // local-clarity changes that survive deterministic preservation and breadth
+      // checks are applied; the rest of the source remains byte-for-byte intact.
       if (
         executionCompliance.over_executed &&
         sourceAssessment.authorial_texture?.preservation_priority === "high"
       ) {
         overExecutionRecoveryUsed = true;
         const originalOverExecution = executionCompliance;
+        const attemptedSummary = result.edit_summary;
         try {
-          const conservativeResult = enrichForCompliance(await runRewriteWith({
-            intensity: "auto",
-            naturalisationLevel: "off",
-          }));
-          const conservativeCompliance = assessExecutionCompliance(conservativeResult);
-          if (conservativeCompliance.execution_passed && conservativeCompliance.preservation_ok) {
-            result = conservativeResult;
-            executionCompliance = conservativeCompliance;
-            selectedAttempt = "over-execution-recovery";
-          } else {
+          surgicalRecovery = await surgicalHumanEdit({
+            sourceText: text,
+            maxChangedSentenceRatio: result.intervention_authority?.max_changed_sentence_ratio ?? 0.35,
+          });
+
+          if (surgicalRecovery.safe_change_made) {
+            const units = planUnitCount(result);
+            const affected = Math.min(units, Number(surgicalRecovery.affected_sentence_count || 0));
+            const protectedSpans = extractProtectedSpans(text);
+            result = {
+              ...result,
+              revised_text: surgicalRecovery.revised_text,
+              attempted_edit_summary: attemptedSummary,
+              edit_summary: {
+                kept: Math.max(0, units - affected),
+                micro_edits: affected,
+                sentence_restructures: 0,
+                split_or_merge: 0,
+                paragraph_reorders: 0,
+                flags_for_author: [
+                  `High-preservation surgical recovery applied ${surgicalRecovery.applied_edit_count} local correction(s) across ${affected} sentence(s); all unedited source text was preserved exactly.`,
+                ],
+              },
+              preservation: surgicalRecovery.preservation,
+              transformation_quality: assessTransformationQuality(
+                text,
+                surgicalRecovery.revised_text,
+                "off",
+                { protectedSpans }
+              ),
+              surgical_recovery: surgicalRecovery,
+              safety_fallback: null,
+            };
+            executionCompliance = assessExecutionCompliance(result);
+            selectedAttempt = "surgical-human-edit-recovery";
+          }
+
+          if (!surgicalRecovery.safe_change_made || executionCompliance.over_executed || !executionCompliance.preservation_ok) {
             rejectedOverExecution = {
               first_attempt: originalOverExecution,
-              conservative_attempt: conservativeCompliance,
+              surgical_attempt: surgicalRecovery,
+              surgical_compliance: surgicalRecovery.safe_change_made ? executionCompliance : null,
             };
           }
         } catch (retryErr) {
           overExecutionRecoveryError = {
-            code: retryErr.code || retryErr.healthState || "OVER_EXECUTION_RECOVERY_FAILED",
-            message: retryErr.message || "The conservative over-execution recovery failed.",
+            code: retryErr.code || retryErr.healthState || "SURGICAL_RECOVERY_FAILED",
+            message: retryErr.message || "The surgical high-preservation recovery failed.",
           };
         }
 
-        if (executionCompliance.over_executed) {
-          rejectedOverExecution = rejectedOverExecution || { first_attempt: originalOverExecution };
+        // Returning the source is now a LAST-resort non-edit result, never a
+        // successful revision. It occurs only when no safe local correction can
+        // be applied, and the response explicitly reports that no edit was made.
+        if (
+          !surgicalRecovery?.safe_change_made ||
+          executionCompliance.over_executed ||
+          !executionCompliance.preservation_ok
+        ) {
           sourceRetainedForSafety = true;
-          const attemptedSummary = result.edit_summary;
+          rejectedOverExecution = rejectedOverExecution || { first_attempt: originalOverExecution };
           const units = planUnitCount(result);
           result = {
             ...result,
@@ -188,21 +228,34 @@ rewriteRouter.post("/rewrite", async (req, res) => {
               sentence_restructures: 0,
               split_or_merge: 0,
               paragraph_reorders: 0,
-              flags_for_author: ["The attempted revision exceeded the authorised intervention breadth, so the original source was retained for safety."],
+              flags_for_author: ["No safe local edit survived the high-preservation safeguard. The source was returned unchanged and is explicitly marked as a non-edit result."],
             },
+            transformation_quality: assessTransformationQuality(
+              text,
+              text,
+              "off",
+              { protectedSpans: extractProtectedSpans(text) }
+            ),
             preservation: auditPreservation(text, text, extractProtectedSpans(text)),
+            surgical_recovery: surgicalRecovery,
             safety_fallback: {
               source_retained: true,
-              reason: "Both the planned rewrite and any conservative recovery failed the maximum intervention-breadth safeguard. The original source is safer than an over-edited candidate.",
+              successful_revision: false,
+              reason: "The broad candidate exceeded intervention authority and no safe surgical correction survived. Returning unchanged text is a transparent non-edit result, not a successful revision.",
             },
           };
+          executionCompliance = assessExecutionCompliance(result);
         }
       }
 
       // Reconciliation retries address UNDER-execution only. A model that edited
       // too much must not be rewarded with another broad whole-document rewrite.
+      // A surgical recovery is also final for this request: do not follow it with
+      // another broad pass merely because its intentionally local work falls below
+      // the original planner's minimum restructuring load.
       if (
         !sourceRetainedForSafety &&
+        !overExecutionRecoveryUsed &&
         executionCompliance.under_executed &&
         !executionCompliance.over_executed &&
         modePolicy.effective_naturalisation !== "off" &&
@@ -224,8 +277,15 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         }
       }
 
-      // If protected content was damaged, make one bounded fresh attempt.
-      if (!sourceRetainedForSafety && !executionCompliance.preservation_ok && !reconciliationRetryUsed) {
+      // If protected content was damaged, make one bounded fresh attempt, except
+      // after a high-preservation surgical path; broad regeneration would defeat
+      // the purpose of the local safety recovery.
+      if (
+        !sourceRetainedForSafety &&
+        !overExecutionRecoveryUsed &&
+        !executionCompliance.preservation_ok &&
+        !reconciliationRetryUsed
+      ) {
         preservationRecoveryUsed = true;
         try {
           const recoveryResult = enrichForCompliance(await runRewrite());
@@ -243,9 +303,12 @@ rewriteRouter.post("/rewrite", async (req, res) => {
 
       // Dynamic second stage: only after execution breadth/depth and preservation
       // are acceptable do we repair residual machine-shaped discourse locally.
+      // Surgical human-text recovery is already a local second stage, so it is
+      // not followed by another residual rewrite in the same request.
       let residualRework = null;
       if (
         !sourceRetainedForSafety &&
+        !overExecutionRecoveryUsed &&
         executionCompliance.execution_passed &&
         executionCompliance.preservation_ok &&
         modePolicy.effective_naturalisation !== "off"
@@ -284,9 +347,11 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         preservation_recovery_error: preservationRecoveryError,
         over_execution_recovery_used: overExecutionRecoveryUsed,
         over_execution_recovery_error: overExecutionRecoveryError,
+        surgical_recovery_used: Boolean(surgicalRecovery?.attempted),
+        surgical_recovery_applied_edits: surgicalRecovery?.applied_edit_count ?? 0,
         source_retained_for_safety: sourceRetainedForSafety,
         rejected_over_execution: rejectedOverExecution,
-        selected_attempt: sourceRetainedForSafety ? "source-safety-fallback" : selectedAttempt,
+        selected_attempt: sourceRetainedForSafety ? "transparent-no-edit-fallback" : selectedAttempt,
         first_attempt: firstAttemptCompliance,
         max_reconciliation_retries: 1,
         max_preservation_recovery_retries: 1,
@@ -310,18 +375,22 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       };
       result.candidate_verdict = {
         execution: sourceRetainedForSafety
-          ? "over-executed-candidate-rejected"
+          ? "no-safe-edit-available"
           : executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
         preservation: sourceRetainedForSafety ? "source-preserved" : executionCompliance.preservation_ok ? "passed" : "failed",
         residual: sourceRetainedForSafety
-          ? "not_run_on_rejected_candidate"
-          : residualRework?.attempted
-            ? (residualRework.accepted ? "improved" : "unresolved_or_rejected")
-            : "not_required",
+          ? "not_run_on_non_edit_result"
+          : overExecutionRecoveryUsed
+            ? "surgical_local_recovery"
+            : residualRework?.attempted
+              ? (residualRework.accepted ? "improved" : "unresolved_or_rejected")
+              : "not_required",
         final_status: finalCandidateStatus(executionCompliance, residualRework, sourceRetainedForSafety),
         note: sourceRetainedForSafety
-          ? "The model exceeded the maximum authorised intervention breadth for a high-preservation source. The attempted rewrite was rejected and the original source was returned rather than sacrificing authorial texture."
-          : "Final status separates minimum execution, maximum authorised breadth, factual preservation and residual writing-quality risk. Strong existing authorial texture narrows breadth; Deep/Aggressive remains permission for deep repair only where diagnostics justify it.",
+          ? "No safe local correction survived after the broad rewrite exceeded authorial-preservation authority. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision."
+          : overExecutionRecoveryUsed
+            ? "The broad rewrite was rejected for over-editing. Only exact local grammar/clarity corrections that passed preservation and intervention ceilings were applied; all other source wording was retained."
+            : "Final status separates minimum execution, maximum authorised breadth, factual preservation and residual writing-quality risk. Strong existing authorial texture narrows breadth; Deep/Aggressive remains permission for deep repair only where diagnostics justify it.",
       };
 
       return res.json({ ...result, requestId });
