@@ -70,6 +70,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
 
       let executionCompliance = assessExecutionCompliance(result);
       let reconciliationRetryUsed = false;
+      let reconciliationRetryError = null;
       let firstAttemptCompliance = null;
       let selectedAttempt = "first";
 
@@ -84,24 +85,36 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         !qualityPipelineAlreadyRetried(result)
       ) {
         firstAttemptCompliance = executionCompliance;
-        const secondResult = await rewrite({
-          sourceText: text,
-          styleFilters: styleFilters || {},
-          rewriteIntensity,
-          grammarIntensity,
-          lengthPreference,
-          naturalisation,
-        });
-        const preferred = preferByExecutionCompliance(result, secondResult);
-        result = preferred.result;
-        executionCompliance = preferred.compliance;
-        selectedAttempt = preferred.selected;
         reconciliationRetryUsed = true;
+        try {
+          const secondResult = await rewrite({
+            sourceText: text,
+            styleFilters: styleFilters || {},
+            rewriteIntensity,
+            grammarIntensity,
+            lengthPreference,
+            naturalisation,
+          });
+          const preferred = preferByExecutionCompliance(result, secondResult);
+          result = preferred.result;
+          executionCompliance = preferred.compliance;
+          selectedAttempt = preferred.selected;
+        } catch (retryErr) {
+          // The first candidate is already valid enough to return. A bounded
+          // quality reconciliation retry must never turn that success into a
+          // failed user request merely because the provider was unavailable or
+          // the second model response was malformed.
+          reconciliationRetryError = {
+            code: retryErr.code || retryErr.healthState || "RECONCILIATION_RETRY_FAILED",
+            message: retryErr.message || "The optional reconciliation retry failed; the first candidate was retained.",
+          };
+        }
       }
 
       result.execution_compliance = {
         ...executionCompliance,
         reconciliation_retry_used: reconciliationRetryUsed,
+        reconciliation_retry_error: reconciliationRetryError,
         selected_attempt: selectedAttempt,
         first_attempt: firstAttemptCompliance,
         max_reconciliation_retries: 1,
