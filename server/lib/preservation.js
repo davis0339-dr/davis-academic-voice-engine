@@ -10,11 +10,13 @@ function missingFrom(list, haystack) {
 function extraNumericLike(sourceSpans, revisedSpans) {
   const sourceNumbers = new Set([
     ...sourceSpans.numbers,
+    ...(sourceSpans.ranges || []),
     ...sourceSpans.monetary,
     ...sourceSpans.statNotation,
   ]);
   const revisedNumbers = [
     ...revisedSpans.numbers,
+    ...(revisedSpans.ranges || []),
     ...revisedSpans.monetary,
     ...revisedSpans.statNotation,
   ];
@@ -27,7 +29,9 @@ function extraCitationLike(sourceSpans, revisedSpans) {
 }
 
 const PLANNED_STUDY = /\b(?:this|the present|the proposed) study\s+(?:will|aims to|seeks to|is designed to|is intended to|proposes to)\b/gi;
-const PRESENT_REPORTING_STUDY = /\b(?:this|the present|the proposed) study\s+(?:examines|investigates|assesses|evaluates|analyses|analyzes|determines|tests|adopts|uses|employs|collects|administers|measures|focuses|explores|estimates|applies)\b/gi;
+const PURPOSE_PLANNED = /\bthe purpose of this\b[^.!?\n]{0,180}\bstudy\s+is\s+to\s+(?:examine|investigate|assess|evaluate|analyse|analyze|determine|test|explore|estimate|explain)\b/gi;
+const PROSPECTUS_PLANNED = /\bthis prospectus\s+(?:proposes|will|aims|seeks|is designed|is intended)\b/gi;
+const PRESENT_REPORTING_STUDY = /\b(?:this|the present|the proposed) study\s+(?:examines|investigates|assesses|evaluates|analyses|analyzes|determines|tests|adopts|uses|employs|collects|administers|measures|focuses|explores|estimates|applies|specifies)\b/gi;
 const COMPLETED_STUDY = /\b(?:(?:this|the present|the proposed) study\s+(?:conducted|collected|analysed|analyzed|found|reported|showed|revealed|used|employed)|interviews?\s+(?:were|was)\s+conducted|data\s+(?:were|was)\s+collected|analysis\s+(?:was|were)\s+conducted|participants?\s+(?:were|was)\s+interviewed)\b/gi;
 const FIRST_PERSON = /\b(?:I|me|my|mine|myself|we|us|our|ours|ourselves)\b/g;
 const SECTION_LABEL = /\bSection\s+\d+(?:\.\d+)*\b/gi;
@@ -47,8 +51,14 @@ function normalisedMatches(text, regex) {
 }
 
 function assessStudyStage(sourceText, revisedText) {
-  const sourcePlanned = countMatches(sourceText, PLANNED_STUDY);
-  const revisedPlanned = countMatches(revisedText, PLANNED_STUDY);
+  const sourcePlanned =
+    countMatches(sourceText, PLANNED_STUDY) +
+    countMatches(sourceText, PURPOSE_PLANNED) +
+    countMatches(sourceText, PROSPECTUS_PLANNED);
+  const revisedPlanned =
+    countMatches(revisedText, PLANNED_STUDY) +
+    countMatches(revisedText, PURPOSE_PLANNED) +
+    countMatches(revisedText, PROSPECTUS_PLANNED);
   const revisedPresentReporting = countMatches(revisedText, PRESENT_REPORTING_STUDY);
   const sourceCompletedReporting = countMatches(sourceText, COMPLETED_STUDY);
   const revisedCompletedReporting = countMatches(revisedText, COMPLETED_STUDY);
@@ -84,15 +94,20 @@ function assessDocumentStructure(sourceText, revisedText) {
 
   const newChapterLabels = [...revisedChapters].filter((x) => !sourceChapters.has(x));
   const newSectionLabels = [...revisedSections].filter((x) => !sourceSections.has(x));
+  const missingSectionLabels = [...sourceSections].filter((x) => !revisedSections.has(x));
+  const missingChapterLabels = [...sourceChapters].filter((x) => !revisedChapters.has(x));
   const sectionToChapterShift = sourceSections.size > 0 && sourceChapters.size === 0 && newChapterLabels.length > 0;
   const chapterToSectionShift = sourceChapters.size > 0 && sourceSections.size === 0 && newSectionLabels.length > 0;
+  const structuralLabelLost = missingSectionLabels.length > 0 || missingChapterLabels.length > 0;
 
   return {
-    ok: !sectionToChapterShift && !chapterToSectionShift,
+    ok: !sectionToChapterShift && !chapterToSectionShift && !structuralLabelLost,
     source_sections: [...sourceSections],
     source_chapters: [...sourceChapters],
     new_section_labels: newSectionLabels,
     new_chapter_labels: newChapterLabels,
+    missing_section_labels: missingSectionLabels,
+    missing_chapter_labels: missingChapterLabels,
   };
 }
 
@@ -121,13 +136,20 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
   const warnings = [];
 
   const missingNumbers = missingFrom(spans.numbers, revisedText);
+  const missingRanges = missingFrom(spans.ranges || [], revisedText);
   const missingMonetary = missingFrom(spans.monetary, revisedText);
   const missingStats = missingFrom(spans.statNotation, revisedText);
-  const numbersOk = missingNumbers.length === 0 && missingMonetary.length === 0 && missingStats.length === 0;
+  const numbersOk = missingNumbers.length === 0 && missingRanges.length === 0 && missingMonetary.length === 0 && missingStats.length === 0;
   if (!numbersOk) {
     warnings.push({
       type: "missing_numeric_span",
-      detail: `Numeric/statistical spans present in source but not found verbatim in revision: ${[...missingNumbers, ...missingMonetary, ...missingStats].join(", ")}`,
+      detail: `Numeric/statistical spans present in source but not found verbatim in revision: ${[...missingNumbers, ...missingRanges, ...missingMonetary, ...missingStats].join(", ")}`,
+    });
+  }
+  if (missingRanges.length > 0) {
+    warnings.push({
+      type: "range_corruption",
+      detail: `Numeric range(s) were altered or broken apart: ${missingRanges.join(", ")}. Preserve ranges atomically because changing the separator can change the represented population or period.`,
     });
   }
 
@@ -195,13 +217,14 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
   if (!documentStructure.ok) {
     warnings.push({
       type: "document_structure_shift",
-      detail: `The revision changed the document's structural vocabulary (for example Section versus Chapter). New labels: ${[...documentStructure.new_chapter_labels, ...documentStructure.new_section_labels].join(", ")}. Preserve the source's institutional document structure.`,
+      detail: `The revision changed or dropped the document's structural vocabulary. New labels: ${[...documentStructure.new_chapter_labels, ...documentStructure.new_section_labels].join(", ") || "none"}. Missing labels: ${[...documentStructure.missing_section_labels, ...documentStructure.missing_chapter_labels].join(", ") || "none"}. Preserve the source's institutional Section/Chapter structure exactly.`,
     });
   }
 
   const newFactualClaimsDetected =
     newCitations.length > 0 ||
     newNumbers.length > 0 ||
+    missingRanges.length > 0 ||
     introducedListCountWarnings.length > 0 ||
     !studyStage.ok ||
     !researcherVoice.ok ||
@@ -209,6 +232,7 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
 
   return {
     numbers_ok: numbersOk,
+    ranges_ok: missingRanges.length === 0,
     citations_ok: citationsOk,
     technical_terms_ok: technicalTermsOk,
     quotes_ok: quotesOk,
