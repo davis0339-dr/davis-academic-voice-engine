@@ -1,8 +1,8 @@
 // Deterministic audit of whether a model response actually followed the planner's
-// requested intervention. This is not an authorship detector. Concrete sentence
-// operations, paragraph-level discourse scope, visible change breadth and factual
-// preservation are deliberately separated so "different" is never a proxy for
-// "executed well".
+// requested intervention. This is not an authorship detector. Concrete plan
+// execution, paragraph-level discourse scope, visible-change plausibility,
+// authorised disturbance and factual preservation are deliberately separated so
+// textual distance is never treated as proof that an edit was executed well.
 
 const SUBSTANTIVE_LEVELS = new Set([
   "SENTENCE_RESTRUCTURE",
@@ -66,15 +66,16 @@ function preservationAssessment(result) {
   return { passed: reasons.length === 0, reasons };
 }
 
-function executionStatus(underReasons, overReasons) {
+function executionStatus(underReasons, overReasons, varianceReasons = []) {
   if (underReasons.length && overReasons.length) return "conflicting-execution";
   if (underReasons.length) return "under-executed";
   if (overReasons.length) return "over-executed";
+  if (varianceReasons.length) return "passed-with-variance";
   return "passed";
 }
 
-function candidateStatus(executionPassed, preservationPassed, status) {
-  if (executionPassed && preservationPassed) return "accepted";
+function candidateStatus(executionPassed, preservationPassed, status, hasVariance = false) {
+  if (executionPassed && preservationPassed) return hasVariance ? "accepted_with_execution_variance" : "accepted";
   if (executionPassed && !preservationPassed) return "preservation_failed";
   if (!executionPassed && preservationPassed) return status === "over-executed" ? "execution_over" : "execution_under";
   return "execution_and_preservation_failed";
@@ -118,6 +119,10 @@ function assessSurgicalCompliance(result) {
     passed: executionPassed,
     execution_passed: executionPassed,
     execution_status: status,
+    plan_fidelity_status: executionPassed ? "passed" : partial ? "under-executed" : status,
+    plan_fidelity_passed: executionPassed,
+    visible_change_plausibility_status: "not_applicable_surgical_plan",
+    visible_change_plausibility_score: null,
     under_executed: partial,
     over_executed: false,
     preservation_ok: preservation.passed,
@@ -161,6 +166,8 @@ function assessSurgicalCompliance(result) {
     reasons,
     under_execution_codes: partial ? ["SURGICAL_PARTIAL"] : [],
     over_execution_codes: [],
+    execution_variance_codes: [],
+    execution_variance_reasons: [],
     under_execution_reasons: partial ? reasons.filter((r) => /Only \d+ of \d+/.test(r)) : [],
     over_execution_reasons: [],
     execution_reasons: reasons,
@@ -168,7 +175,7 @@ function assessSurgicalCompliance(result) {
     warnings: surgical.rejected_edits?.length
       ? [`${surgical.rejected_edits.length} proposed edit(s) were rejected by surgical safeguards. Rejection reasons are available in surgical_recovery.rejection_summary.`]
       : [],
-    note: "The original broad rewrite plan was superseded after over-editing a high-preservation source. Compliance is therefore measured against the bounded defect-led surgical plan, while the rejected broad plan remains available as superseded_plan for auditability.",
+    note: "The original broad rewrite plan was superseded after over-editing a high-preservation source. Compliance is measured against the bounded defect-led surgical plan, while the rejected broad plan remains available as superseded_plan for auditability.",
   };
 }
 
@@ -196,6 +203,8 @@ export function assessExecutionCompliance(result) {
   const underCodes = [];
   const overReasons = [];
   const overCodes = [];
+  const varianceReasons = [];
+  const varianceCodes = [];
   const warnings = [];
   const addUnder = (code, reason) => {
     underCodes.push(code);
@@ -204,6 +213,11 @@ export function assessExecutionCompliance(result) {
   const addOver = (code, reason) => {
     overCodes.push(code);
     overReasons.push(reason);
+  };
+  const addVariance = (code, reason) => {
+    varianceCodes.push(code);
+    varianceReasons.push(reason);
+    warnings.push(reason);
   };
 
   if (planned.intervention >= 8 && interventionCoverage < 0.67) {
@@ -236,9 +250,9 @@ export function assessExecutionCompliance(result) {
     changedSentenceRatio !== null &&
     changedSentenceRatio + 0.03 < minChangedSentenceRatio
   ) {
-    addUnder(
+    addVariance(
       "VISIBLE_CHANGE_FLOOR",
-      `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences visibly changed, below the ${Math.round(minChangedSentenceRatio * 100)}% preservation-aware plausibility floor. This floor is a safeguard against a falsely reported execution, not a target to maximise.`
+      `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences visibly changed, below the ${Math.round(minChangedSentenceRatio * 100)}% preservation-aware plausibility floor. Concrete plan execution is evaluated separately; this is an execution variance for review, not a rewrite target and not a reason by itself to regenerate more text.`
     );
   }
 
@@ -265,10 +279,11 @@ export function assessExecutionCompliance(result) {
   }
 
   const preservation = preservationAssessment(result);
-  const status = executionStatus(underReasons, overReasons);
-  const executionPassed = status === "passed";
+  const status = executionStatus(underReasons, overReasons, varianceReasons);
+  const executionPassed = status === "passed" || status === "passed-with-variance";
+  const hasVariance = varianceReasons.length > 0;
 
-  const minimumBreadthScore = changedSentenceRatio === null || minChangedSentenceRatio <= 0 || changedSentenceRatio >= minChangedSentenceRatio
+  const visiblePlausibilityScore = changedSentenceRatio === null || minChangedSentenceRatio <= 0 || changedSentenceRatio >= minChangedSentenceRatio
     ? 1
     : clamp01(changedSentenceRatio / Math.max(0.05, minChangedSentenceRatio));
   const breadthScore = changedSentenceRatio === null || changedSentenceRatio <= maxChangedSentenceRatio
@@ -278,10 +293,12 @@ export function assessExecutionCompliance(result) {
     ? 1
     : clamp01(1 - (reportedSubstantiveRatio - maxSubstantiveRatio) / Math.max(0.15, maxSubstantiveRatio));
 
+  // Execution score measures plan fidelity and authorised breadth. The independent
+  // visible-change plausibility score is intentionally reported separately so a
+  // low textual-distance percentage cannot lower plan fidelity or trigger a rewrite.
   const executionScoreComponents = [
     interventionCoverage,
     structuralCoverage,
-    minimumBreadthScore,
     breadthScore,
     substantiveBreadthScore,
   ];
@@ -289,14 +306,18 @@ export function assessExecutionCompliance(result) {
   const overallScore = Number(((executionScore * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3));
 
   return {
-    version: "planner-execution-compliance-v4",
+    version: "planner-execution-compliance-v5",
     passed: executionPassed,
     execution_passed: executionPassed,
     execution_status: status,
+    plan_fidelity_status: underReasons.length ? "under-executed" : overReasons.length ? "over-executed" : "passed",
+    plan_fidelity_passed: underReasons.length === 0 && overReasons.length === 0,
+    visible_change_plausibility_status: hasVariance ? "below-plausibility-floor" : "within-authorised-band",
+    visible_change_plausibility_score: Number(visiblePlausibilityScore.toFixed(3)),
     under_executed: underReasons.length > 0,
     over_executed: overReasons.length > 0,
     preservation_ok: preservation.passed,
-    candidate_status: candidateStatus(executionPassed, preservation.passed, status),
+    candidate_status: candidateStatus(executionPassed, preservation.passed, status, hasVariance),
     score: executionScore,
     execution_score: executionScore,
     overall_score: overallScore,
@@ -317,12 +338,14 @@ export function assessExecutionCompliance(result) {
     reasons: [...underReasons, ...overReasons],
     under_execution_codes: underCodes,
     over_execution_codes: overCodes,
+    execution_variance_codes: varianceCodes,
+    execution_variance_reasons: varianceReasons,
     under_execution_reasons: underReasons,
     over_execution_reasons: overReasons,
     execution_reasons: [...underReasons, ...overReasons],
     preservation_reasons: preservation.reasons,
     warnings,
-    note: "Execution compliance distinguishes concrete planner coverage, paragraph-level discourse scope, a preservation-aware minimum visible-change plausibility floor, and a maximum authorised disturbance ceiling. The minimum is not a rewrite quota and the maximum is not a target. Preservation is assessed separately; none of these verdicts establishes authorship.",
+    note: "Plan fidelity, visible-change plausibility, maximum authorised disturbance and factual preservation are separate dimensions. A below-floor visible-change result is reported as reviewable execution variance rather than under-execution when the concrete plan itself was carried out. No percentage is a rewrite target and none establishes authorship.",
   };
 }
 

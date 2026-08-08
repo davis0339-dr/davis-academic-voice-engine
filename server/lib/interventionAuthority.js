@@ -1,7 +1,7 @@
-// Derives the amount of document disturbance authorised by a planner result and
-// the source's preservation priority. Maximum breadth is a hard ceiling; minimum
-// breadth is only a plausibility floor. Deep Authorial Reconstruction protects
-// semantic/evidential fidelity rather than freezing source sentence wording.
+// Derive the amount of document disturbance authorised by the planner and the
+// author's explicit rewrite choice. Diagnostic recommendation and execution
+// authority are separate: a deeper diagnosis may be reported while Minor/Moderate
+// remains a hard ceiling for the current run.
 
 const SUBSTANTIVE_KEYS = new Set([
   "SENTENCE_RESTRUCTURE",
@@ -33,8 +33,64 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
   const substantiveRatio = substantive / total;
   const discourseRatio = discourseRepackage / total;
   const priority = authorialTexture?.preservation_priority || "medium";
-  const authorialMode = requestedNaturalisation === "authorial";
+  const intensity = ["auto", "minor", "moderate", "deep"].includes(requestedIntensity) ? requestedIntensity : "auto";
+  const explicitMinor = intensity === "minor";
+  const explicitModerate = intensity === "moderate";
+  const authorialMode = requestedNaturalisation === "authorial" && intensity === "deep";
   const authorialDiscourseMode = authorialMode && effectiveIntent === "discourse_reconstruction";
+
+  // Author-choice ceilings come before corpus/style ambition. Minor is genuinely
+  // local. Moderate permits sentence/flow work but does not authorise paragraph
+  // repackaging merely because the diagnostics would have preferred it.
+  if (explicitMinor) {
+    return {
+      version: "intervention-authority-v5",
+      preservation_priority: priority,
+      preservation_basis: "surface_and_semantic_fidelity",
+      surface_preservation_required: true,
+      breadth: "author_selected_local",
+      authorial_mode: false,
+      authorial_discourse_mode: false,
+      author_choice_ceiling: "minor",
+      author_choice_respected: true,
+      depth_permission: "micro_edit_only",
+      planned_keep_ratio: Number((keep / total).toFixed(3)),
+      planned_intervention_ratio: Number(interventionRatio.toFixed(3)),
+      planned_substantive_ratio: Number(substantiveRatio.toFixed(3)),
+      planned_discourse_repackage_ratio: Number(discourseRatio.toFixed(3)),
+      max_changed_sentence_ratio: Number(clamp(Math.max(0.08, interventionRatio + 0.10), 0.08, 0.35).toFixed(3)),
+      max_substantive_operation_ratio: 0.08,
+      min_changed_sentence_ratio: 0,
+      minimum_basis: "no_change_quota_for_minor_edit",
+      effective_intent: effectiveIntent || null,
+      rule: "Minor is an explicit authorial ceiling. Deeper diagnostic recommendations remain visible, but this run may only make bounded local wording, grammar and clarity edits. No minimum amount of change is required, and paragraph/discourse reconstruction is not authorised.",
+    };
+  }
+
+  if (explicitModerate) {
+    return {
+      version: "intervention-authority-v5",
+      preservation_priority: priority,
+      preservation_basis: "surface_and_semantic_fidelity",
+      surface_preservation_required: true,
+      breadth: "author_selected_moderate",
+      authorial_mode: false,
+      authorial_discourse_mode: false,
+      author_choice_ceiling: "moderate",
+      author_choice_respected: true,
+      depth_permission: "sentence_level_where_diagnosed",
+      planned_keep_ratio: Number((keep / total).toFixed(3)),
+      planned_intervention_ratio: Number(interventionRatio.toFixed(3)),
+      planned_substantive_ratio: Number(substantiveRatio.toFixed(3)),
+      planned_discourse_repackage_ratio: Number(discourseRatio.toFixed(3)),
+      max_changed_sentence_ratio: Number(clamp(interventionRatio + 0.20, 0.15, 0.60).toFixed(3)),
+      max_substantive_operation_ratio: Number(clamp(substantiveRatio + 0.15, 0.12, 0.55).toFixed(3)),
+      min_changed_sentence_ratio: 0,
+      minimum_basis: "no_change_quota_for_moderate_edit",
+      effective_intent: effectiveIntent || null,
+      rule: "Moderate is an explicit authorial ceiling. Sentence restructuring, split/merge and flow repair are permitted where diagnosed, but deeper paragraph/discourse recommendations are advisory for this run. There is no minimum rewrite quota.",
+    };
+  }
 
   const changeMargin = authorialMode
     ? (priority === "high" ? 0.34 : priority === "medium" ? 0.40 : 0.46)
@@ -49,24 +105,12 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     ? "semantic_fidelity_broad_reconstruction"
     : priority === "high" ? "targeted" : priority === "medium" ? "selective" : "broad_if_diagnosed";
 
-  // In ordinary modes, strong existing texture can legitimately make the visible
-  // change floor very small. Deep Authorial Reconstruction is different: when the
-  // planner itself selected discourse reconstruction, a nearly unchanged output is
-  // an execution failure because the user explicitly authorised rebuilding the
-  // reasoning presentation. The floor remains deliberately moderate; it is not a
-  // quota and it never overrides factual/citation/methodological fidelity.
   const ordinaryMinimumChanged = Math.max(0, interventionRatio - minimumSlack);
   const authorialPlanDemand = clamp(substantiveRatio, 0, 1);
   const authorialMinimumChanged = authorialDiscourseMode
     ? clamp(Math.max(0.15, authorialPlanDemand * 0.35), 0, 0.55)
     : ordinaryMinimumChanged;
 
-  // DISCOURSE_REPACKAGE is paragraph-level scope. During a genuine reconstruction
-  // it can legitimately materialise as many sentence restructures/splits/merges,
-  // so the sentence-operation ceiling must not incorrectly treat those concrete
-  // operations as over-editing. Passage-wide surface redevelopment becomes legal
-  // when the plan itself is passage-wide; a narrower authorial plan still keeps a
-  // narrower ceiling. Semantic/evidential preservation remains mandatory either way.
   const ordinaryMaxChanged = clamp(interventionRatio + changeMargin, 0.12, 0.95);
   const ordinaryMaxSubstantive = clamp(substantiveRatio + substantiveMargin, 0.10, 0.92);
   const authorialMaxChanged = clamp(interventionRatio + changeMargin, 0.20, 1);
@@ -76,16 +120,16 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     : clamp(substantiveRatio + substantiveMargin, 0.15, 1);
 
   return {
-    version: "intervention-authority-v4",
+    version: "intervention-authority-v5",
     preservation_priority: priority,
     preservation_basis: authorialMode ? "semantic_evidential_fidelity" : "surface_and_semantic_fidelity",
     surface_preservation_required: !authorialMode,
     breadth,
     authorial_mode: authorialMode,
     authorial_discourse_mode: authorialDiscourseMode,
-    depth_permission: requestedIntensity === "deep" || requestedNaturalisation === "aggressive" || authorialMode
-      ? "deep_where_diagnosed"
-      : "as_planned",
+    author_choice_ceiling: intensity,
+    author_choice_respected: true,
+    depth_permission: intensity === "deep" || authorialMode ? "deep_where_diagnosed" : "as_planned",
     planned_keep_ratio: Number((keep / total).toFixed(3)),
     planned_intervention_ratio: Number(interventionRatio.toFixed(3)),
     planned_substantive_ratio: Number(substantiveRatio.toFixed(3)),
@@ -100,7 +144,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
         : "preservation_aware_plausibility_floor",
     effective_intent: effectiveIntent || null,
     rule: authorialMode
-      ? "Deep Authorial Reconstruction preserves the writer's argument, evidence, citations, numbers, methods, variables, qualifications, epistemic strength, factual relationships and technical meaning; it does not require preservation of source sentence wording or sentence boundaries. When discourse reconstruction is planned, substantial or even passage-wide surface redevelopment is permissible if those fidelity constraints pass. The maximum remains an authority ceiling and the minimum remains only an execution safeguard against a nominal 'deep reconstruction' that returns essentially the same prose. DISCOURSE_REPACKAGE is paragraph-level scope and may legitimately produce multiple concrete sentence restructures."
-      : "Maximum changed-sentence breadth is an authorised disturbance ceiling, never a rewrite target. Minimum changed-sentence breadth is only a preservation-aware plausibility floor used to detect implausibly unchanged output when a demanding plan was reported as executed. DISCOURSE_REPACKAGE contributes to structural authority but is not a one-sentence-one-rewrite quota. High authorial-texture preservation priority lowers the minimum floor because clean source sentences may legitimately survive even when deep repair is permitted inside diagnosed passages.",
+      ? "Deep Authorial Reconstruction preserves argument, evidence, citations, numbers, methods, variables, qualifications, epistemic strength, factual relationships and technical meaning; it does not require preservation of source sentence wording or sentence boundaries. Maximum breadth is an authority ceiling and the minimum is only an execution safeguard, never a rewrite target."
+      : "Maximum changed-sentence breadth is an authorised disturbance ceiling, never a rewrite target. Minimum changed-sentence breadth is only a plausibility safeguard for demanding plans. Diagnosis determines where intervention is warranted; clean text may remain unchanged.",
   };
 }

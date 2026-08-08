@@ -1,5 +1,6 @@
 import { splitSentences, wordCount } from "./sentences.js";
 import { parseTextStructure } from "./textStructure.js";
+import { compileFamily } from "./corpusEngine.js";
 
 const TRANSITION_RE = /\b(?:however|therefore|thus|moreover|furthermore|additionally|consequently|nevertheless|nonetheless|similarly|likewise|in contrast|by contrast|in addition|as a result|for example|for instance|overall|ultimately)\b/gi;
 const HEDGE_RE = /\b(?:may|might|could|can|appears?|suggests?|indicates?|likely|possibly|perhaps|generally|approximately|about|seems?|tends?)\b/gi;
@@ -71,6 +72,27 @@ function punctuationProfile(text, wc) {
   };
 }
 
+function sampleAdequacy(wordCountValue, sentenceCount) {
+  const cautions = [];
+  const lexical = wordCountValue >= 50 ? "descriptive" : "insufficient";
+  const dispersion = sentenceCount >= 5 ? "descriptive" : "insufficient";
+  const cadence = sentenceCount >= 10 ? "interpret_with_caution" : "insufficient";
+  const stronger = wordCountValue >= 150 && sentenceCount >= 10;
+  if (lexical === "insufficient") cautions.push("Fewer than 50 words: lexical ratios are unstable and should not be interpreted.");
+  if (dispersion === "insufficient") cautions.push("Fewer than 5 sentences: sentence-dispersion statistics are descriptive numbers only.");
+  if (cadence === "insufficient") cautions.push("Fewer than 10 sentences: cadence-pattern inference is suppressed.");
+  return {
+    word_count: wordCountValue,
+    sentence_count: sentenceCount,
+    lexical_profile: lexical,
+    sentence_dispersion: dispersion,
+    cadence_inference: cadence,
+    stronger_interpretation_supported: stronger,
+    cautions,
+    note: "These are conservative stability guardrails for interpretation, not empirical authorship thresholds.",
+  };
+}
+
 export function linguisticProfile(text) {
   const sentenceList = splitSentences(text);
   const structure = parseTextStructure(text);
@@ -95,6 +117,7 @@ export function linguisticProfile(text) {
     word_count: wc,
     sentence_count: sentenceList.length,
     paragraph_count: paragraphBlocks.length,
+    sample_adequacy: sampleAdequacy(wc, sentenceList.length),
     mean_sentence_words: round(sentenceMean, 2),
     sentence_length_sd: round(sentenceSd, 2),
     sentence_length_cv: round(ratio(sentenceSd, sentenceMean), 3),
@@ -117,8 +140,9 @@ export function linguisticProfile(text) {
   };
 }
 
-function paragraphTexts(text) {
-  return String(text || "").replace(/\r\n?/g, "\n").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+function proseParagraphs(text) {
+  const structure = parseTextStructure(text);
+  return (structure.blocks || []).filter((block) => block.type === "paragraph").map((block) => block.text.trim()).filter(Boolean);
 }
 
 function segmentFromParagraphs(paragraphs, start, end) {
@@ -133,13 +157,19 @@ function percentileSegment(paragraphs, startRatio, endRatio) {
 }
 
 export function positionalProfiles(text) {
-  const paragraphs = paragraphTexts(text);
+  const paragraphs = proseParagraphs(text);
   return {
     opening_two_paragraphs: linguisticProfile(segmentFromParagraphs(paragraphs, 0, Math.min(2, paragraphs.length))),
     first_quarter: linguisticProfile(percentileSegment(paragraphs, 0, 0.25)),
     middle_half: linguisticProfile(percentileSegment(paragraphs, 0.25, 0.75)),
     final_quarter: linguisticProfile(percentileSegment(paragraphs, 0.75, 1)),
     whole_document: linguisticProfile(text),
+    segmentation: {
+      method: "first_two_substantive_prose_paragraphs",
+      prose_paragraph_count: paragraphs.length,
+      headings_excluded: true,
+      lists_and_quotations_excluded: true,
+    },
   };
 }
 
@@ -184,8 +214,7 @@ function observationConsensus(observations) {
 
 function aggregateSentenceSubset(sentences, indices) {
   const selected = indices.map((i) => sentences[i]).filter(Boolean);
-  if (!selected.length) return null;
-  return linguisticProfile(selected.join(" "));
+  return selected.length ? linguisticProfile(selected.join(" ")) : null;
 }
 
 function openingSentenceIndices(text) {
@@ -197,15 +226,8 @@ function openingSentenceIndices(text) {
 function flaggedSentenceAnalysis(text, consensus) {
   const sentences = splitSentences(text);
   const allFlagged = [...new Set(consensus.observations.flatMap((o) => o.flagged_sentence_indices || []))]
-    .filter((i) => i >= 0 && i < sentences.length)
-    .sort((a, b) => a - b);
-  if (!allFlagged.length) {
-    return {
-      available: false,
-      reason: "No sentence-level detector highlights were recorded for this candidate.",
-      flagged_sentence_indices: [],
-    };
-  }
+    .filter((i) => i >= 0 && i < sentences.length).sort((a, b) => a - b);
+  if (!allFlagged.length) return { available: false, reason: "No sentence-level detector highlights were recorded for this candidate.", flagged_sentence_indices: [] };
   const flaggedSet = new Set(allFlagged);
   const unflagged = sentences.map((_, i) => i).filter((i) => !flaggedSet.has(i));
   const opening = openingSentenceIndices(text);
@@ -220,79 +242,101 @@ function flaggedSentenceAnalysis(text, consensus) {
     flagged_share: round(ratio(allFlagged.length, sentences.length), 3),
     flagged_profile: aggregateSentenceSubset(sentences, allFlagged),
     unflagged_profile: aggregateSentenceSubset(sentences, unflagged),
-    opening_two_paragraphs: {
-      sentence_count: opening.length,
-      flagged_count: openingFlagged.length,
-      flagged_share: round(ratio(openingFlagged.length, opening.length), 3),
-    },
-    remainder: {
-      sentence_count: restIndices.length,
-      flagged_count: restFlagged.length,
-      flagged_share: round(ratio(restFlagged.length, restIndices.length), 3),
-    },
+    opening_two_paragraphs: { sentence_count: opening.length, flagged_count: openingFlagged.length, flagged_share: round(ratio(openingFlagged.length, opening.length), 3) },
+    remainder: { sentence_count: restIndices.length, flagged_count: restFlagged.length, flagged_share: round(ratio(restFlagged.length, restIndices.length), 3) },
   };
 }
 
-function researchHypotheses(sourceProfiles, candidateProfiles, consensus, flaggedAnalysis) {
+function positionAgainstReference(value, ref, scale = 1) {
+  const v = Number(value) * scale;
+  if (!Number.isFinite(v) || !ref || ref.n < 3 || !Number.isFinite(ref.q1) || !Number.isFinite(ref.q3)) return "not_interpreted";
+  if (v < ref.min) return "below_observed_range";
+  if (v < ref.q1) return "below_reference_iqr";
+  if (v <= ref.q3) return "within_reference_iqr";
+  if (v <= ref.max) return "above_reference_iqr";
+  return "above_observed_range";
+}
+
+function buildCorpusInterpretation(candidate, family) {
+  const reference = family?.cadence?.reference || {};
+  const supported = ["supported", "emerging"].includes(family?.evidence_strength);
+  const metrics = [
+    ["mean_sentence_words", candidate.mean_sentence_words, reference.mean_sentence_words, 1],
+    ["sentence_length_sd", candidate.sentence_length_sd, reference.sentence_length_sd, 1],
+    ["sentence_length_cv", candidate.sentence_length_cv, reference.sentence_length_cv, 1],
+    ["long_sentence_share", candidate.long_sentence_share, reference.long_sentence_share_percent, 100],
+  ];
+  return {
+    available: supported && Number(family?.cadence?.measuredSources || 0) >= 3,
+    evidence_strength: family?.evidence_strength || "insufficient",
+    matched_documents: family?.matchCount || 0,
+    effective_family: family?.effectiveLabel || null,
+    fallback_applied: Boolean(family?.fallback_applied),
+    message: family?.message || null,
+    metrics: Object.fromEntries(metrics.map(([key, value, ref, scale]) => [key, {
+      value,
+      reference: ref || null,
+      position: supported ? positionAgainstReference(value, ref, scale) : "not_interpreted",
+    }])),
+    note: "Only cadence measures available in the matched corpus receive corpus-relative interpretation. Other linguistic metrics remain descriptive and must not be labelled high/low from raw thresholds alone.",
+  };
+}
+
+function researchHypotheses(sourceProfiles, candidateProfiles, consensus, flaggedAnalysis, corpusInterpretation) {
   const source = sourceProfiles.whole_document;
   const candidate = candidateProfiles.whole_document;
   const opening = candidateProfiles.opening_two_paragraphs;
   const notes = [];
+  const cvRef = corpusInterpretation?.metrics?.sentence_length_cv;
 
-  if (candidate.repeated_sentence_opening_share > 0.25) {
-    notes.push("Candidate has a high repeated sentence-opening share; test whether flagged spans disproportionately cluster around repeated grammatical entry patterns.");
+  if (candidate.sample_adequacy?.cadence_inference !== "insufficient" && cvRef && ["below_reference_iqr", "below_observed_range"].includes(cvRef.position)) {
+    const ref = cvRef.reference;
+    notes.push(`Sentence-length CV is ${candidate.sentence_length_cv.toFixed(2)}, below the matched corpus IQR (${Number(ref.q1).toFixed(2)}–${Number(ref.q3).toFixed(2)}). Treat this as a corpus-relative cadence observation, not an authorship finding or a target for artificial variation.`);
   }
-  if (candidate.sentence_length_cv < 0.45 && candidate.sentence_count >= 8) {
-    notes.push("Sentence-length dispersion is relatively narrow; compare detector flags against passages with more naturally varied clause and sentence lengths.");
+  if (candidate.sample_adequacy?.cadence_inference !== "insufficient" && candidate.repeated_sentence_opening_share > source.repeated_sentence_opening_share + 0.10) {
+    notes.push("The revision materially increased repeated sentence openings relative to the source; inspect the affected passages before deciding whether any local restructuring is warranted.");
   }
-  if (candidate.transition_density_per_100_words > 1.2) {
-    notes.push("Explicit transition density is high; inspect whether detector-highlighted passages also show heavy discourse-marker use rather than relying on local lexical continuity.");
+  if (candidate.transition_density_per_100_words > source.transition_density_per_100_words + 0.5 && candidate.word_count >= 150) {
+    notes.push("Explicit transition density increased materially relative to the source. Inspect whether the added signposting improves logic or merely makes cohesion more mechanical.");
   }
-  if (candidate.abstract_noun_density_per_100_words > source.abstract_noun_density_per_100_words + 0.5) {
-    notes.push("Revision increased abstract-noun density; test whether direct verbs and concrete grammatical subjects better preserve the author's original register.");
+  if (candidate.abstract_noun_density_per_100_words > source.abstract_noun_density_per_100_words + 0.5 && candidate.word_count >= 150) {
+    notes.push("Revision increased abstract-noun density relative to the source; review whether direct verbs and concrete grammatical subjects would better preserve the writer's register.");
   }
-  if (opening.word_count >= 80 && opening.sentence_length_cv < candidate.sentence_length_cv * 0.75) {
-    notes.push("The opening two paragraphs are more rhythmically regular than the document overall. Treat this as an empirical opening-register hypothesis and compare it with detector sentence flags; do not assume position is causative without repeated evidence.");
+  if (opening.sample_adequacy?.sentence_dispersion === "insufficient") {
+    notes.push("Opening-passage cadence interpretation is suppressed because the first two substantive prose paragraphs contain too few sentences for stable dispersion analysis.");
+  } else if (opening.word_count >= 80 && candidate.sentence_count >= 10 && opening.sentence_length_cv < candidate.sentence_length_cv * 0.75) {
+    notes.push("The first two substantive prose paragraphs are more rhythmically regular than the document overall. Treat this as a within-document observation and compare it with repeated runs before making any editing decision.");
   }
   if (flaggedAnalysis?.available) {
     const openingRate = flaggedAnalysis.opening_two_paragraphs.flagged_share;
     const restRate = flaggedAnalysis.remainder.flagged_share;
     if (flaggedAnalysis.opening_two_paragraphs.sentence_count >= 2 && openingRate >= restRate + 0.2) {
-      notes.push(`Observed detector highlights are denser in the opening two paragraphs (${Math.round(openingRate * 100)}%) than in the remainder (${Math.round(restRate * 100)}%). Record this across more documents before treating opening position as a stable detector feature.`);
-    }
-    const flagged = flaggedAnalysis.flagged_profile;
-    const unflagged = flaggedAnalysis.unflagged_profile;
-    if (flagged && unflagged && flagged.transition_density_per_100_words > unflagged.transition_density_per_100_words + 0.5) {
-      notes.push("Flagged sentences contain more explicit transition language than unflagged sentences in this sample; test this relationship across additional detector runs.");
-    }
-    if (flagged && unflagged && flagged.abstract_noun_density_per_100_words > unflagged.abstract_noun_density_per_100_words + 1) {
-      notes.push("Flagged sentences contain a higher abstract-noun density than unflagged sentences in this sample; preserve the observation as a hypothesis rather than a universal detector rule.");
+      notes.push(`Observed detector highlights are denser in the opening two paragraphs (${Math.round(openingRate * 100)}%) than in the remainder (${Math.round(restRate * 100)}%). Record this across more documents before treating opening position as a stable feature.`);
     }
   }
-  if (consensus.disagreement) {
-    notes.push("Configured/manual detectors disagree. Preserve the disagreement as evidence; do not collapse it into one authorship verdict.");
-  }
-  if (!notes.length) {
-    notes.push("No single measured feature dominates this sample. Treat detector output as a multivariate observation and accumulate more labelled runs before changing generation policy.");
-  }
+  if (consensus.disagreement) notes.push("Recorded detectors disagree. Preserve the disagreement as evidence; do not collapse it into one authorship verdict.");
+  if (!notes.length) notes.push("No measured feature warrants a strong interpretation in this sample. Retain the profile descriptively and accumulate more adequately sized, corpus-referenced observations before changing revision policy.");
   return notes;
 }
 
-export function buildDetectorResearchReport({ sourceText = "", candidateText = "", observations = [] } = {}) {
+export function buildDetectorResearchReport({ sourceText = "", candidateText = "", observations = [], styleFilters = {} } = {}) {
   const sourceProfiles = positionalProfiles(sourceText || candidateText);
   const candidateProfiles = positionalProfiles(candidateText || sourceText);
   const consensus = observationConsensus(Array.isArray(observations) ? observations : []);
   const candidate = candidateText || sourceText;
   const flaggedAnalysis = flaggedSentenceAnalysis(candidate, consensus);
+  const family = compileFamily(styleFilters || {});
+  const corpusInterpretation = buildCorpusInterpretation(candidateProfiles.whole_document, family);
   return {
-    version: "detector-research-v2",
-    purpose: "Measure linguistic, positional and sentence-highlight features associated with external detector outcomes while preserving detector disagreement and academic-content constraints. This is an observational research layer, not proof of authorship.",
+    version: "detector-research-v3",
+    purpose: "Measure linguistic, positional and sentence-highlight features associated with external detector outcomes while preserving detector disagreement, sample adequacy and academic-content constraints. This is an observational research layer, not proof of authorship.",
     source_profiles: sourceProfiles,
     candidate_profiles: candidateProfiles,
     whole_document_delta: metricDelta(sourceProfiles.whole_document, candidateProfiles.whole_document),
     opening_delta: metricDelta(sourceProfiles.opening_two_paragraphs, candidateProfiles.opening_two_paragraphs),
+    corpus_reference: corpusInterpretation,
     detector_consensus: consensus,
     flagged_sentence_analysis: flaggedAnalysis,
-    research_hypotheses: researchHypotheses(sourceProfiles, candidateProfiles, consensus, flaggedAnalysis),
+    research_hypotheses: researchHypotheses(sourceProfiles, candidateProfiles, consensus, flaggedAnalysis, corpusInterpretation),
   };
 }

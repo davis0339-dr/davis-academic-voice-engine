@@ -15,12 +15,12 @@
   }
 
   function title(value) {
-    return String(value || "n/a").replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+    return String(value || "n/a").replace(/[_-]/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
   }
 
   function statusClass(value) {
-    if (["passed", "accepted", "improved", "not_required", "surgical_local_recovery", "surgical_plan_passed"].includes(value)) return "good";
-    if (["accepted_with_residual_risks", "unresolved_or_rejected", "execution_under", "source-preserved", "surgical_partial"].includes(value)) return "warn";
+    if (["passed", "accepted", "improved", "not_required", "surgical_local_recovery", "surgical_plan_passed", "within-authorised-band", "not_applicable_surgical_plan"].includes(value)) return "good";
+    if (["passed-with-variance", "below-plausibility-floor", "accepted_with_execution_variance", "accepted_with_residual_risks", "unresolved_or_rejected", "execution_under", "source-preserved", "surgical_partial"].includes(value)) return "warn";
     return "bad";
   }
 
@@ -69,15 +69,19 @@
     const beforeSignals = riskSignals(residual?.before);
     const afterSignals = riskSignals(residual?.after);
     const rejectChips = rejectionChips(surgical?.rejection_summary);
+    const visiblePlausibility = compliance.visible_change_plausibility_status || "not_assessed";
+    const varianceReasons = compliance.execution_variance_reasons || [];
 
     panel.innerHTML = `
       <div class="rv4-title"><strong>Candidate verdict</strong><span>different ≠ automatically better</span></div>
       <div class="rv4-grid">
         <div class="${statusClass(verdict.execution)}"><span>Plan execution</span><strong>${esc(title(verdict.execution))}</strong></div>
+        <div class="${statusClass(visiblePlausibility)}"><span>Visible-change plausibility</span><strong>${esc(title(visiblePlausibility))}</strong></div>
         <div class="${statusClass(verdict.preservation)}"><span>Factual preservation</span><strong>${esc(title(verdict.preservation))}</strong></div>
         <div class="${statusClass(verdict.residual)}"><span>Residual rework</span><strong>${esc(title(verdict.residual))}</strong></div>
         <div class="${statusClass(verdict.final_status)}"><span>Final candidate</span><strong>${esc(title(verdict.final_status))}</strong></div>
       </div>
+      ${varianceReasons.length ? `<div class="rv4-variance"><strong>Execution variance, not rewrite instruction:</strong> ${varianceReasons.map(esc).join(" ")}</div>` : ""}
       ${policy ? `<div class="rv4-policy"><strong>Rewrite policy:</strong> ${esc(title(policy.policy))}. ${esc(policy.rationale || "")}</div>` : ""}
       ${surgical?.attempted ? `
         <div class="rv4-surgical ${surgical.execution_status === "surgical_plan_passed" ? "goodbox" : "warnbox"}">
@@ -141,7 +145,7 @@
     .rv4-panel{margin:0 0 18px;padding:16px;border:1px solid #405269;border-radius:10px;background:rgba(22,31,44,.72);line-height:1.45}
     .rv4-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}.rv4-title span{font-size:.82em;opacity:.62}
     .rv4-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:8px}.rv4-grid>div{padding:9px 10px;border-radius:7px;background:rgba(5,11,18,.42);border:1px solid #485568}.rv4-grid span{display:block;font-size:.78em;opacity:.66}.rv4-grid .good{border-color:#2c7658}.rv4-grid .warn{border-color:#9d7b34}.rv4-grid .bad{border-color:#9b4a4a}
-    .rv4-policy{margin-top:12px;padding:9px 10px;border-left:3px solid #5d79a4;background:rgba(5,11,18,.32)}
+    .rv4-policy,.rv4-variance{margin-top:12px;padding:9px 10px;border-left:3px solid #5d79a4;background:rgba(5,11,18,.32)}.rv4-variance{border-left-color:#9d7b34;background:rgba(104,78,31,.18)}
     .rv4-residual,.rv4-surgical{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;padding:9px;background:rgba(5,11,18,.35);border-radius:7px}.rv4-surgical>div{flex-basis:100%;font-size:.86em;opacity:.78}.rv4-surgical.goodbox{border:1px solid #2c7658}.rv4-surgical.warnbox{border:1px solid #9d7b34}.rv4-superseded{margin-top:9px;padding:8px 10px;border-left:3px solid #8c6f3f;background:rgba(104,78,31,.18);font-size:.87em}.rv4-nonedit{margin-top:12px;padding:10px;border:1px solid #b45a5a;border-radius:7px;background:rgba(115,35,35,.22)}.rv4-nonedit strong{display:block;color:#ffb1b1;margin-bottom:4px}
     .rv4-note,.rv4-alert,.rv4-foot{margin-top:9px}.rv4-alert{padding:8px;border-left:3px solid #b35353;background:rgba(115,35,35,.2)}.rv4-foot{font-size:.82em;opacity:.68}.rv4-panel details{margin-top:9px}.rv4-panel summary{cursor:pointer;color:#a9bedf}.rv4-chips span{display:inline-block;margin:5px 5px 0 0;padding:3px 6px;border:1px solid #52617a;border-radius:5px;font-size:.8em}
   `;

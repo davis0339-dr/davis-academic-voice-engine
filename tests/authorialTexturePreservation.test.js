@@ -19,23 +19,23 @@ test("strong existing academic texture receives high preservation priority witho
     cadenceDeviation: { available: true, range_position: "within_observed_range", threshold_flagged: false },
     languageDeviation: { available: true, family_alignment_score: 0.88 },
   });
-
   assert.equal(result.preservation_priority, "high");
   assert.equal(result.recommended_breadth, "targeted");
   assert.match(result.note, /does not establish/i);
 });
 
-test("Deep plus Aggressive is narrowed to diagnostic-led auto breadth when preservation priority is high", () => {
+test("strong texture does not silently replace an explicit Deep choice with Auto", () => {
   const policy = resolveRewriteModePolicy({
     rewriteIntensity: "deep",
     naturalisation: "aggressive",
     authorialTexture: { preservation_priority: "high" },
   });
   assert.equal(policy.requested_intensity, "deep");
-  assert.equal(policy.effective_intensity, "auto");
-  assert.equal(policy.effective_naturalisation, "faithful");
+  assert.equal(policy.effective_intensity, "deep");
+  assert.equal(policy.effective_naturalisation, "aggressive");
   assert.equal(policy.depth_permission, "deep_where_diagnosed");
-  assert.equal(policy.policy, "authorial_preservation_targeted");
+  assert.equal(policy.policy, "deep_diagnostic_authority");
+  assert.equal(policy.universal_rewrite_authorised, false);
 });
 
 test("isolated page numbers are classified as page artifacts rather than prose headings", () => {
