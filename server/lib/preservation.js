@@ -28,11 +28,12 @@ function extraCitationLike(sourceSpans, revisedSpans) {
   return revisedSpans.citations.filter((c) => !sourceCitations.has(c));
 }
 
-const PLANNED_STUDY = /\b(?:this|the present|the proposed) study\s+(?:will|aims to|seeks to|is designed to|is intended to|proposes to)\b/gi;
+const STUDY_SUBJECT = String.raw`(?:this|the present|the proposed)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,8}study`;
+const PLANNED_STUDY = new RegExp(`\\b${STUDY_SUBJECT}\\s+(?:will|aims to|seeks to|is designed to|is intended to|proposes to)\\b`, "gi");
 const PURPOSE_PLANNED = /\bthe purpose of this\b[^.!?\n]{0,180}\bstudy\s+is\s+to\s+(?:examine|investigate|assess|evaluate|analyse|analyze|determine|test|explore|estimate|explain)\b/gi;
 const PROSPECTUS_PLANNED = /\bthis prospectus\s+(?:proposes|will|aims|seeks|is designed|is intended)\b/gi;
-const PRESENT_REPORTING_STUDY = /\b(?:this|the present|the proposed) study\s+(?:examines|investigates|assesses|evaluates|analyses|analyzes|determines|tests|adopts|uses|employs|collects|administers|measures|focuses|explores|estimates|applies|specifies)\b/gi;
-const COMPLETED_STUDY = /\b(?:(?:this|the present|the proposed) study\s+(?:conducted|collected|analysed|analyzed|found|reported|showed|revealed|used|employed)|interviews?\s+(?:were|was)\s+conducted|data\s+(?:were|was)\s+collected|analysis\s+(?:was|were)\s+conducted|participants?\s+(?:were|was)\s+interviewed)\b/gi;
+const PRESENT_REPORTING_STUDY = new RegExp(`\\b${STUDY_SUBJECT}\\s+(?:examines|investigates|assesses|evaluates|analyses|analyzes|determines|tests|adopts|uses|employs|collects|administers|measures|focuses|explores|estimates|applies|specifies)\\b`, "gi");
+const COMPLETED_STUDY = new RegExp(`\\b(?:${STUDY_SUBJECT}\\s+(?:conducted|collected|analysed|analyzed|found|reported|showed|revealed|used|employed)|interviews?\\s+(?:were|was)\\s+conducted|data\\s+(?:were|was)\\s+collected|analysis\\s+(?:was|were)\\s+conducted|participants?\\s+(?:were|was)\\s+interviewed)\\b`, "gi");
 const FIRST_PERSON = /\b(?:I|me|my|mine|myself|we|us|our|ours|ourselves)\b/g;
 const SECTION_LABEL = /\bSection\s+\d+(?:\.\d+)*\b/gi;
 const CHAPTER_LABEL = /\bChapter\s+\d+(?:\.\d+)*\b/gi;
