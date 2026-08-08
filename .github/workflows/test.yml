@@ -20,6 +20,20 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Dependency vulnerability audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Reject committed environment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -Eq '(^|/)\.env$'; then
+            echo 'A .env file is tracked by Git. Secrets must remain in the deployment secret manager.'
+            exit 1
+          fi
+          if git grep -nE '(sk-ant-api03-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{30,})' -- . ':!package-lock.json'; then
+            echo 'A credential-like secret pattern was found in tracked files.'
+            exit 1
+          fi
       - name: Check browser JavaScript syntax
         run: |
           node --check public/app.js
