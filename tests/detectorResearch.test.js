@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { linguisticProfile, positionalProfiles, buildDetectorResearchReport } from "../server/lib/detectorResearch.js";
 import { normalizeCopyleaksResponse } from "../server/lib/detectorProviders/copyleaks.js";
 import { normalizeGptZeroResponse } from "../server/lib/detectorProviders/gptzero.js";
+import { detectorEvidenceSummary } from "../server/lib/detectorEvidenceBase.js";
 
 const source = `Corporate debt is a central source of financing for U.S. businesses, but creditors price it using more than accounting ratios. They also assess the reliability of financial reporting, the quality of oversight, the concentration of managerial authority, and the board's capacity to monitor risk.
 
@@ -101,4 +102,17 @@ test("GPTZero normalizer retains document classification, confidence and sentenc
   assert.equal(normalized.summary.confidenceCategory, "high");
   assert.deepEqual(normalized.summary.highlightedSentenceIndices, [0]);
   assert.equal(normalized.sentences[0].generatedProb, 0.9);
+});
+
+test("evidence registry separates implemented measurements from deeper planned NLP/statistical measures", () => {
+  const evidence = detectorEvidenceSummary();
+  assert.ok(evidence.version);
+  assert.equal(evidence.sources.length, 3);
+  assert.ok(evidence.sources.some((source) => source.doi === "10.1038/s41467-025-67145-1"));
+  assert.ok(evidence.sources.some((source) => source.doi === "10.1007/s40979-026-00213-1"));
+  assert.ok(evidence.sources.some((source) => source.doi === "10.1186/s40468-026-00433-9"));
+  const syntaxFamily = evidence.feature_families.find((family) => family.id === "syntactic_structure");
+  assert.ok(syntaxFamily.measures_now.length > 0);
+  assert.ok(syntaxFamily.planned.some((item) => /dependency-distance/i.test(item)));
+  assert.ok(evidence.classifier_families.some((family) => family.id === "hybrid_ensemble"));
 });
