@@ -31,8 +31,21 @@ jobsRouter.post("/jobs", (req, res) => {
   }
 
   try {
-    const job = createJob({ text, styleFilters: styleFilters || {}, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation });
-    res.status(202).json({ ...summarizeJob(job), requestId: req.requestId });
+    // Long Document currently processes chunks directly through the production
+    // rewrite pipeline rather than the single-editor pre-resolution route. Keep
+    // Deep Authorial Reconstruction semantically consistent here by reusing the
+    // aggressive structural engine at deep intensity. Preservation still runs on
+    // every chunk and again after reassembly.
+    const authorial = naturalisation === "authorial";
+    const job = createJob({
+      text,
+      styleFilters: styleFilters || {},
+      rewriteIntensity: authorial ? "deep" : rewriteIntensity,
+      grammarIntensity,
+      lengthPreference,
+      naturalisation: authorial ? "aggressive" : naturalisation,
+    });
+    res.status(202).json({ ...summarizeJob(job), requestedNaturalisation: naturalisation || "faithful", requestId: req.requestId });
   } catch (err) {
     if (err.code === "JOB_CONCURRENCY_LIMIT" || err.code === "JOB_STORE_FULL") {
       res.setHeader("Retry-After", "15");
