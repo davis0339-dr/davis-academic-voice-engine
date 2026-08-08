@@ -8,6 +8,8 @@ import { splitSentences, wordCount } from "./sentences.js";
 import { findRhetoricalScaffolding } from "./rhetoricalDiagnostics.js";
 import { analyseHumanDiscourse } from "./humanDiscourse.js";
 import { assessContrastiveLanguage } from "./contrastiveLanguage.js";
+import { parseTextStructure } from "./textStructure.js";
+import { analyseDiscourseArchitecture } from "./discourseArchitecture.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -161,6 +163,7 @@ function findMonotony(sentences) {
 
 export function diagnose(text) {
   const sentences = splitSentences(text);
+  const textStructure = parseTextStructure(text);
   const genericPhrasing = findGenericPhrasing(sentences);
   const transitionStacking = findTransitionStacking(sentences);
   const repeatedOpenings = findRepeatedOpenings(sentences);
@@ -168,6 +171,7 @@ export function diagnose(text) {
   const rhetoricalScaffolding = findRhetoricalScaffolding(sentences);
   const humanDiscourse = analyseHumanDiscourse(text);
   const contrastiveLanguage = assessContrastiveLanguage(text, { humanDiscourse });
+  const discourseArchitecture = analyseDiscourseArchitecture(text, textStructure);
   const monotony = findMonotony(sentences);
 
   const structuralMonotony = [
@@ -190,10 +194,12 @@ export function diagnose(text) {
 
   return {
     sentences,
+    text_structure: textStructure,
     generic_phrasing: genericPhrasing,
     structural_monotony: structuralMonotony,
     paragraph_patterns: paragraphPatterns,
     rhetorical_scaffolding: rhetoricalScaffolding,
+    discourse_architecture: discourseArchitecture,
     cohesion: transitionStacking,
     evidence_alignment: [],
     qualitative_human_discourse: humanDiscourse,
