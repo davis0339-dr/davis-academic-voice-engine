@@ -63,9 +63,7 @@ test("material authorial reconstruction is not misclassified as over-editing whe
       split_or_merge: 18,
       paragraph_reorders: 0,
     },
-    transformation_quality: {
-      unchanged_sentence_ratio: 0.02,
-    },
+    transformation_quality: { unchanged_sentence_ratio: 0.02 },
     preservation: preservationPassed(),
   });
 
@@ -75,7 +73,7 @@ test("material authorial reconstruction is not misclassified as over-editing whe
   assert.equal(compliance.execution_status, "passed");
 });
 
-test("nominal deep reconstruction that mostly preserves the old prose is rejected as under-executed", () => {
+test("nominal deep reconstruction is rejected for concrete structural under-execution while low visible change remains a separate variance", () => {
   const authority = deriveInterventionAuthority({
     planSummary: discourseHeavyPlan,
     authorialTexture: strongTexture,
@@ -95,14 +93,14 @@ test("nominal deep reconstruction that mostly preserves the old prose is rejecte
       split_or_merge: 0,
       paragraph_reorders: 0,
     },
-    transformation_quality: {
-      unchanged_sentence_ratio: 0.82,
-    },
+    transformation_quality: { unchanged_sentence_ratio: 0.82 },
     preservation: preservationPassed(),
   });
 
   assert.equal(compliance.execution_passed, false);
   assert.equal(compliance.under_executed, true);
-  assert.ok(compliance.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"));
+  assert.equal(compliance.plan_fidelity_status, "under-executed");
   assert.ok(compliance.under_execution_codes.includes("PLAN_STRUCTURAL_COVERAGE"));
+  assert.equal(compliance.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"), false);
+  assert.ok(compliance.execution_variance_codes.includes("VISIBLE_CHANGE_FLOOR"));
 });
