@@ -1,18 +1,20 @@
 // Semantic text-structure mapping used before intervention planning.
 // This layer is deliberately conservative: it identifies presentation units
-// (paragraphs, headings, list items and stand-alone quotations) so the planner
-// does not mistake formatting fragments for independent propositions.
+// (paragraphs, headings, list items, stand-alone quotations and page artifacts)
+// so the planner does not mistake formatting fragments for propositions.
 
 import { splitSentences, wordCount } from "./sentences.js";
 
 const LIST_ITEM_RE = /^\s*(?:[-*•]|\d{1,3}[.)]|[A-Za-z][.)])\s+\S/;
 const NUMBERED_HEADING_RE = /^\s*\d+(?:\.\d+)+\s+\S/;
+const PAGE_ARTIFACT_RE = /^\s*\d{1,4}\s*$/;
 const BLOCKQUOTE_RE = /^\s*>\s*\S/;
 const STANDALONE_QUOTE_RE = /^\s*[“\"][\s\S]+[”\"]\s*$/;
 
 function looksLikeHeading(text) {
   const trimmed = text.trim();
   if (!trimmed || trimmed.includes("\n")) return false;
+  if (PAGE_ARTIFACT_RE.test(trimmed)) return false;
   if (NUMBERED_HEADING_RE.test(trimmed)) return true;
   const words = wordCount(trimmed);
   if (words === 0 || words > 14) return false;
@@ -22,6 +24,7 @@ function looksLikeHeading(text) {
 
 function classifyBlock(text) {
   const trimmed = text.trim();
+  if (PAGE_ARTIFACT_RE.test(trimmed)) return "page_artifact";
   if (LIST_ITEM_RE.test(trimmed)) return "list_item";
   if (looksLikeHeading(trimmed)) return "heading";
   if ((BLOCKQUOTE_RE.test(trimmed) || STANDALONE_QUOTE_RE.test(trimmed)) && wordCount(trimmed) <= 80) {
@@ -90,12 +93,13 @@ export function parseTextStructure(text) {
   });
 
   return {
-    measurement_version: "semantic-structure-v1",
+    measurement_version: "semantic-structure-v2",
     blocks,
     block_count: blocks.length,
     paragraph_count: blocks.filter((block) => block.type === "paragraph").length,
     list_item_count: blocks.filter((block) => block.type === "list_item").length,
     heading_count: blocks.filter((block) => block.type === "heading").length,
     quotation_count: blocks.filter((block) => block.type === "quotation").length,
+    page_artifact_count: blocks.filter((block) => block.type === "page_artifact").length,
   };
 }
