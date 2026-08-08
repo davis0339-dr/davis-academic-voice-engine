@@ -14,9 +14,7 @@ function baseResult(overrides = {}) {
       paragraph_reorders: 0,
       flags_for_author: [],
     },
-    transformation_quality: {
-      unchanged_sentence_ratio: 0.42,
-    },
+    transformation_quality: { unchanged_sentence_ratio: 0.42 },
     preservation: {
       numbers_ok: true,
       citations_ok: true,
@@ -39,6 +37,7 @@ const highPreservationAuthority = {
 test("passes execution when model work broadly matches a demanding discourse-reconstruction plan", () => {
   const result = assessExecutionCompliance(baseResult());
   assert.equal(result.execution_passed, true);
+  assert.equal(result.plan_fidelity_status, "passed");
   assert.equal(result.preservation_ok, true);
   assert.equal(result.candidate_status, "accepted");
   assert.equal(result.planned.intervention, 41);
@@ -47,7 +46,7 @@ test("passes execution when model work broadly matches a demanding discourse-rec
   assert.equal(result.structural_coverage, 1);
 });
 
-test("flags the observed 41-planned-versus-24-executed mismatch as under-execution", () => {
+test("flags the observed 41-planned-versus-24-executed mismatch as concrete under-execution", () => {
   const result = assessExecutionCompliance(baseResult({
     edit_summary: {
       kept: 58,
@@ -63,6 +62,7 @@ test("flags the observed 41-planned-versus-24-executed mismatch as under-executi
   assert.equal(result.execution_passed, false);
   assert.equal(result.preservation_ok, true);
   assert.equal(result.candidate_status, "execution_under");
+  assert.equal(result.plan_fidelity_status, "under-executed");
   assert.equal(result.planned.intervention, 41);
   assert.equal(result.reported.intervention, 24);
   assert.ok(result.intervention_coverage < 0.67);
@@ -90,10 +90,10 @@ test("does not convert a high-preservation 95% maximum ceiling into a rewrite ta
   assert.equal(result.changed_sentence_ratio, 0.59);
   assert.equal(result.minimum_changed_sentence_ratio, 0.35);
   assert.equal(result.changed_sentence_ceiling, 0.95);
-  assert.ok(!result.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"));
+  assert.equal(result.execution_variance_codes.length, 0);
 });
 
-test("independent source/revision evidence still catches implausibly unchanged output below the preservation-aware floor", () => {
+test("below-floor visible change becomes reviewable variance rather than plan under-execution", () => {
   const result = assessExecutionCompliance(baseResult({
     intervention_plan_summary: { SENTENCE_RESTRUCTURE: 34, SPLIT_OR_MERGE: 5 },
     edit_summary: {
@@ -107,9 +107,15 @@ test("independent source/revision evidence still catches implausibly unchanged o
     transformation_quality: { unchanged_sentence_ratio: 0.9 },
     intervention_authority: highPreservationAuthority,
   }));
-  assert.equal(result.execution_passed, false);
-  assert.ok(result.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"));
-  assert.ok(result.execution_reasons.some((reason) => /plausibility floor/i.test(reason)));
+
+  assert.equal(result.execution_passed, true);
+  assert.equal(result.execution_status, "passed-with-variance");
+  assert.equal(result.plan_fidelity_status, "passed");
+  assert.equal(result.under_executed, false);
+  assert.equal(result.candidate_status, "accepted_with_execution_variance");
+  assert.ok(result.execution_variance_codes.includes("VISIBLE_CHANGE_FLOOR"));
+  assert.equal(result.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"), false);
+  assert.ok(result.execution_variance_reasons.some((reason) => /not a rewrite target/i.test(reason)));
 });
 
 test("discourse-repackage scope is not treated as 34 obligatory sentence rewrites", () => {
