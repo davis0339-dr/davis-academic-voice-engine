@@ -125,6 +125,13 @@
     const opening = report.candidate_profiles?.opening_two_paragraphs || {};
     const consensus = report.detector_consensus || {};
     const obs = consensus.observations || [];
+    const flagged = report.flagged_sentence_analysis || {};
+    const flaggedSummary = flagged.available ? `
+      <div class="research-summary-grid">
+        <div><span>Flagged sentence share</span><strong>${pct(flagged.flagged_share)}</strong></div>
+        <div><span>Opening 2 paragraphs flagged</span><strong>${pct(flagged.opening_two_paragraphs?.flagged_share)}</strong></div>
+        <div><span>Remainder flagged</span><strong>${pct(flagged.remainder?.flagged_share)}</strong></div>
+      </div>` : `<p class="muted">${escapeHtml(flagged.reason || "No sentence-level highlights supplied.")}</p>`;
     target.innerHTML = `
       <section class="detector-research-report">
         <h4>Detector Research Lab</h4>
@@ -137,6 +144,7 @@
           <div><span>Cross-detector disagreement</span><strong>${consensus.disagreement ? "YES" : "no"}</strong></div>
         </div>
         ${obs.length ? `<div class="research-observation-strip">${obs.map((o) => `<span>${escapeHtml(o.detector)}${o.version ? ` ${escapeHtml(o.version)}` : ""}: ${escapeHtml(o.classification || "n/a")}${Number.isFinite(o.ai_score) ? ` (${escapeHtml(o.ai_score)}% AI)` : ""}</span>`).join("")}</div>` : ""}
+        <h4>Sentence-highlight distribution</h4>${flaggedSummary}
         <h4>Measured linguistic profile</h4>
         <table class="research-table"><thead><tr><th>Metric</th><th>Source</th><th>Revised</th><th>Revised opening 2 paragraphs</th></tr></thead><tbody>${profileRows(source, candidate, opening)}</tbody></table>
         <h4>Research hypotheses from this run</h4>
@@ -168,8 +176,6 @@
     }
   }
 
-  // Observe configured detector scans that the existing app already performs.
-  // Their normalized scores become labelled evidence for the research view.
   window.fetch = async function detectorResearchFetch(input, init) {
     const url = typeof input === "string" ? input : input?.url || "";
     const response = await nativeFetch(input, init);
@@ -184,7 +190,7 @@
             existing.aiScore === item.aiScore &&
             existing.notes === `configured ${targetLabel} scan`
           );
-          if (!duplicate) observations.push({ ...item, notes: `configured ${targetLabel} scan` });
+          if (!duplicate) observations.push({ ...item, notes: item.notes ? `${item.notes}; configured ${targetLabel} scan` : `configured ${targetLabel} scan` });
         }
         observations = observations.slice(-20);
         saveObservations();
@@ -200,4 +206,12 @@
   $("addDetectorObservationBtn")?.addEventListener("click", addManualObservation);
   $("clearDetectorObservationsBtn")?.addEventListener("click", clearObservations);
   $("analyseDetectorResearchBtn")?.addEventListener("click", runResearch);
+
+  if (!document.querySelector('script[data-detector-evidence-ui="true"]')) {
+    const script = document.createElement("script");
+    script.src = "/detectorEvidenceUI.js";
+    script.dataset.detectorEvidenceUi = "true";
+    script.defer = true;
+    document.head.appendChild(script);
+  }
 })();
