@@ -11,7 +11,9 @@ const EXPLICIT_TRANSITION_RE = /^(?:however|moreover|furthermore|additionally|th
 const PACKAGING_RE = /\b(?:two|three|four|five|several)\s+(?:principal\s+|main\s+|major\s+|mutually\s+reinforcing\s+)?(?:findings|contributions|pillars|implications|reasons|points|steps|arguments|attributes|dimensions|themes|patterns|lessons)\b/i;
 const CLOSURE_RE = /(?:^(?:thus|therefore|consequently|accordingly|overall|together|in sum|taken together)\b|\b(?:this|these|the evidence|the pattern|the result|the finding|the implication)\s+(?:therefore\s+)?(?:shows?|suggests?|indicates?|implies?|demonstrates?|means?|supports?|reveals?)\b)/i;
 const APHORISTIC_RE = /(?:\b(?:is|are)\s+not\s+[^,.!?;:]{1,70}\bbut\b|^(?:the\s+)?(?:point|answer|problem|goal|distinction|lesson|result|signal)\s+(?:is|lies|remains)\b|\bmasquerad(?:e|es|ing)\s+as\b|\bwearing\s+an?\b)/i;
-const PARALLEL_CONTRAST_RE = /\b(?:on the one hand|on the other hand|the .* view holds|rather than|not .* but|while .*[,;]\s*(?:the|a|an) .* )\b/i;
+// Keep this deliberately bounded. Broad greedy patterns over whole academic
+// sentences can produce false rhetorical-symmetry flags and unnecessary edits.
+const PARALLEL_CONTRAST_RE = /(?:\bon the one hand\b|\bon the other hand\b|\brather than\b|\bnot\b[^.!?;]{1,100}\bbut\b|\bthe\s+[A-Za-z-]+(?:\s+[A-Za-z-]+){0,3}\s+view\s+holds\b)/i;
 const CITATION_RE = /(?:\([^)\n]{0,180}(?:18|19|20)\d{2}[a-z]?[^)\n]*\)|\b[A-Z][A-Za-z'’-]+(?:\s+(?:&|and)\s+[A-Z][A-Za-z'’-]+|\s+et al\.)?\s*\((?:18|19|20)\d{2}[a-z]?\))/;
 
 function ratio(numerator, denominator) {
