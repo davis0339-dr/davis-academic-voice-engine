@@ -33,7 +33,7 @@ export function assessIterativeRegularisation({ sourceText, candidateText, rewri
   const lineage = normaliseRewriteLineage(rewriteLineage, sourceText);
   const chained = lineage.chained_from_prior_revision;
   // With lineage, compare against the retained original authorial register. Without
-  // lineage, compare against the immediate source so a single Deep pass still cannot
+  // lineage, compare against the immediate source so even one rewrite pass cannot
   // improve its score merely by making vocabulary longer, denser or more abstract.
   const baselineText = chained ? lineage.root_source_text : String(sourceText || "");
   const root = measureLanguageFingerprint(baselineText);
@@ -130,17 +130,16 @@ export function iterativeRegularisationPenalty(assessment) {
   return Math.min(1.25, finite(assessment.score) * 0.28);
 }
 
-export function buildIterativeRewriteDirective({ sourceText, rewriteLineage, aggressive = false } = {}) {
+export function buildIterativeRewriteDirective({ sourceText, rewriteLineage } = {}) {
   const lineage = normaliseRewriteLineage(rewriteLineage, sourceText);
   if (!lineage.chained_from_prior_revision) {
-    if (!aggressive) return "";
     return [
       "",
-      "--- DEEP RECONSTRUCTION ANTI-REGULARISATION GUARD ---",
-      "Deep reconstruction authorises structural redevelopment where diagnosed. It does NOT authorise automatic lexical elevation, denser vocabulary, extra nominalisation, longer words, or uniformly polished sentence shapes.",
+      "--- REVISION ANTI-REGULARISATION GUARD ---",
+      "Revision authority does NOT authorise automatic lexical elevation, denser vocabulary, extra nominalisation, longer words, or uniformly polished sentence shapes. Those changes are separate from legitimate structural improvement.",
       "Do not turn simple academic wording into abstract noun phrases merely to make the revision look more sophisticated. Prefer clear verbs and ordinary disciplinary language where they carry the meaning accurately.",
       "Structural difference and lexical sophistication are separate dimensions. Change clause architecture, information order or paragraph reasoning when the plan requires it, but keep the writer's lexical register unless a specific wording defect justifies change.",
-      "Do not manufacture roughness or mistakes. The aim is defensible academic prose with natural variation, not a detector score and not a maximally polished machine register.",
+      "Do not manufacture roughness or mistakes. The aim is defensible academic prose with natural variation, not a detector score, not maximum textual distance, and not a uniformly polished machine register.",
     ].join("\n");
   }
 
