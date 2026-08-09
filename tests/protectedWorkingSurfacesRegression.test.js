@@ -15,7 +15,7 @@ test("the working 1,500-word editor remains intact while Long Document evolves s
   assert.match(limits, /SINGLE_EDITOR_WORD_LIMIT\s*=\s*1500/);
   assert.match(app, /analyseOnlyBtn\.addEventListener/);
   assert.match(app, /analyseReviseBtn\.addEventListener/);
-  assert.match(app, /startJobBtn\.addEventListener\("click", startLongDocJob\)/);
+  assert.match(app, /\$\("startJobBtn"\)\.addEventListener\("click", startLongDocJob\)/);
   assert.match(optionalFeatures, /\/longDocumentIntelligenceUI\.js/);
 });
 
