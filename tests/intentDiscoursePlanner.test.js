@@ -72,7 +72,7 @@ test("auto mode recommends discourse reconstruction when global architecture is 
     lengthPreference: "maintain",
     naturalisation: "faithful",
   });
-  assert.equal(plan.plannerVersion, "intent-discourse-v3");
+  assert.equal(plan.plannerVersion, "intent-discourse-v4");
   assert.deepEqual(plan.sequence, [...PLANNER_SEQUENCE]);
   assert.equal(plan.intent.recommended, INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION);
   assert.equal(plan.intent.effective, INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION);
