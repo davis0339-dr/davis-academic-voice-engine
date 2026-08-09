@@ -1,6 +1,6 @@
 // Long-document background jobs with whole-document understanding, per-chunk
-// diagnosis-scoped execution, safe fallback, retries, preservation and a final
-// cross-chunk regularisation audit.
+// diagnosis-guided execution, preservation, transformation-coverage recovery,
+// and final cross-chunk regularisation safeguards.
 
 import { randomUUID } from "node:crypto";
 import { buildDocumentMap } from "./documentMap.js";
@@ -12,13 +12,15 @@ import {
   buildWholeDocumentBlueprint,
   compactBlueprintForChunk,
   deriveLongDocumentChunkPolicy,
+  auditTransformationCoverage,
   auditWholeDocumentRegularity,
+  coverageRecoveryContext,
   globalRepairContext,
 } from "./longDocumentIntelligence.js";
 
 const jobs = new Map();
 const MAX_TRANSIENT_ATTEMPTS = 4;
-const MAX_GLOBAL_REPAIR_CHUNKS = 4;
+const MAX_GLOBAL_REPAIR_CHUNKS = 6;
 const TRANSIENT_CODES = new Set([
   "NETWORK_TIMEOUT",
   "RATE_LIMITED",
@@ -35,6 +37,7 @@ function intEnv(name, fallback, min, max) {
 
 const MAX_ACTIVE_JOBS = intEnv("MAX_ACTIVE_LONGDOC_JOBS", 2, 1, 10);
 const MAX_STORED_JOBS = intEnv("MAX_STORED_LONGDOC_JOBS", 24, 4, 200);
+const MAX_COVERAGE_RECOVERY_CHUNKS = intEnv("MAX_LONGDOC_COVERAGE_RECOVERY_CHUNKS", 16, 4, 30);
 const JOB_TTL_MS = intEnv("LONGDOC_JOB_TTL_MINUTES", 120, 15, 1440) * 60 * 1000;
 const COMPLETED_JOB_TTL_MS = intEnv("COMPLETED_JOB_TTL_MINUTES", 30, 5, 240) * 60 * 1000;
 
@@ -108,10 +111,9 @@ function stripLeadingRepeatedHeading(text, heading) {
 }
 
 function assembleChunkText(chunk) {
-  const body =
-    chunk.status === "done"
-      ? chunk.revisedText
-      : `[UNREVISED -- failed chunk; original text kept so nothing is silently dropped]\n${chunk.sourceText}`;
+  const body = chunk.status === "done"
+    ? chunk.revisedText
+    : `[UNREVISED -- failed chunk; original text kept so nothing is silently dropped]\n${chunk.sourceText}`;
   const shouldAttachHeading = chunk.heading && chunk.reattachHeading !== false;
   return shouldAttachHeading ? `${chunk.heading}\n\n${body}` : body;
 }
@@ -161,7 +163,7 @@ function previousRevisedTail(job, chunk, maxChars = 500) {
   return String(text).slice(-maxChars).trim();
 }
 
-async function processChunk(job, chunk, { globalRepair = false } = {}) {
+async function processChunk(job, chunk, { globalRepair = false, coverageRecovery = false } = {}) {
   chunk.status = "processing";
   chunk.error = null;
   chunk.attempts = chunk.attempts || 0;
@@ -187,9 +189,11 @@ async function processChunk(job, chunk, { globalRepair = false } = {}) {
   });
   chunk.executionPolicy = policy;
 
-  const baseDocumentContext = globalRepair
-    ? globalRepairContext(job.wholeDocumentBlueprint, job.wholeDocumentAudit, chunk)
-    : compactBlueprintForChunk(job.wholeDocumentBlueprint, chunk);
+  const baseDocumentContext = coverageRecovery
+    ? coverageRecoveryContext(job.wholeDocumentBlueprint, job.transformationCoverage, chunk)
+    : globalRepair
+      ? globalRepairContext(job.wholeDocumentBlueprint, job.wholeDocumentAudit, chunk)
+      : compactBlueprintForChunk(job.wholeDocumentBlueprint, chunk);
 
   for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt++) {
     chunk.attempts += 1;
@@ -197,10 +201,10 @@ async function processChunk(job, chunk, { globalRepair = false } = {}) {
       const result = await rewrite({
         sourceText: chunk.sourceText,
         styleFilters: chunkStyleFilters,
-        rewriteIntensity: policy.effective.intensity,
+        rewriteIntensity: coverageRecovery ? "deep" : policy.effective.intensity,
         grammarIntensity: job.options.grammarIntensity,
-        lengthPreference: globalRepair ? "maintain" : policy.effective.lengthPreference,
-        naturalisation: globalRepair ? "faithful" : policy.effective.naturalisation,
+        lengthPreference: (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference,
+        naturalisation: coverageRecovery ? "aggressive" : globalRepair ? "faithful" : policy.effective.naturalisation,
         precedingContext: previousRevisedTail(job, chunk) || chunk.precedingContextTail,
         documentGlossary: job.documentMap.glossary,
         documentContext: baseDocumentContext,
@@ -225,6 +229,7 @@ async function processChunk(job, chunk, { globalRepair = false } = {}) {
       chunk.status = "done";
       chunk.error = null;
       if (globalRepair) chunk.globalRepairApplied = true;
+      if (coverageRecovery) chunk.coverageRecoveryApplied = true;
       finishChunkTiming(chunk);
       return;
     } catch (err) {
@@ -241,10 +246,10 @@ async function processChunk(job, chunk, { globalRepair = false } = {}) {
         continue;
       }
 
-      if (globalRepair && chunk.revisedText) {
-        // A failed optional repair must never destroy an already preserved first-pass candidate.
+      if ((globalRepair || coverageRecovery) && chunk.revisedText) {
         chunk.status = "done";
-        chunk.globalRepairError = { code, message: err.message };
+        if (globalRepair) chunk.globalRepairError = { code, message: err.message };
+        if (coverageRecovery) chunk.coverageRecoveryError = { code, message: err.message };
         finishChunkTiming(chunk);
         return;
       }
@@ -261,11 +266,57 @@ function assembleAndAudit(job) {
   const reassembledText = job.chunks.map(assembleChunkText).join("\n\n");
   job.reassembledText = reassembledText;
   job.documentPreservation = auditPreservation(job.sourceText, reassembledText, job.documentMap.protectedSpans);
+  job.transformationCoverage = auditTransformationCoverage({
+    sourceText: job.sourceText,
+    revisedText: reassembledText,
+    chunks: job.chunks,
+    requestedIntensity: job.options.rewriteIntensity,
+    requestedNaturalisation: job.options.naturalisation,
+  });
   job.wholeDocumentAudit = auditWholeDocumentRegularity({
     sourceText: job.sourceText,
     revisedText: reassembledText,
     chunks: job.chunks,
   });
+}
+
+async function recoverTransformationCoverage(job) {
+  const audit = job.transformationCoverage;
+  job.coverageRepair = { attempted: false, targetChunkIndices: [], repairedChunkIndices: [] };
+  if (!audit?.enforced || audit.passed || !audit.target_chunk_indices.length) return;
+
+  const dynamicLimit = Math.min(
+    MAX_COVERAGE_RECOVERY_CHUNKS,
+    Math.max(4, Math.ceil(job.chunks.filter((c) => c.rewriteMode !== "passthrough").length * 0.6))
+  );
+  job.coverageRepair.attempted = true;
+  job.coverageRepair.targetChunkIndices = audit.target_chunk_indices.slice(0, dynamicLimit);
+  job.phase = "transformation_coverage_recovery";
+
+  for (const index of job.coverageRepair.targetChunkIndices) {
+    const chunk = job.chunks.find((item) => item.index === index);
+    if (!chunk || chunk.status !== "done" || chunk.rewriteMode === "passthrough") continue;
+    await processChunk(job, chunk, { coverageRecovery: true });
+    if (chunk.coverageRecoveryApplied) job.coverageRepair.repairedChunkIndices.push(index);
+  }
+  assembleAndAudit(job);
+}
+
+async function repairWholeDocumentRegularity(job) {
+  job.globalRepair = { attempted: false, targetChunkIndices: [], repairedChunkIndices: [] };
+  if (job.wholeDocumentAudit?.passed || !job.wholeDocumentAudit?.target_chunk_indices?.length) return;
+
+  job.globalRepair.attempted = true;
+  job.globalRepair.targetChunkIndices = job.wholeDocumentAudit.target_chunk_indices.slice(0, MAX_GLOBAL_REPAIR_CHUNKS);
+  job.phase = "selective_global_repair";
+
+  for (const index of job.globalRepair.targetChunkIndices) {
+    const chunk = job.chunks.find((item) => item.index === index);
+    if (!chunk || chunk.status !== "done" || chunk.rewriteMode === "passthrough") continue;
+    await processChunk(job, chunk, { globalRepair: true });
+    if (chunk.globalRepairApplied) job.globalRepair.repairedChunkIndices.push(index);
+  }
+  assembleAndAudit(job);
 }
 
 async function finalizeJob(job) {
@@ -274,24 +325,18 @@ async function finalizeJob(job) {
   if (!allAttempted) return;
 
   assembleAndAudit(job);
-  job.globalRepair = { attempted: false, targetChunkIndices: [], repairedChunkIndices: [] };
 
-  if (!job.wholeDocumentAudit.passed && job.wholeDocumentAudit.target_chunk_indices.length) {
-    job.globalRepair.attempted = true;
-    job.globalRepair.targetChunkIndices = job.wholeDocumentAudit.target_chunk_indices.slice(0, MAX_GLOBAL_REPAIR_CHUNKS);
-    job.phase = "selective_global_repair";
-
-    for (const index of job.globalRepair.targetChunkIndices) {
-      const chunk = job.chunks.find((item) => item.index === index);
-      if (!chunk || chunk.status !== "done" || chunk.rewriteMode === "passthrough") continue;
-      await processChunk(job, chunk, { globalRepair: true });
-      if (chunk.globalRepairApplied) job.globalRepair.repairedChunkIndices.push(index);
-    }
-    assembleAndAudit(job);
-  }
+  // The previous implementation only repaired regularity. That could produce a
+  // superficially safer candidate while 80%+ of substantive paragraphs remained
+  // untouched. Recover selected-mode execution first, then audit/repair any new
+  // cross-chunk regularity created by the deeper reconstruction.
+  await recoverTransformationCoverage(job);
+  await repairWholeDocumentRegularity(job);
 
   const anyFailed = job.chunks.some((c) => c.status === "failed");
-  job.candidateStatus = job.wholeDocumentAudit.passed ? "accepted" : "review_required";
+  const coveragePassed = job.transformationCoverage?.passed !== false;
+  const regularityPassed = job.wholeDocumentAudit?.passed !== false;
+  job.candidateStatus = coveragePassed && regularityPassed ? "accepted" : "review_required";
   job.status = anyFailed ? "completed_with_errors" : "completed";
   job.phase = job.candidateStatus === "accepted" ? "complete" : "complete_review_required";
   job.completedAt = new Date().toISOString();
@@ -355,6 +400,8 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
     documentMap,
     wholeDocumentBlueprint: null,
     wholeDocumentAudit: null,
+    transformationCoverage: null,
+    coverageRepair: null,
     globalRepair: null,
     chunkMethod: method,
     chunkPolicy: { targetWords, hardMaxWords },
@@ -370,6 +417,8 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
       interventionIntent: null,
       executionPolicy: null,
       plannerScopePolicyVersion: null,
+      coverageRecoveryApplied: false,
+      coverageRecoveryError: null,
       globalRepairApplied: false,
       globalRepairError: null,
       inferredSection: inferSectionFromHeading(c.heading),
@@ -411,6 +460,8 @@ export function retryChunk(jobId, chunkIndex) {
   chunk.error = null;
   chunk.transformationQuality = null;
   chunk.languageQuality = null;
+  chunk.coverageRecoveryApplied = false;
+  chunk.coverageRecoveryError = null;
   chunk.globalRepairApplied = false;
   chunk.globalRepairError = null;
   chunk.startedAt = null;
@@ -421,6 +472,8 @@ export function retryChunk(jobId, chunkIndex) {
   job.completedAt = null;
   job.reassembledText = null;
   job.documentPreservation = null;
+  job.transformationCoverage = null;
+  job.coverageRepair = null;
   job.wholeDocumentAudit = null;
   job.globalRepair = null;
   job.providerBlock = null;
@@ -471,6 +524,12 @@ export function summarizeJob(job) {
     startedAt: job.startedAt,
     completedAt: job.completedAt,
     expiresAfterMinutes: job.completedAt ? Math.round(COMPLETED_JOB_TTL_MS / 60000) : Math.round(JOB_TTL_MS / 60000),
+    requestedOptions: {
+      rewriteIntensity: job.options.rewriteIntensity || "auto",
+      grammarIntensity: job.options.grammarIntensity || "standard",
+      lengthPreference: job.options.lengthPreference || "auto",
+      naturalisation: job.options.naturalisation || "faithful",
+    },
     chunkMethod: job.chunkMethod,
     chunkPolicy: job.chunkPolicy,
     progress: { chunkCount, doneCount, failedCount, processingCount, passthroughCount, averageChunkDurationMs, estimatedRemainingMs },
@@ -482,6 +541,8 @@ export function summarizeJob(job) {
       wordCount: job.documentMap.wordCount,
     },
     wholeDocumentBlueprint: blueprint,
+    transformationCoverage: job.transformationCoverage,
+    coverageRepair: job.coverageRepair,
     wholeDocumentAudit: job.wholeDocumentAudit,
     globalRepair: job.globalRepair,
     chunks: job.chunks.map((c) => ({
@@ -503,6 +564,8 @@ export function summarizeJob(job) {
       interventionIntent: c.interventionIntent,
       executionPolicy: c.executionPolicy,
       plannerScopePolicyVersion: c.plannerScopePolicyVersion,
+      coverageRecoveryApplied: c.coverageRecoveryApplied,
+      coverageRecoveryError: c.coverageRecoveryError,
       globalRepairApplied: c.globalRepairApplied,
       globalRepairError: c.globalRepairError,
     })),
