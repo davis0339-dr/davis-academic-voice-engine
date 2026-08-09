@@ -17,12 +17,20 @@ export function shouldAttemptAuthorialExecutionRecovery({
   overExecutionRecoveryUsed = false,
 } = {}) {
   // Recovery belongs to explicit Deep structural modes, not only the user-facing
-  // Authorial label. Otherwise Deep/Aggressive can diagnose material structural
-  // work, under-execute it, and still be denied the dedicated execution retry that
-  // Deep/Authorial receives. Minor/Moderate remain hard ceilings.
-  const deepStructuralAllowed = modePolicy?.requested_intensity === "deep" &&
+  // Authorial label. Keep compatibility with older callers/tests that supplied
+  // only authorial_reconstruction=true before depth_permission was introduced.
+  const legacyAuthorialDeep = Boolean(
+    modePolicy?.authorial_reconstruction === true &&
+    modePolicy?.requested_intensity == null &&
+    modePolicy?.depth_permission == null
+  );
+  const explicitDeepStructural = Boolean(
+    modePolicy?.requested_intensity === "deep" &&
     modePolicy?.depth_permission === "deep_where_diagnosed" &&
-    modePolicy?.adaptive_reconstruction !== false;
+    modePolicy?.adaptive_reconstruction !== false
+  );
+  const deepStructuralAllowed = legacyAuthorialDeep || explicitDeepStructural;
+
   return Boolean(
     deepStructuralAllowed &&
     !sourceRetainedForSafety &&
