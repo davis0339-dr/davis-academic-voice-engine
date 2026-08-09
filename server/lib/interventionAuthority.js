@@ -38,13 +38,14 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
   const explicitModerate = intensity === "moderate";
   const authorialMode = requestedNaturalisation === "authorial" && intensity === "deep";
   const authorialDiscourseMode = authorialMode && effectiveIntent === "discourse_reconstruction";
+  const deepDiscourseMode = intensity === "deep" && effectiveIntent === "discourse_reconstruction";
 
   // Author-choice ceilings come before corpus/style ambition. Minor is genuinely
   // local. Moderate permits sentence/flow work but does not authorise paragraph
   // repackaging merely because the diagnostics would have preferred it.
   if (explicitMinor) {
     return {
-      version: "intervention-authority-v5",
+      version: "intervention-authority-v6",
       preservation_priority: priority,
       preservation_basis: "surface_and_semantic_fidelity",
       surface_preservation_required: true,
@@ -69,7 +70,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
 
   if (explicitModerate) {
     return {
-      version: "intervention-authority-v5",
+      version: "intervention-authority-v6",
       preservation_priority: priority,
       preservation_basis: "surface_and_semantic_fidelity",
       surface_preservation_required: true,
@@ -103,7 +104,8 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     : (priority === "high" ? 0.65 : priority === "medium" ? 0.50 : 0.35);
   const breadth = authorialMode
     ? "semantic_fidelity_broad_reconstruction"
-    : priority === "high" ? "targeted" : priority === "medium" ? "selective" : "broad_if_diagnosed";
+    : deepDiscourseMode ? "diagnosed_deep_reconstruction"
+      : priority === "high" ? "targeted" : priority === "medium" ? "selective" : "broad_if_diagnosed";
 
   const ordinaryMinimumChanged = Math.max(0, interventionRatio - minimumSlack);
   const authorialPlanDemand = clamp(substantiveRatio, 0, 1);
@@ -111,8 +113,15 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     ? clamp(Math.max(0.15, authorialPlanDemand * 0.35), 0, 0.55)
     : ordinaryMinimumChanged;
 
-  const ordinaryMaxChanged = clamp(interventionRatio + changeMargin, 0.12, 0.95);
-  const ordinaryMaxSubstantive = clamp(substantiveRatio + substantiveMargin, 0.10, 0.92);
+  // A Deep discourse-reconstruction plan can legitimately place every sentence in
+  // intervention scope. A hard 95% cap then converts a faithful 100% structural
+  // execution into a false over-editing failure and triggers the surgical fallback.
+  // Let the planner determine scope: only Deep + discourse reconstruction can reach
+  // a 100% breadth ceiling, and preservation remains an independent hard gate.
+  const ordinaryChangedUpper = deepDiscourseMode && interventionRatio >= 0.85 ? 1 : 0.95;
+  const ordinarySubstantiveUpper = deepDiscourseMode && substantiveRatio >= 0.85 ? 1 : 0.92;
+  const ordinaryMaxChanged = clamp(interventionRatio + changeMargin, 0.12, ordinaryChangedUpper);
+  const ordinaryMaxSubstantive = clamp(substantiveRatio + substantiveMargin, 0.10, ordinarySubstantiveUpper);
   const authorialMaxChanged = clamp(interventionRatio + changeMargin, 0.20, 1);
   const authorialStructuralEnvelope = clamp(substantiveRatio + discourseRatio + 0.15, 0.35, 1);
   const authorialMaxSubstantive = authorialDiscourseMode
@@ -120,7 +129,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     : clamp(substantiveRatio + substantiveMargin, 0.15, 1);
 
   return {
-    version: "intervention-authority-v5",
+    version: "intervention-authority-v6",
     preservation_priority: priority,
     preservation_basis: authorialMode ? "semantic_evidential_fidelity" : "surface_and_semantic_fidelity",
     surface_preservation_required: !authorialMode,
@@ -145,6 +154,8 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     effective_intent: effectiveIntent || null,
     rule: authorialMode
       ? "Deep Authorial Reconstruction preserves argument, evidence, citations, numbers, methods, variables, qualifications, epistemic strength, factual relationships and technical meaning; it does not require preservation of source sentence wording or sentence boundaries. Maximum breadth is an authority ceiling and the minimum is only an execution safeguard, never a rewrite target."
-      : "Maximum changed-sentence breadth is an authorised disturbance ceiling, never a rewrite target. Minimum changed-sentence breadth is only a plausibility safeguard for demanding plans. Diagnosis determines where intervention is warranted; clean text may remain unchanged.",
+      : deepDiscourseMode
+        ? "Deep discourse reconstruction may redevelop every diagnosed sentence when the planner places the whole passage in intervention scope. The breadth ceiling follows that diagnosed scope rather than imposing an arbitrary 95% cap; factual and semantic preservation remain separate hard requirements."
+        : "Maximum changed-sentence breadth is an authorised disturbance ceiling, never a rewrite target. Minimum changed-sentence breadth is only a plausibility safeguard for demanding plans. Diagnosis determines where intervention is warranted; clean text may remain unchanged.",
   };
 }

@@ -16,10 +16,23 @@ export function shouldAttemptAuthorialExecutionRecovery({
   sourceRetainedForSafety = false,
   overExecutionRecoveryUsed = false,
 } = {}) {
-  const deepAuthorialAllowed = modePolicy?.authorial_reconstruction &&
-    (!modePolicy?.requested_intensity || modePolicy.requested_intensity === "deep");
+  // Recovery belongs to explicit Deep structural modes, not only the user-facing
+  // Authorial label. Keep compatibility with older callers/tests that supplied
+  // only authorial_reconstruction=true before depth_permission was introduced.
+  const legacyAuthorialDeep = Boolean(
+    modePolicy?.authorial_reconstruction === true &&
+    modePolicy?.requested_intensity == null &&
+    modePolicy?.depth_permission == null
+  );
+  const explicitDeepStructural = Boolean(
+    modePolicy?.requested_intensity === "deep" &&
+    modePolicy?.depth_permission === "deep_where_diagnosed" &&
+    modePolicy?.adaptive_reconstruction !== false
+  );
+  const deepStructuralAllowed = legacyAuthorialDeep || explicitDeepStructural;
+
   return Boolean(
-    deepAuthorialAllowed &&
+    deepStructuralAllowed &&
     !sourceRetainedForSafety &&
     !overExecutionRecoveryUsed &&
     compliance?.preservation_ok &&
@@ -54,8 +67,8 @@ export function buildAuthorialExecutionRecoveryDirective({ attempt = 1, complian
 
   return [
     "",
-    "--- DEEP AUTHORIAL EXECUTION RECOVERY ---",
-    `Recovery attempt ${Number(attempt) || 1}. The previous Deep Authorial candidate under-executed concrete diagnosed work. Do not treat a concrete execution failure as a safety-preserving success.`,
+    "--- DEEP STRUCTURAL EXECUTION RECOVERY ---",
+    `Recovery attempt ${Number(attempt) || 1}. The previous Deep candidate under-executed concrete diagnosed work. Do not treat a concrete execution failure as a safety-preserving success.`,
     "The ORIGINAL SOURCE below remains the factual authority. Preserve semantic and evidential fidelity: argument, claims, citations, quotations, numbers, variables, methods, technical terms, qualifications, epistemic strength, study stage and factual relationships.",
     "Those preservation constraints protect intellectual content; they do NOT require preserving source sentence wording, sentence boundaries, clause order or paragraph packaging when the supplied plan calls for reconstruction.",
     `Under-execution codes: ${codes.length ? codes.join(", ") : "unspecified"}.`,

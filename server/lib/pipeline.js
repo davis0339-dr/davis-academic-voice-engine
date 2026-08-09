@@ -14,6 +14,13 @@ import { measureLanguageFingerprint } from "./languageFingerprint.js";
 import { assessLanguageDeviation } from "./languageFamilyEngine.js";
 import { getBuildInfo } from "./buildInfo.js";
 import { parseStructuredResponseText, buildJsonRepairSystemPrompt } from "./modelResponse.js";
+import {
+  assessIterativeRegularisation,
+  buildIterativeRewriteDirective,
+  iterativeCorrectionBlock,
+  iterativeRegularisationPenalty,
+  normaliseRewriteLineage,
+} from "./iterativeRewriteGuard.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
 
@@ -171,18 +178,16 @@ function qualityCorrectionBlock(quality) {
   return [
     "",
     "--- AGGRESSIVE REWRITE QUALITY CORRECTION ---",
-    "The previous attempt failed the product's rewrite-depth and academic-register quality gate.",
+    "The previous attempt failed one or more structural/cadence quality checks.",
     issueLines || "- The previous attempt did not meet the required quality profile.",
     nearSourceExamples(quality),
-    "Rewrite again from the ORIGINAL source below, not from the previous attempt.",
-    "Do not preserve a source sentence merely by changing punctuation, replacing one or two words, or splitting it into two sentences. If the same content words remain in roughly the same order, rebuild the sentence again.",
-    "Change information packaging: vary which idea becomes the grammatical subject, move causes/conditions/qualifications to different positions, combine evidence and interpretation differently, and use genuinely different clause architecture.",
-    "Keep the substantive transformation, but repair any overcorrection. Do not solve structural similarity by chopping the prose into strings of very short sentences.",
-    "Use sustained postgraduate academic prose: formal but readable, with mostly medium and long sentences and occasional short emphasis. Merge neighbouring short statements where they express one analytical idea.",
-    "Do not introduce second-person address, contractions, decorative idioms, journalistic phrasing, slang, or conversational metaphors.",
-    "Preserve the argument and broad-to-narrow academic progression, but not the source's sentence-by-sentence wording or clause sequence.",
-    "No complete source sentence should survive verbatim unless it is a protected quotation or cannot be safely changed without altering a protected claim.",
-    "Preserve every citation, number, quotation, technical term and factual relationship exactly. Do not add any fact or citation.",
+    "Rewrite again from the ORIGINAL source below, not by cosmetically editing the previous attempt.",
+    "Where concrete structural work was diagnosed, change information packaging: vary which idea becomes the grammatical subject, move causes/conditions/qualifications to different positions, and redistribute propositions across neighbouring sentences when the argument supports it.",
+    "Do not equate stronger rewriting with lexical elevation. Prefer ordinary, precise academic verbs over newly invented abstract noun phrases; do not convert straightforward wording into dense noun stacks merely to make the revision look more scholarly.",
+    "Do not solve structural similarity by chopping prose into strings of short sentences, and do not solve it by making every sentence long, compressed and perfectly balanced. Cadence should follow the reasoning.",
+    "A clean source sentence may remain or be only lightly changed when the plan does not require reconstruction. Rewrite distance is evidence, not an objective.",
+    "Do not introduce second-person address, contractions, decorative idioms, journalistic phrasing, slang, fake roughness or random errors.",
+    "Preserve the argument, citations, numbers, quotations, technical terms and factual relationships exactly. Do not add any fact or citation.",
   ].filter(Boolean).join("\n");
 }
 
@@ -195,12 +200,11 @@ function finalRescueBlock(quality) {
     issueLines || "- Residual cadence/register/structural problems remain.",
     nearSourceExamples(quality),
     "The user message for this pass contains both the ORIGINAL SOURCE and the CURRENT CANDIDATE REVISION.",
-    "Repair the CURRENT CANDIDATE rather than reverting to source wording. Use the original only as the factual and citation-preservation authority.",
-    "Where a candidate sentence still follows the source's content-word order, rebuild it from the underlying proposition: choose a different grammatical subject, alter clause order, redistribute information across neighbouring sentences, and reconstruct transitions. Do not preserve the sentence skeleton.",
-    "If phrase overlap remains high, change information packaging and clause architecture while retaining all technical meaning.",
-    "If the prose is choppy, merge adjacent short sentences that belong to the same analytical unit. A thesis paragraph should contain a mixture of medium and long sentences, some longer analytical sentences, and only occasional short sentences for emphasis.",
-    "Maintain a postgraduate academic register throughout. No second-person address, contractions, colloquialisms, slogans, journalistic shorthand, or casual metaphors.",
-    "Do not simply restore long source sentences. The objective is structurally fresh but academically sustained prose.",
+    "Repair the CURRENT CANDIDATE. Use the original as factual/citation authority and as evidence of the writer's lexical register; do not automatically restore or automatically reject its wording.",
+    "Where a candidate sentence still follows a diagnosed unwanted source skeleton, rebuild it from the underlying proposition. Where the candidate instead became more abstract, compressed or over-polished than the source, simplify it and restore ordinary academic verbs and natural asymmetry.",
+    "If phrase overlap remains high, change information packaging where the plan requires it. If lexical formality or nominalisation has inflated, reduce that drift rather than chasing more textual distance.",
+    "If the prose is choppy, merge adjacent statements that belong to one analytical unit. If it is uniformly dense, allow concise descriptive or evidential sentences where the reasoning permits them.",
+    "Maintain defensible postgraduate academic prose without turning every paragraph into a mini-abstract or every sentence into a polished summary statement.",
     "Every citation, number, quotation, acronym, technical term and factual relationship from the original must remain correct and no new factual content may be introduced.",
   ].filter(Boolean).join("\n");
 }
@@ -224,8 +228,8 @@ function measuredLanguagePenalty(text, family) {
   return (1 - deviation.family_alignment_score) * 0.25;
 }
 
-function candidateScore(q, text, family) {
-  return qualityScore(q) + measuredLanguagePenalty(text, family);
+function candidateScore(q, text, family, iterativeQuality) {
+  return qualityScore(q) + measuredLanguagePenalty(text, family) + iterativeRegularisationPenalty(iterativeQuality);
 }
 
 function qualityOptions(analysis, humanCadence) {
@@ -233,6 +237,10 @@ function qualityOptions(analysis, humanCadence) {
     humanCadence,
     protectedSpans: analysis.protectedSpans,
   };
+}
+
+function qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality) {
+  return naturalisationLevel === "aggressive" && (!transformationQuality.passed || iterativeQuality?.blocking);
 }
 
 export async function rewrite({
@@ -244,8 +252,10 @@ export async function rewrite({
   naturalisation,
   precedingContext,
   documentGlossary,
+  rewriteLineage,
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
+  const lineage = normaliseRewriteLineage(rewriteLineage, sourceText);
   const analysis = analyse({
     sourceText,
     styleFilters,
@@ -268,37 +278,53 @@ export async function rewrite({
     documentGlossary,
     humanCadence,
     naturalisation: naturalisationLevel,
-  });
+  }) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage });
 
   let parsed = await runModelPass({ systemPrompt, sourceText });
   let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
+  let iterativeQuality = assessIterativeRegularisation({
+    sourceText,
+    candidateText: parsed.revised_text,
+    rewriteLineage: lineage,
+  });
   let qualityRetryUsed = false;
   let rescueRetryUsed = false;
   let responseRepairUsed = Boolean(parsed.__response_repair_used);
   let responseEnvelopeRecovered = Boolean(parsed.__response_envelope_recovered);
   let firstAttemptQuality = null;
+  let firstAttemptIterativeQuality = null;
   let preRescueQuality = null;
+  let preRescueIterativeQuality = null;
 
-  if (naturalisationLevel === "aggressive" && !transformationQuality.passed) {
+  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality)) {
     firstAttemptQuality = transformationQuality;
+    firstAttemptIterativeQuality = iterativeQuality;
     const corrected = await runModelPass({
-      systemPrompt: systemPrompt + qualityCorrectionBlock(transformationQuality),
+      systemPrompt: systemPrompt + qualityCorrectionBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
       sourceText,
     });
     const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, qOptions);
+    const correctedIterativeQuality = assessIterativeRegularisation({
+      sourceText,
+      candidateText: corrected.revised_text,
+      rewriteLineage: lineage,
+    });
     qualityRetryUsed = true;
     responseRepairUsed = responseRepairUsed || Boolean(corrected.__response_repair_used);
     responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(corrected.__response_envelope_recovered);
 
-    const correctedIsBetter = correctedQuality.passed || candidateScore(correctedQuality, corrected.revised_text, measuredLanguageFamily) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily);
+    const correctedPasses = correctedQuality.passed && !correctedIterativeQuality.blocking;
+    const correctedIsBetter = correctedPasses || candidateScore(correctedQuality, corrected.revised_text, measuredLanguageFamily, correctedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality);
     if (correctedIsBetter) {
       parsed = corrected;
       transformationQuality = correctedQuality;
+      iterativeQuality = correctedIterativeQuality;
     }
   }
 
-  if (naturalisationLevel === "aggressive" && !transformationQuality.passed) {
+  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality)) {
     preRescueQuality = transformationQuality;
+    preRescueIterativeQuality = iterativeQuality;
     const candidateText = parsed.revised_text;
     const rescuePayload = [
       "ORIGINAL SOURCE (factual/citation authority):",
@@ -309,17 +335,24 @@ export async function rewrite({
     ].join("\n");
 
     const rescued = await runModelPass({
-      systemPrompt: systemPrompt + finalRescueBlock(transformationQuality),
+      systemPrompt: systemPrompt + finalRescueBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
       sourceText: rescuePayload,
     });
     const rescuedQuality = assessTransformationQuality(sourceText, rescued.revised_text, naturalisationLevel, qOptions);
+    const rescuedIterativeQuality = assessIterativeRegularisation({
+      sourceText,
+      candidateText: rescued.revised_text,
+      rewriteLineage: lineage,
+    });
     rescueRetryUsed = true;
     responseRepairUsed = responseRepairUsed || Boolean(rescued.__response_repair_used);
     responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(rescued.__response_envelope_recovered);
 
-    if (rescuedQuality.passed || candidateScore(rescuedQuality, rescued.revised_text, measuredLanguageFamily) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily)) {
+    const rescuedPasses = rescuedQuality.passed && !rescuedIterativeQuality.blocking;
+    if (rescuedPasses || candidateScore(rescuedQuality, rescued.revised_text, measuredLanguageFamily, rescuedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality)) {
       parsed = rescued;
       transformationQuality = rescuedQuality;
+      iterativeQuality = rescuedIterativeQuality;
     }
   }
 
@@ -348,6 +381,17 @@ export async function rewrite({
       rescue_retry_used: rescueRetryUsed,
       first_attempt: firstAttemptQuality,
       pre_rescue_attempt: preRescueQuality,
+    },
+    iterative_rewrite_quality: {
+      ...iterativeQuality,
+      first_attempt: firstAttemptIterativeQuality,
+      pre_rescue_attempt: preRescueIterativeQuality,
+    },
+    rewrite_lineage: {
+      source_generation: lineage.source_generation,
+      chained_from_prior_revision: lineage.chained_from_prior_revision,
+      root_anchor_available: Boolean(lineage.root_source_text),
+      root_source_text_exposed: false,
     },
     model_response_recovery: {
       syntax_repair_used: responseRepairUsed,
@@ -381,6 +425,8 @@ export async function rewrite({
       measured_language_family_guidance: naturalisationLevel !== "off",
       measured_language_soft_candidate_selection: naturalisationLevel === "aggressive",
       final_academic_rescue: naturalisationLevel === "aggressive",
+      iterative_rewrite_guard: lineage.chained_from_prior_revision,
+      iterative_regularisation_gate: lineage.chained_from_prior_revision && naturalisationLevel === "aggressive",
       hierarchical_intent_planning: true,
       paragraph_discourse_planning: true,
       discourse_architecture_diagnostics: true,

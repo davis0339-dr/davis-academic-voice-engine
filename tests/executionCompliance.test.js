@@ -238,7 +238,7 @@ test("surgical recovery supersedes the rejected broad plan for execution scoring
     },
   }));
 
-  assert.equal(result.version, "surgical-defect-compliance-v1");
+  assert.equal(result.version, "surgical-defect-compliance-v2");
   assert.equal(result.planner_superseded, true);
   assert.equal(result.execution_passed, true);
   assert.equal(result.execution_status, "surgical_plan_passed");

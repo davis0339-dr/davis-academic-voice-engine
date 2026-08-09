@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildAuthorialExecutionRecoveryDirective, shouldAttemptAuthorialExecutionRecovery } from "../server/lib/underExecutionRecovery.js";
 
-test("authorial execution recovery explains concrete under-execution without turning metrics into quotas", () => {
+test("deep execution recovery explains concrete under-execution without turning metrics into quotas", () => {
   const directive = buildAuthorialExecutionRecoveryDirective({
     attempt: 1,
     compliance: {
@@ -15,7 +15,7 @@ test("authorial execution recovery explains concrete under-execution without tur
       planned: { total: 50, keep: 0, substantive: 9, discourseRepackage: 41 },
     },
   });
-  assert.match(directive, /Deep Authorial/i);
+  assert.match(directive, /Deep structural/i);
   assert.match(directive, /PLAN_STRUCTURAL_COVERAGE/);
   assert.match(directive, /VISIBLE_CHANGE_FLOOR/);
   assert.match(directive, /semantic and evidential fidelity/i);
