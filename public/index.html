@@ -218,10 +218,18 @@
 
 <script src="/safeDom.js"></script>
 <script src="/fileImport.js"></script>
+<script src="/runtimeGuard.js"></script>
 <script src="/researchEnhancements.js"></script>
 <script src="/app.js"></script>
 <script src="/plannerObservability.js"></script>
 <script src="/rewriteVerdict.js"></script>
+<!-- Load optional UI layers explicitly and deterministically. Their existing
+     dynamic-loader guards see these data attributes and do not create a second
+     asynchronous script chain during initial page navigation. -->
+<script src="/researchStudioUI.js" data-research-studio-ui="true"></script>
+<script src="/researchStudioCapabilitiesUI.js" data-research-studio-capabilities-ui="true"></script>
+<script src="/detectorEvidenceUI.js" data-detector-evidence-ui="true"></script>
+<script src="/detectorResearchUI.js" data-detector-research-ui="true"></script>
 <script src="/authorialTextureUI.js"></script>
 </body>
 </html>

@@ -39,6 +39,7 @@ jobs:
           node --check public/safeDom.js
           node --check public/app.js
           node --check public/fileImport.js
+          node --check public/runtimeGuard.js
           node --check public/plannerObservability.js
           node --check public/rewriteVerdict.js
           node --check public/authorialTextureUI.js
@@ -48,6 +49,36 @@ jobs:
           node --check public/researchStudioCapabilitiesUI.js
           node --check server/lib/researcherAgency.js
           node --check server/routes/researchStudio.js
+      - name: Production-style server startup smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PORT=3011
+          node server/index.js > server-smoke.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for i in {1..20}; do
+            if curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/health > health-smoke.json; then
+              READY=1
+              break
+            fi
+            sleep 0.5
+          done
+          if [ "$READY" -ne 1 ]; then
+            echo 'Server did not become healthy within 10 seconds.'
+            cat server-smoke.log || true
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/ > index-smoke.html
+          curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/style-profiles > style-profiles-smoke.json
+          curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/methodology > methodology-smoke.json
+          curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/health/detectors > detector-health-smoke.json
+          curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/detector-research/evidence > detector-evidence-smoke.json
+          test -s index-smoke.html
+          grep -q 'Academic Voice Engine' index-smoke.html
+          grep -q '/runtimeGuard.js' index-smoke.html
+          cat server-smoke.log
       - name: Run test suite
         shell: bash
         run: |
@@ -67,5 +98,11 @@ jobs:
             test-output.txt
             language-simulation.txt
             language-simulation.json
+            server-smoke.log
+            health-smoke.json
+            style-profiles-smoke.json
+            methodology-smoke.json
+            detector-health-smoke.json
+            detector-evidence-smoke.json
           if-no-files-found: ignore
           retention-days: 7
