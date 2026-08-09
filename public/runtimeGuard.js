@@ -48,7 +48,7 @@
   function surfaceRuntimeFailure(message) {
     const status = document.getElementById("statusMessage");
     if (!status) return;
-    if (!status.textContent || /loading|checking/i.test(status.textContent)) {
+    if (!status.textContent || /loading|checking|starting|pending/i.test(status.textContent)) {
       status.textContent = message;
       status.className = "status-message error";
     }
@@ -56,7 +56,7 @@
 
   window.addEventListener("error", (event) => {
     const detail = event?.message ? `: ${event.message}` : "";
-    surfaceRuntimeFailure(`Browser runtime error${detail}. Refresh once; if it persists, the deployed build needs review.`);
+    surfaceRuntimeFailure(`Browser runtime error${detail}. The core editor remained available where possible.`);
   });
 
   window.addEventListener("unhandledrejection", (event) => {
@@ -64,12 +64,12 @@
     surfaceRuntimeFailure(`Browser request failed: ${String(reason).slice(0, 180)}.`);
   });
 
-  // A visible watchdog is intentionally independent of window.load. If one of
-  // the optional startup calls fails, the editor becomes usable with an explicit
-  // degraded-state message instead of displaying “loading…” indefinitely.
+  // This watchdog is independent of window.load. If app.js itself never reaches
+  // its startup callbacks, the initial shell is still converted from a pending
+  // state into an explicit degraded-state message rather than looking endless.
   window.setTimeout(() => {
-    replaceIfStillLoading("llmStatus", /checking service status/i, "LLM: status check timed out");
-    replaceIfStillLoading("buildBadge", /build:\s*checking/i, "build: status unavailable");
+    replaceIfStillLoading("llmStatus", /checking service status|LLM:\s*starting/i, "LLM: startup status unavailable");
+    replaceIfStillLoading("buildBadge", /build:\s*(checking|pending)/i, "build: status unavailable");
     replaceIfStillLoading("sourceLimitHint", /loading/i, "Single editor available; capacity check timed out.");
     replaceIfStillLoading("longdocLimitHint", /loading/i, "Long-document capacity check timed out.");
 
