@@ -42,6 +42,19 @@ test("rewrite lineage activates only for a genuine rewrite-of-rewrite chain", ()
   assert.equal(chained.root_source_text, root);
 });
 
+test("single-pass lexical formalisation can be blocked before it becomes a rewrite chain", () => {
+  const assessment = assessIterativeRegularisation({
+    sourceText: root,
+    candidateText: regularised,
+  });
+
+  assert.equal(assessment.available, true);
+  assert.equal(assessment.mode, "single_pass");
+  assert.equal(assessment.source_generation, 0);
+  assert.equal(assessment.blocking, true);
+  assert.ok(assessment.reasons.some((reason) => /Nominalisation|Long-word|Average word length|formalisation|regularisation/i.test(reason)));
+});
+
 test("cumulative lexical formalisation is flagged against the retained root source", () => {
   const assessment = assessIterativeRegularisation({
     sourceText: regularised,
@@ -50,9 +63,18 @@ test("cumulative lexical formalisation is flagged against the retained root sour
   });
 
   assert.equal(assessment.available, true);
+  assert.equal(assessment.mode, "rewrite_chain");
   assert.equal(assessment.source_generation, 1);
   assert.ok(assessment.score > 0);
   assert.ok(assessment.reasons.some((reason) => /Nominalisation|Long-word|Average word length|formalisation|regularisation/i.test(reason)));
+});
+
+test("every revision receives a source-relative anti-regularisation instruction", () => {
+  const directive = buildIterativeRewriteDirective({ sourceText: root });
+  assert.match(directive, /REVISION ANTI-REGULARISATION GUARD/i);
+  assert.match(directive, /lexical elevation/i);
+  assert.match(directive, /ordinary disciplinary language/i);
+  assert.match(directive, /not a detector score/i);
 });
 
 test("iterative directive tells the model to de-regularise rather than chase rewrite distance", () => {
@@ -70,6 +92,7 @@ test("blocking iterative assessment produces a targeted correction block", () =>
   const block = iterativeCorrectionBlock({
     available: true,
     blocking: true,
+    mode: "rewrite_chain",
     reasons: ["Nominalisation density rose materially."],
   });
   assert.match(block, /DE-REGULARISATION/i);
