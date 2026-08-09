@@ -53,6 +53,10 @@ jobs:
           node --check public/detectorEvidenceUI.js
           node --check public/researchStudioUI.js
           node --check public/researchStudioCapabilitiesUI.js
+          node --check public/researchStudioCandidateBridge.js
+          node --check public/researchStudioSourceExpansionUI.js
+          node --check public/longDocumentEvidenceHandoffUI.js
+          node --check public/longDocumentVNextUI.js
           node --check server/lib/iterativeRewriteGuard.js
           node --check server/lib/underExecutionRecovery.js
           node --check server/lib/interventionAuthority.js
@@ -61,6 +65,7 @@ jobs:
           node --check server/routes/rewrite.js
           node --check server/lib/researcherAgency.js
           node --check server/routes/researchStudio.js
+          node --check server/routes/evidenceEnhance.js
           node --check server/index.js
       - name: Production-style server startup smoke test
         shell: bash
@@ -99,7 +104,11 @@ jobs:
           grep -q '/runtimeGuard.js' index-smoke.html
           grep -q '/detectorQuickBridge.js' public/optionalFeatures.js
           grep -q '/rewriteLineage.js' public/optionalFeatures.js
+          grep -q '/longDocumentVNextUI.js' public/optionalFeatures.js
           grep -q '/researchStudioUI.js' studio-smoke.html
+          grep -q '/researchStudioCandidateBridge.js' studio-smoke.html
+          grep -q '/researchStudioSourceExpansionUI.js' studio-smoke.html
+          grep -q 'evidence-enhance-candidate' server/routes/evidenceEnhance.js
           cat server-smoke.log
       - name: Run test suite
         shell: bash

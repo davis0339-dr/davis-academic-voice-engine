@@ -32,14 +32,14 @@
   </section>
 
   <details class="studio-evidence-card" open>
-    <summary><strong>Editor context handoff</strong></summary>
-    <p class="muted">When you open this workspace from the editor, the current source and revision are copied here through browser-local handoff only. They are not required; you can also work independently.</p>
+    <summary><strong>Editor / Long Document context handoff</strong></summary>
+    <p class="muted">When opened from the editor, the current source and revision are copied here through browser-local handoff. When opened from Long Document evidence improvement, the original manuscript remains the fidelity reference and the reworked candidate becomes the evidence-development target.</p>
     <div class="studio-context">
-      <label class="studio-context-card">Source/manuscript context
-        <textarea id="sourceText" placeholder="Optional manuscript context from the Editor…"></textarea>
+      <label class="studio-context-card">Source/manuscript fidelity context
+        <textarea id="sourceText" placeholder="Optional manuscript context from the Editor or Long Document…"></textarea>
       </label>
-      <label class="studio-context-card">Current revised context
-        <textarea id="revisedText" placeholder="Optional revised text for integrity checking…"></textarea>
+      <label class="studio-context-card">Current reworked/revised candidate
+        <textarea id="revisedText" placeholder="Reworked candidate used for evidence enhancement and integrity checking…"></textarea>
       </label>
     </div>
   </details>
@@ -75,7 +75,9 @@
 <script src="/safeDom.js"></script>
 <script src="/fileImport.js"></script>
 <script src="/runtimeGuard.js"></script>
+<script src="/researchStudioCandidateBridge.js"></script>
 <script src="/researchStudioUI.js"></script>
+<script src="/researchStudioSourceExpansionUI.js"></script>
 <script src="/researchStudioCapabilitiesUI.js"></script>
 <script src="/researchEvidenceBankUI.js"></script>
 <script src="/longDocumentEvidenceHandoffUI.js"></script>
