@@ -1,0 +1,32 @@
+name: Live Render Probe
+
+on:
+  push:
+    branches: [diagnose/runtime-loading-smoke]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify live hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE_URL='https://davis-academic-voice-engine.onrender.com'
+          echo '--- health ---'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "$LIVE_URL/api/health" | tee live-health.json
+          echo
+          echo '--- runtime guard ---'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "$LIVE_URL/runtimeGuard.js" | tee live-runtime-guard.js >/dev/null
+          grep -q 'STARTUP_GET_TIMEOUT_MS' live-runtime-guard.js
+          echo '--- root ---'
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "$LIVE_URL/" | tee live-root.html >/dev/null
+          grep -q '/runtimeGuard.js' live-root.html
+          grep -q 'data-detector-research-ui="true"' live-root.html
+          echo '--- startup endpoints ---'
+          for endpoint in /api/style-profiles /api/methodology /api/health/detectors /api/detector-research/evidence; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 30 "$LIVE_URL$endpoint")
+            echo "$endpoint -> $code"
+            test "$code" = '200'
+          done
