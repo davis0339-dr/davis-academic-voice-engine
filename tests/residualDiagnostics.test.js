@@ -63,7 +63,7 @@ test("rechecks document-level architecture so unresolved discourse reconstructio
 
   const result = analyseResidualWriting(text);
   const ids = result.signals.map((signal) => signal.id);
-  assert.equal(result.measurement_version, "residual-writing-v2");
+  assert.equal(result.measurement_version, "residual-writing-v3");
   assert.ok(ids.includes("argument_packaging"));
   assert.ok(ids.includes("enumeration_saturation"));
   assert.ok(result.metrics.discourse_architecture_signal_count >= 2);
