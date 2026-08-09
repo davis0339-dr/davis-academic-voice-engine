@@ -76,6 +76,25 @@ jobs:
           test -s index-smoke.html
           grep -q 'Academic Voice Engine' index-smoke.html
           cat server-smoke.log
+      - name: Probe live Render service
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+          LIVE_URL='https://davis-academic-voice-engine.onrender.com'
+          {
+            echo "Probe time (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "URL: $LIVE_URL"
+            echo '--- root ---'
+            curl -L -sS -D - --connect-timeout 10 --max-time 35 -o live-root.html -w '\nHTTP=%{http_code} CONNECT=%{time_connect}s TTFB=%{time_starttransfer}s TOTAL=%{time_total}s SIZE=%{size_download}\n' "$LIVE_URL/"
+            echo "curl_exit=$?"
+            echo '--- health ---'
+            curl -L -sS -D - --connect-timeout 10 --max-time 35 -o live-health.json -w '\nHTTP=%{http_code} CONNECT=%{time_connect}s TTFB=%{time_starttransfer}s TOTAL=%{time_total}s SIZE=%{size_download}\n' "$LIVE_URL/api/health"
+            echo "curl_exit=$?"
+            echo '--- health body ---'
+            cat live-health.json 2>/dev/null || true
+          } 2>&1 | tee live-render-probe.txt
+          exit 0
       - name: Run test suite
         shell: bash
         run: |
@@ -100,5 +119,8 @@ jobs:
             style-profiles-smoke.json
             methodology-smoke.json
             detector-health-smoke.json
+            live-render-probe.txt
+            live-root.html
+            live-health.json
           if-no-files-found: ignore
           retention-days: 7
