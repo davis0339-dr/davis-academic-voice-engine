@@ -4,11 +4,14 @@ import fs from "node:fs";
 
 const ui = fs.readFileSync(new URL("../public/researchEnhancements.js", import.meta.url), "utf8");
 const index = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+const optional = fs.readFileSync(new URL("../public/optionalFeatures.js", import.meta.url), "utf8");
 const security = fs.readFileSync(new URL("../server/lib/security.js", import.meta.url), "utf8");
 
-test("research enhancement script loads before app fetch wrappers", () => {
-  assert.ok(index.indexOf('/researchEnhancements.js') > -1);
-  assert.ok(index.indexOf('/researchEnhancements.js') < index.indexOf('/app.js'));
+test("research enhancement script is preserved but removed from the parser-blocking critical path", () => {
+  assert.equal(index.indexOf('/researchEnhancements.js'), -1);
+  assert.ok(index.indexOf('/app.js') > -1);
+  assert.ok(index.indexOf('/optionalFeatures.js') > index.indexOf('/app.js'));
+  assert.match(optional, /\/researchEnhancements\.js/);
 });
 
 test("voice reasoning requires explicit consent and keeps transcript editable", () => {
