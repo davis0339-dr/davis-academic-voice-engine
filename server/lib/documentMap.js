@@ -1,4 +1,5 @@
 import { extractProtectedSpans } from "./protect.js";
+import { countWords } from "../config/limits.js";
 
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+)$/;
 const NUMBERED_HEADING = /^(\d+(?:\.\d+)*)\s+([A-Z][^.!?]{2,80})$/;
@@ -149,6 +150,6 @@ export function buildDocumentMap(fullText) {
     headings,
     glossary,
     protectedSpans,
-    wordCount: (fullText.match(/[A-Za-z0-9']+/g) || []).length,
+    wordCount: countWords(fullText),
   };
 }
