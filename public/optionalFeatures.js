@@ -60,6 +60,17 @@
     const add = document.getElementById("addDetectorObservationBtn");
     const clear = document.getElementById("clearDetectorObservationsBtn");
     if (status) status.textContent = "Loading measured detector diagnostics…";
+
+    // detectorResearchUI historically self-loaded the full academic evidence
+    // developer. A marker keeps that heavy panel out of the editor; /studio owns it.
+    if (!document.querySelector('script[data-detector-evidence-ui="true"]')) {
+      const marker = document.createElement("script");
+      marker.type = "application/json";
+      marker.dataset.detectorEvidenceUi = "true";
+      marker.textContent = '{"workspace":"studio"}';
+      document.head.appendChild(marker);
+    }
+
     const result = await loadOne("/detectorResearchUI.js", "detector-research-ui");
     const ok = result.status === "loaded" || result.status === "already_loaded";
     if (analyse) analyse.disabled = !ok;
