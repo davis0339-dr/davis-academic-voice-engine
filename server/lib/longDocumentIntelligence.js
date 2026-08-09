@@ -1,7 +1,7 @@
 // Long Document intelligence layer.
-// This module is intentionally isolated from the 1,500-word editor. It reads the
-// whole manuscript before chunk execution, derives diagnosis-scoped chunk
-// policies, and audits the reassembled document for cross-chunk regularisation.
+// Reads the manuscript as one intellectual object, supplies section-aware context,
+// preserves researcher decisions, audits reassembly regularity, and now also checks
+// whether the selected intervention mode was actually executed across the document.
 
 import { llmProvider } from "./llmProvider.js";
 import { diagnose } from "./diagnostics.js";
@@ -51,20 +51,24 @@ export function buildFallbackBlueprint(fullText, documentMap) {
   const argumentArc = headings.slice(0, 24).map((heading, index) => ({
     heading: heading.text,
     section: inferSectionFromHeading(heading.text) || null,
-    role: index === 0 ? "establish the opening stage of the document's argument" : "advance the document from the preceding stage toward its overall research objective",
+    role: index === 0
+      ? "establish the opening stage of the document's argument"
+      : "advance the document from the preceding stage toward its overall research objective",
     source_excerpt: sectionExcerpt(fullText, heading.text, headings),
-    downstream_dependency: index + 1 < headings.length ? `prepare the reasoning needed for ${headings[index + 1].text}` : "support the document's final stated contribution or methodological end point",
+    downstream_dependency: index + 1 < headings.length
+      ? `prepare the reasoning needed for ${headings[index + 1].text}`
+      : "support the document's final stated contribution or methodological end point",
   }));
 
   const title = clean(documentMap?.title || headings[0]?.text || "academic manuscript", 220);
   return {
-    version: "longdoc-blueprint-v1",
+    version: "longdoc-blueprint-v2",
     generated_by: "deterministic_fallback",
     document_goal: `Preserve and strengthen the complete argument of ${title} while keeping local sections aligned with the manuscript's end goal rather than treating them as independent passages.`,
     argument_arc: argumentArc,
     global_dependencies: [
       "Later sections must remain consistent with variables, constructs, definitions, study stage, population, period and methods established earlier.",
-      "A local paragraph may be well written yet still require development when the whole-document argument reveals a missing link; conversely, a clean passage should remain substantially intact when it already performs its document-level role.",
+      "A local paragraph may be grammatically clean yet still require redevelopment when the selected authorial mode and whole-document context show that its discourse architecture should change.",
     ],
     consistency_constraints: [
       "Preserve section/chapter order unless the source itself clearly requires local repair.",
@@ -77,6 +81,7 @@ export function buildFallbackBlueprint(fullText, documentMap) {
       "Do not repeatedly balance one benefit against one limitation using the same syntactic template.",
       "Do not increase lexical formality merely because the requested rewrite authority is Deep or Aggressive.",
       "Do not use expansion as a word-count target. Expand only identified reasoning, evidence, qualification, context, measurement distinction or gap work.",
+      "In Deep Authorial mode, preserve the research and formal artefacts rather than defaulting to preservation of source sentence architecture across most substantive paragraphs.",
     ],
   };
 }
@@ -92,7 +97,7 @@ Return one JSON object only with this exact top-level shape:
       "heading": "existing heading or descriptive stage",
       "role": "what this part must accomplish in the whole document",
       "must_preserve": ["claims/constructs/decisions that later sections depend on"],
-      "development_opportunities": ["only genuine missing/under-developed intellectual work visible from whole-document context"],
+      "development_opportunities": ["genuine missing/under-developed intellectual work or discourse work visible from whole-document context"],
       "downstream_dependency": "what later reasoning depends on this part"
     }
   ],
@@ -113,9 +118,9 @@ Rules:
 - Read the full document as one intellectual object.
 - Preserve the author's research design and claims. Never invent a new study, fact, citation, variable, hypothesis, result or method.
 - Evidence needs are requests for the Research Evidence Bank; do not fabricate the missing evidence.
-- Identify development opportunities only when the whole document reveals a real argumentative need.
+- Identify development opportunities only when the whole document reveals a real argumentative or discourse need.
 - Do not recommend expansion merely because a section is short.
-- Do not recommend rewriting every section. Some sections should remain largely intact.
+- Distinguish preservation of research meaning from preservation of sentence architecture.
 - Keep the response compact: at most 24 argument-arc entries and 12 evidence needs.`;
 }
 
@@ -137,7 +142,7 @@ function normaliseBlueprint(parsed, fallback) {
   })).filter((item) => item.query);
 
   return {
-    version: "longdoc-blueprint-v1",
+    version: "longdoc-blueprint-v2",
     generated_by: "whole_document_model",
     document_goal: clean(parsed?.document_goal, 1000) || fallback.document_goal,
     argument_arc: arc.length ? arc : fallback.argument_arc,
@@ -158,7 +163,9 @@ export async function buildWholeDocumentBlueprint({ fullText, documentMap }) {
       messages: [{ role: "user", content: fullText }],
       maxTokens: 2600,
     });
-    if (result.raw?.stop_reason === "max_tokens") return { ...fallback, planning_warning: "Whole-document blueprint response was truncated; deterministic fallback used." };
+    if (result.raw?.stop_reason === "max_tokens") {
+      return { ...fallback, planning_warning: "Whole-document blueprint response was truncated; deterministic fallback used." };
+    }
     return normaliseBlueprint(parseJsonObject(result.text), fallback);
   } catch (err) {
     return { ...fallback, planning_warning: `Whole-document planning fell back safely: ${err.message}` };
@@ -190,7 +197,7 @@ export function compactBlueprintForChunk(blueprint, chunk) {
     consistency_constraints: (blueprint.consistency_constraints || []).slice(0, 10),
     evidence_needs: evidenceNeeds,
     rhetoric_safeguards: (blueprint.rhetoric_safeguards || []).slice(0, 10),
-    instruction: "Use this map for intellectual continuity only. Do not imitate prose rhythm from other chunks. The local diagnostic plan still decides what is actually rewritten.",
+    instruction: "Use this map for intellectual continuity. Diagnosis chooses the operation; the researcher-selected intervention mode determines the authorised depth. Do not imitate prose rhythm from other chunks.",
   };
 }
 
@@ -199,25 +206,31 @@ export function deriveLongDocumentChunkPolicy({ sourceText, requestedIntensity, 
   const naturalisation = String(requestedNaturalisation || "faithful").toLowerCase();
   const lengthPreference = String(requestedLengthPreference || "auto").toLowerCase();
 
-  // Diagnose scope independently of stylistic naturalisation. This is the key
-  // guard against Aggressive creating its own rewrite scope.
   const diagnostics = diagnose(sourceText);
   const scopePlan = buildInterventionPlan(diagnostics, {
     rewriteIntensity: intensity,
-    lengthPreference: "maintain",
-    naturalisation: "faithful",
+    lengthPreference: lengthPreference === "concise" ? "concise" : lengthPreference === "expand" ? "expand" : "maintain",
+    naturalisation: naturalisation === "authorial" ? "aggressive" : naturalisation,
   });
   const recommended = scopePlan.intent?.recommended || INTERVENTION_INTENTS.PRESERVE_POLISH;
   const developmentNeed = diagnostics.argumentative_sufficiency?.development_need || "low";
   const deepDiagnosis = DEEP_INTENTS.has(recommended);
   const deepAuthority = intensity === "deep";
   const requestedAggressive = naturalisation === "aggressive" || naturalisation === "authorial";
+  const authorialAuthority = deepAuthority && requestedAggressive;
 
+  // Critical vNext correction: Deep + Aggressive/Authorial is no longer silently
+  // narrowed to Faithful because an isolated chunk looked locally clean. The
+  // planner still protects formal/evidential material and chooses paragraph actions.
   let effectiveNaturalisation = naturalisation === "off" ? "off" : "faithful";
-  if (requestedAggressive && deepAuthority && deepDiagnosis) effectiveNaturalisation = "aggressive";
+  if (authorialAuthority || (naturalisation === "aggressive" && intensity !== "minor")) {
+    effectiveNaturalisation = "aggressive";
+  }
 
   let effectiveLengthPreference = lengthPreference;
-  if (lengthPreference === "expand" && developmentNeed === "low" && recommended !== INTERVENTION_INTENTS.CONTEXT_SCHOLARLY_STRENGTHENING && !deepDiagnosis) {
+  if (lengthPreference === "expand" && developmentNeed === "low" && !deepDiagnosis) {
+    // Deep Authorial may reconstruct clean prose, but it must not manufacture new
+    // intellectual content merely to make the document longer.
     effectiveLengthPreference = "maintain";
   }
 
@@ -230,11 +243,14 @@ export function deriveLongDocumentChunkPolicy({ sourceText, requestedIntensity, 
     },
     diagnostic_intent: recommended,
     argumentative_development_need: developmentNeed,
+    authorial_authority: authorialAuthority,
     aggressive_authorised: effectiveNaturalisation === "aggressive",
     expansion_authorised: effectiveLengthPreference === "expand",
-    explanation: effectiveNaturalisation !== naturalisation || effectiveLengthPreference !== lengthPreference
-      ? "Long Document narrowed style/length treatment to the diagnosed need. User choices remain authority ceilings, not compulsory operations."
-      : "Requested treatment is consistent with the diagnosed chunk need.",
+    explanation: authorialAuthority
+      ? "Deep Authorial authority is active. Diagnosis selects the operation, but substantive paragraphs are not silently downgraded to Faithful local polishing."
+      : effectiveNaturalisation !== (naturalisation === "authorial" ? "aggressive" : naturalisation) || effectiveLengthPreference !== lengthPreference
+        ? "Long Document narrowed only the treatment that would manufacture unsupported content or exceed the selected intensity ceiling."
+        : "Requested treatment is consistent with the diagnosed chunk need.",
   };
 }
 
@@ -256,6 +272,87 @@ function chunkCadence(text) {
 function residualRisk(text) {
   const audit = analyseResidualWriting(text);
   return { audit, risk: Number(audit?.metrics?.total_risk_score || 0) };
+}
+
+function normaliseText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function exactRetention(sourceText, revisedText) {
+  const sourceSentences = new Set(splitSentences(sourceText).map(normaliseText).filter((x) => x.length >= 12));
+  const revisedSentences = splitSentences(revisedText).map(normaliseText).filter((x) => x.length >= 12);
+  const exactSentences = revisedSentences.filter((sentence) => sourceSentences.has(sentence)).length;
+
+  const sourceParagraphs = new Set(String(sourceText || "").split(/\n\s*\n+/).map(normaliseText).filter((x) => x.length >= 30));
+  const revisedParagraphs = String(revisedText || "").split(/\n\s*\n+/).map(normaliseText).filter((x) => x.length >= 30);
+  const exactParagraphs = revisedParagraphs.filter((paragraph) => sourceParagraphs.has(paragraph)).length;
+
+  return {
+    sentence_count: revisedSentences.length,
+    exact_sentence_count: exactSentences,
+    exact_sentence_retention_ratio: revisedSentences.length ? exactSentences / revisedSentences.length : 0,
+    paragraph_count: revisedParagraphs.length,
+    exact_paragraph_count: exactParagraphs,
+    exact_paragraph_retention_ratio: revisedParagraphs.length ? exactParagraphs / revisedParagraphs.length : 0,
+  };
+}
+
+function coverageThresholds(intensity, naturalisation) {
+  const authorial = intensity === "deep" && ["aggressive", "authorial"].includes(naturalisation);
+  if (authorial) return { sentence: 0.62, paragraph: 0.55, label: "deep_authorial" };
+  if (intensity === "deep") return { sentence: 0.74, paragraph: 0.68, label: "deep_structural" };
+  if (intensity === "moderate") return { sentence: 0.86, paragraph: 0.82, label: "moderate" };
+  return { sentence: 1, paragraph: 1, label: intensity || "auto" };
+}
+
+export function auditTransformationCoverage({ sourceText, revisedText, chunks = [], requestedIntensity, requestedNaturalisation }) {
+  const intensity = String(requestedIntensity || "auto").toLowerCase();
+  const naturalisation = String(requestedNaturalisation || "faithful").toLowerCase();
+  const overall = exactRetention(sourceText, revisedText);
+  const thresholds = coverageThresholds(intensity, naturalisation);
+  const enforced = ["moderate", "deep"].includes(intensity);
+
+  const chunkRows = chunks
+    .filter((chunk) => chunk?.sourceText && chunk?.revisedText && chunk.rewriteMode !== "passthrough")
+    .map((chunk) => {
+      const row = exactRetention(chunk.sourceText, chunk.revisedText);
+      return {
+        index: chunk.index,
+        heading: chunk.heading || null,
+        word_count: chunk.wordCount || countWords(chunk.sourceText),
+        ...row,
+      };
+    });
+
+  const targetChunkIndices = chunkRows
+    .filter((row) => row.word_count >= 80)
+    .filter((row) => row.exact_sentence_retention_ratio > thresholds.sentence || row.exact_paragraph_retention_ratio > thresholds.paragraph)
+    .sort((a, b) =>
+      (b.exact_paragraph_retention_ratio + b.exact_sentence_retention_ratio) -
+      (a.exact_paragraph_retention_ratio + a.exact_sentence_retention_ratio)
+    )
+    .map((row) => row.index);
+
+  const underTransformed = enforced && (
+    overall.exact_sentence_retention_ratio > thresholds.sentence ||
+    overall.exact_paragraph_retention_ratio > thresholds.paragraph
+  );
+
+  return {
+    version: "longdoc-transformation-coverage-v1",
+    passed: !underTransformed,
+    enforced,
+    mode_class: thresholds.label,
+    thresholds: {
+      exact_sentence_retention_review_above: thresholds.sentence,
+      exact_paragraph_retention_review_above: thresholds.paragraph,
+    },
+    ...overall,
+    under_transformed_for_selected_mode: underTransformed,
+    target_chunk_indices: targetChunkIndices,
+    chunk_diagnostics: chunkRows,
+    note: "Retention thresholds are mode-consistency review signals, not quotas to alter every sentence. A failure means the selected Moderate/Deep intervention was not materially executed across enough substantive prose; formal artefacts, quotations and evidence may still remain verbatim.",
+  };
 }
 
 export function auditWholeDocumentRegularity({ sourceText, revisedText, chunks = [] }) {
@@ -305,12 +402,12 @@ export function auditWholeDocumentRegularity({ sourceText, revisedText, chunks =
   const targetChunkIndices = chunkRows
     .filter((row) => row.risk_delta >= 3 || row.revised_risk >= 8)
     .sort((a, b) => b.risk_delta - a.risk_delta || b.revised_risk - a.revised_risk)
-    .slice(0, 4)
+    .slice(0, 6)
     .map((row) => row.index);
 
   const passed = !(regularityRegression || severeHomogenisation || systemicSignals.length >= 2);
   return {
-    version: "longdoc-global-audit-v1",
+    version: "longdoc-global-audit-v2",
     passed,
     status: passed ? "accepted" : "selective_repair_required",
     source_risk: source.risk,
@@ -328,6 +425,19 @@ export function auditWholeDocumentRegularity({ sourceText, revisedText, chunks =
   };
 }
 
+export function coverageRecoveryContext(blueprint, coverageAudit, chunk) {
+  return {
+    ...compactBlueprintForChunk(blueprint, chunk),
+    transformation_coverage_recovery: {
+      reason: "The assembled candidate retained too much source sentence/paragraph architecture for the researcher-selected intervention mode.",
+      mode_class: coverageAudit.mode_class,
+      overall_exact_sentence_retention: coverageAudit.exact_sentence_retention_ratio,
+      overall_exact_paragraph_retention: coverageAudit.exact_paragraph_retention_ratio,
+      instruction: "Rebuild this substantive chunk from its claims, evidence, qualifications and research purpose rather than editing the existing sentence shell. Preserve citations, numbers, technical relationships and formal artefacts. Do not synonym-spin, do not add unsupported facts, and do not force a uniform claim-evidence-synthesis template. Let paragraph function determine the new discourse path.",
+    },
+  };
+}
+
 export function globalRepairContext(blueprint, audit, chunk) {
   return {
     ...compactBlueprintForChunk(blueprint, chunk),
@@ -336,7 +446,7 @@ export function globalRepairContext(blueprint, audit, chunk) {
       source_risk: audit.source_risk,
       candidate_risk: audit.revised_risk,
       systemic_signals: audit.systemic_signal_ids,
-      instruction: "Repair only the diagnosed local contribution to the global pattern. Prefer ordinary academic wording, retain useful source-shaped sentences, vary paragraph function rather than forcing sentence-level difference, and do not add a polished synthesis sentence merely to close the paragraph.",
+      instruction: "Repair only the diagnosed local contribution to the global pattern. Prefer ordinary academic wording, vary paragraph function rather than forcing sentence-level difference, and do not add a polished synthesis sentence merely to close the paragraph. Do not simply restore the source sentence architecture if the selected mode required deeper reconstruction.",
     },
   };
 }
