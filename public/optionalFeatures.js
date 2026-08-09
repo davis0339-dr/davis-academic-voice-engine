@@ -11,6 +11,7 @@
     ["/rewriteLineage.js", null],
     ["/detectorQuickBridge.js", null],
     ["/plannerObservability.js", null],
+    ["/argumentativePlannerUI.js", null],
     ["/rewriteVerdict.js", null],
     ["/authorialTextureUI.js", null],
   ];
