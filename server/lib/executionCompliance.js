@@ -92,14 +92,32 @@ function assessSurgicalCompliance(result) {
   );
   const applied = Number(surgical.applied_edit_count || 0);
   const acceptanceRatio = proposedClear ? clamp01(applied / proposedClear) : 1;
-  const status = surgical.execution_status || (applied ? "surgical_plan_passed" : "no_safe_edit");
-  const executionPassed = status === "surgical_plan_passed" && preservation.passed;
-  const partial = status === "surgical_partial";
+  const surgicalStatus = surgical.execution_status || (applied ? "surgical_plan_passed" : "no_safe_edit");
+  const surgicalPlanPassed = surgicalStatus === "surgical_plan_passed" && preservation.passed;
+  const partial = surgicalStatus === "surgical_partial";
   const reasons = [];
 
-  if (partial) {
+  const authority = result?.intervention_authority || {};
+  const supersededPlan = plannedCounts(result);
+  const supersededStructuralScope = supersededPlan.substantive + supersededPlan.discourseRepackage;
+  const deepStructuralPlan = Boolean(
+    (authority.author_choice_ceiling === "deep" || authority.depth_permission === "deep_where_diagnosed") &&
+    (
+      result?.intervention_intent?.effective === "discourse_reconstruction" ||
+      supersededStructuralScope >= 6
+    )
+  );
+  const deepPlanSuperseded = surgicalPlanPassed && deepStructuralPlan;
+  const executionPassed = surgicalPlanPassed && !deepPlanSuperseded;
+  const status = deepPlanSuperseded ? "under-executed" : surgicalStatus;
+
+  if (deepPlanSuperseded) {
+    reasons.push(
+      `The bounded surgical fallback applied ${applied} local correction(s), but it did not execute the requested Deep structural plan (${supersededPlan.discourseRepackage} discourse-repackage and ${supersededPlan.substantive} concrete substantive unit(s) remained superseded). Safety recovery is not counted as successful fulfilment of Deep reconstruction.`
+    );
+  } else if (partial) {
     reasons.push(`Only ${applied} of ${proposedClear} clear defect-led edit candidates survived the surgical safeguards; an omission/rejection review is still warranted.`);
-  } else if (status === "no_safe_edit") {
+  } else if (surgicalStatus === "no_safe_edit") {
     reasons.push("No clear local correction survived the surgical safeguards.");
   }
   if (!preservation.passed) reasons.push(...preservation.reasons);
@@ -109,31 +127,44 @@ function assessSurgicalCompliance(result) {
     ? Number(quality.unchanged_sentence_ratio)
     : null;
   const changedSentenceRatio = unchangedSentenceRatio === null ? null : clamp01(1 - unchangedSentenceRatio);
-  const authority = result?.intervention_authority || {};
   const changedCeiling = Number.isFinite(Number(authority.max_changed_sentence_ratio))
     ? Number(authority.max_changed_sentence_ratio)
     : Number(surgical.max_changed_sentence_ratio || 0.35);
+  const underExecuted = partial || deepPlanSuperseded;
+  const underExecutionCodes = [
+    ...(partial ? ["SURGICAL_PARTIAL"] : []),
+    ...(deepPlanSuperseded ? ["DEEP_PLAN_SUPERSEDED_BY_SURGICAL_FALLBACK"] : []),
+  ];
+  const underExecutionReasons = underExecuted
+    ? reasons.filter((reason) => /Only \d+ of \d+|did not execute the requested Deep structural plan/.test(reason))
+    : [];
+  const structuralCoverage = deepPlanSuperseded && supersededStructuralScope > 0 ? 0 : 1;
 
   return {
-    version: "surgical-defect-compliance-v1",
+    version: "surgical-defect-compliance-v2",
     passed: executionPassed,
     execution_passed: executionPassed,
     execution_status: status,
-    plan_fidelity_status: executionPassed ? "passed" : partial ? "under-executed" : status,
+    surgical_execution_status: surgicalStatus,
+    surgical_plan_passed: surgicalPlanPassed,
+    plan_fidelity_status: executionPassed ? "passed" : underExecuted ? "under-executed" : surgicalStatus,
     plan_fidelity_passed: executionPassed,
     visible_change_plausibility_status: "not_applicable_surgical_plan",
     visible_change_plausibility_score: null,
-    under_executed: partial,
+    under_executed: underExecuted,
     over_executed: false,
     preservation_ok: preservation.passed,
     candidate_status: executionPassed ? "accepted" : preservation.passed ? "execution_under" : "execution_and_preservation_failed",
     score: Number(acceptanceRatio.toFixed(3)),
-    execution_score: Number(acceptanceRatio.toFixed(3)),
-    overall_score: Number(((acceptanceRatio * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3)),
+    execution_score: deepPlanSuperseded ? 0 : Number(acceptanceRatio.toFixed(3)),
+    overall_score: deepPlanSuperseded
+      ? Number(((preservation.passed ? 1 : 0) / 4).toFixed(3))
+      : Number(((acceptanceRatio * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3)),
     effective_intent: result?.intervention_intent?.effective || null,
     intervention_authority: authority,
     planner_superseded: true,
-    superseded_plan: plannedCounts(result),
+    superseded_plan: supersededPlan,
+    deep_plan_superseded_by_surgical_fallback: deepPlanSuperseded,
     planned: {
       total: proposedClear,
       keep: 0,
@@ -154,7 +185,7 @@ function assessSurgicalCompliance(result) {
       intervention: applied,
     },
     intervention_coverage: Number(acceptanceRatio.toFixed(3)),
-    structural_coverage: 1,
+    structural_coverage: structuralCoverage,
     planned_keep_ratio: 0,
     unchanged_sentence_ratio: unchangedSentenceRatio,
     changed_sentence_ratio: changedSentenceRatio === null ? null : Number(changedSentenceRatio.toFixed(3)),
@@ -164,18 +195,20 @@ function assessSurgicalCompliance(result) {
     substantive_operation_ratio: 0,
     substantive_operation_ceiling: 0,
     reasons,
-    under_execution_codes: partial ? ["SURGICAL_PARTIAL"] : [],
+    under_execution_codes: underExecutionCodes,
     over_execution_codes: [],
     execution_variance_codes: [],
     execution_variance_reasons: [],
-    under_execution_reasons: partial ? reasons.filter((r) => /Only \d+ of \d+/.test(r)) : [],
+    under_execution_reasons: underExecutionReasons,
     over_execution_reasons: [],
     execution_reasons: reasons,
     preservation_reasons: preservation.reasons,
     warnings: surgical.rejected_edits?.length
       ? [`${surgical.rejected_edits.length} proposed edit(s) were rejected by surgical safeguards. Rejection reasons are available in surgical_recovery.rejection_summary.`]
       : [],
-    note: "The original broad rewrite plan was superseded after over-editing a high-preservation source. Compliance is measured against the bounded defect-led surgical plan, while the rejected broad plan remains available as superseded_plan for auditability.",
+    note: deepPlanSuperseded
+      ? "The broad Deep structural plan was superseded by a bounded surgical safety fallback. The local fallback may be preservation-safe, but it is explicitly classified as under-execution of the requested Deep intervention rather than an accepted Deep revision."
+      : "The original broad rewrite plan was superseded after over-editing a high-preservation source. Compliance is measured against the bounded defect-led surgical plan, while the rejected broad plan remains available as superseded_plan for auditability.",
   };
 }
 
