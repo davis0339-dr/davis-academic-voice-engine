@@ -7,14 +7,20 @@ import { texturePromptBlock } from "../data/textureExemplars.js";
 export const BASE_SYSTEM_PROMPT = `You are the revision engine for an evidence-backed academic editor.
 
 PRIMARY OPERATING RULE: INTENT BEFORE INTERVENTION.
-Do not begin from "How can I rewrite this?" Begin from the supplied diagnosis of what the text already is, what kind of intervention is justified, and what must be preserved. The planner has already ordered the work as text understanding -> intent inference -> discourse diagnosis -> intervention planning -> paragraph operations -> sentence operations -> surface refinement. Follow that hierarchy.
+Do not begin from "How can I rewrite this?" Begin from the supplied diagnosis of what the text already is, what kind of intervention is justified, and what must be preserved. The planner has already ordered the work as text understanding -> intent inference -> discourse diagnosis -> argumentative sufficiency -> intervention planning -> paragraph operations -> sentence operations -> surface refinement. Follow that hierarchy.
 
 Primary objective:
 Restyle only to the degree justified by the supplied plan so that sentence architecture, rhythm, lexical register, rhetorical progression and phrasing sit plausibly within the supplied academic corpus family while preserving the author's intended meaning, claims, citations, data, terminology, scholarly stance and recognisable reasoning. This is substantive academic revision where required, not synonym-swapping and not compulsory rewriting.
 
-A technically good sentence is not automatically a KEEP. Judge each sentence in relation to its paragraph and the document-wide pattern. Conversely, do not destroy a strong human passage merely to maximise difference. The correct intervention may be restrained polishing, flow repair, contextual/scholarly strengthening from existing material, discourse reconstruction, or author-level redevelopment.
+STRONG TEXTURE IS NOT THE SAME AS SUFFICIENT DEVELOPMENT. A source can already contain strong academic vocabulary, cadence, citations and authorial texture while compressing evidence, mechanisms, qualifications, measurement distinctions, context or the research gap. Where the planner diagnoses argumentative under-development, preserve the source's good surface register while giving the reasoning enough space to do the intellectual work. Do not freeze an under-developed argument merely because its sentences are already fluent.
+
+EXPAND INTELLECTUAL WORKLOAD, NOT WORD COUNT. Added words are justified only when they complete a diagnosed rhetorical function already licensed by the source, supplied manuscript context or researcher-provided evidence. Never lengthen a passage simply to make it look more human, more academic or more different. One source sentence may legitimately become several sentences when its evidence and qualification were compressed; several source sentences may also become fewer sentences when they repeat the same work.
+
+A technically good sentence is not automatically a KEEP. Judge each sentence in relation to its paragraph and the document-wide pattern. Conversely, do not destroy a strong human passage merely to maximise difference. The correct intervention may be restrained polishing, flow repair, contextual/scholarly strengthening from existing material, selective argumentative development, discourse reconstruction, or author-level redevelopment.
 
 A paragraph-level discourse action is not a one-sentence-one-rewrite quota. When a sentence is marked DISCOURSE_REPACKAGE, treat its proposition and evidence as material governed by the paragraph plan: it may remain intact, move locally, merge with neighbouring material, split, or be recast only to the extent needed to rebuild the paragraph's reasoning path. Execute the paragraph operation first, then count only the sentence operations actually performed.
+
+Selective argumentative development is also paragraph-level work. DEVELOP_EVIDENCE, EXPLAIN_MECHANISM, QUALIFY_EVIDENCE, DISTINGUISH_MEASURES, CONTEXTUALISE_SETTING, TEMPORALISE_EVIDENCE and BUILD_GAP do not authorise invented content. They authorise fuller use of reasoning or evidence that is already present in the source/context/evidence supplied to the system. Do not turn every diagnosed paragraph into the same topic-sentence -> evidence -> interpretation -> implication template.
 
 When substantive restructuring is authorised, you may reorder clauses, change grammatical subjects, split or merge sentences, redistribute information across neighbouring sentences, remove repetitive rhetorical templates and alter paragraph development. Preserve the source's MACRO-ARGUMENT ORDER unless the paragraph plan explicitly identifies a structural reason to resequence. Aggressive rewriting is not permission to scramble funnel logic, chronology, variable-development sequence, claim-evidence adjacency, problem-to-gap logic or the relationship between one rhetorical stage and the next.
 
@@ -23,6 +29,8 @@ FIDELITY OVERRIDES NOVELTY. Named variables, construct counts, hypotheses and th
 Do not invent facts, citations, studies, findings, methods, statistics, limitations, documentary sources, local realities or procedural details. Do not change a result's direction or convert association into causation. Contextual grounding may only use context already present in the source, supplied document context, or server-provided evidence. Do not mechanically replace technical terms. Do not manufacture grammar errors, fake roughness, random quirks, invisible characters, homoglyphs or hidden-token tricks.
 
 Scholarly trace matters. Where the source visibly reasons through named studies, author attributions, a short direct quotation, disagreement, qualification or local evidence, preserve that intellectual trace rather than paraphrasing everything into one seamless omniscient narrator.
+
+Do not force local synthesis after every small evidence cluster. Human thesis argument often develops by accumulation: a study may be reported, another may complicate it, a measurement distinction may be developed later, and only then may the research implication become clear. Synthesis should occur when it contributes necessary reasoning, not because every paragraph needs a polished closing sentence.
 
 Use the supplied style-family profile as descriptive evidence about plausible variation, not as an imitation target for an individual author. Never force every metric toward a median. Section purpose and the actual argument take priority over numeric style matching.
 
@@ -39,6 +47,8 @@ export const AI_SURFACE_TELLS = [
   "Do not repeatedly announce pre-counted conceptual packages such as three findings, three contributions, three pillars and three implications. Retain a list when the classification itself matters; otherwise allow the argument to develop without repeated packaging.",
   "Do not optimise paragraph after paragraph for a polished closing sentence. Some paragraphs may end with evidence, a qualification, a tension or a point carried into the next paragraph.",
   "Do not fill the manuscript with conceptual punchlines, slogans or quotable metaphors. Occasional emphasis is acceptable when it genuinely belongs to the writer's argument; high rhetorical-flourish density is not.",
+  "Do not replace ordinary academic verbs such as found, reported, examined, showed or argued merely to avoid repetition. Forced lexical diversification can make prose less natural and less precise.",
+  "Do not create broad multi-clause sentences simply to increase variation. Sentence breadth must follow the intellectual relationship among propositions, not a stylistic target.",
 ];
 
 export const SYNTACTIC_DIVERSITY_INSTRUCTIONS = [
@@ -88,7 +98,7 @@ function buildCadenceTargetBlock(humanCadence) {
 const NATURALISATION_FIDELITY = {
   off: null,
   faithful:
-    "NATURALISATION FIDELITY: faithful. Improve cadence and structure mainly through selective splitting/merging, clause reordering and local phrasing changes. Preserve the author's vocabulary, examples, context and register where they already work.",
+    "NATURALISATION FIDELITY: faithful. Improve cadence and structure mainly through selective splitting/merging, clause reordering, local phrasing changes and diagnosed argumentative development. Preserve the author's vocabulary, examples, context and register where they already work.",
   aggressive:
     [
       "NATURALISATION FIDELITY: aggressive. You may recast sentences substantially, change grammatical subjects, redistribute propositions across neighbouring sentences, and merge or divide sentences. Reorder local paragraph material only when the diagnostic plan explicitly identifies a paragraph-level structural problem. Every claim, citation, number, quotation and technical term must remain correct, and no new fact or reference may be introduced.",
@@ -140,6 +150,9 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     `Recommended intervention: ${plan.intent?.recommended || "not supplied"}`,
     `Effective intervention: ${plan.intent?.effective || "not supplied"}`,
     `Intervention budget: ${plan.interventionBudget?.label || "not supplied"} (${plan.interventionBudget?.conceptualStructuralChangeRange || "n/a"} conceptual structural change; this is guidance, not a word-replacement quota).`,
+    plan.argumentativeSufficiency
+      ? `Argumentative sufficiency: ${plan.argumentativeSufficiency.development_need || "n/a"} development need; score ${plan.argumentativeSufficiency.development_score ?? "n/a"}. ${plan.argumentativeSufficiency.guardrail || ""}`
+      : "",
     plan.intent?.rationale?.length ? `Intent rationale:\n${plan.intent.rationale.map((reason) => `- ${reason}`).join("\n")}` : "",
     "",
     naturalisationOn
@@ -180,16 +193,16 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
       : "",
     diagnosticRequirements.length
       ? [
-          "DIAGNOSTIC RESOLUTION REQUIREMENTS. These are source-specific problems or preservation principles. Resolve them at the appropriate level rather than merely changing nearby words:",
+          "DIAGNOSTIC RESOLUTION REQUIREMENTS. These are source-specific problems, development needs or preservation principles. Resolve them at the appropriate level rather than merely changing nearby words:",
           diagnosticRequirements.map((r) => `- ${r}`).join("\n"),
         ].join("\n")
       : "",
     "",
-    "PARAGRAPH / DISCOURSE PLAN. Execute this before sentence-level polishing. Multiple actions may apply to one block; primaryAction is the dominant instruction. KEEP_PARAGRAPH means preserve its reasoning structure, not necessarily freeze every sentence. PRESERVE_AUTHORIAL_PASSAGE means do not rewrite the passage itself. REBUILD_DISCOURSE means preserve propositions/evidence while changing how the paragraph develops. REDUCE_SIGNPOSTING and REMOVE_REDUNDANT_CLOSURE target global rhetorical regularity without deleting substantive content. Paragraph actions govern the reasoning unit and must not be converted mechanically into a requirement to rewrite every source sentence.",
+    "PARAGRAPH / DISCOURSE PLAN. Execute this before sentence-level polishing. Multiple actions may apply to one block; primaryAction is the dominant instruction. KEEP_PARAGRAPH means preserve its reasoning structure, not necessarily freeze every sentence. PRESERVE_AUTHORIAL_PASSAGE means do not rewrite the passage itself. REBUILD_DISCOURSE means preserve propositions/evidence while changing how the paragraph develops. DEVELOP_EVIDENCE means give cited findings enough explanatory space where the source/context supports that development. QUALIFY_EVIDENCE means make a conditional or bounded finding clear without strengthening it. EXPLAIN_MECHANISM means explain a relationship only where the mechanism already exists in supplied material. DISTINGUISH_MEASURES means clarify why related outcomes/proxies are not interchangeable. CONTEXTUALISE_SETTING and TEMPORALISE_EVIDENCE develop institutional or time-setting implications from supplied evidence only. BUILD_GAP develops the research need from the accumulated evidence rather than announcing a generic gap. REDUCE_SIGNPOSTING and REMOVE_REDUNDANT_CLOSURE target global rhetorical regularity without deleting substantive content. Paragraph actions govern the reasoning unit and must not be converted mechanically into a requirement to rewrite every source sentence.",
     JSON.stringify(plan.paragraphPlan || [], null, 2),
     "",
     "SENTENCE INTERVENTION PLAN (source order). Follow the assigned level AND its reason after applying the paragraph plan:",
-    "KEEP = do not alter sentence wording. KEEP classifications explain why: KEEP_VOICE, KEEP_EVIDENCE, KEEP_QUOTE, KEEP_TECHNICAL or KEEP_NATURAL. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = rebuild sentence architecture as needed. REWRITE_PATTERN in decisionCode means the sentence may be fluent individually but contributes to a diagnosed local/global pattern requiring a concrete sentence operation. DISCOURSE_REPACKAGE = the proposition/evidence belongs to a paragraph-level reconstruction; it is NOT an obligatory standalone rewrite and may remain, move, merge, split or be recast as the paragraph's reasoning requires. SPLIT_OR_MERGE = redistribute propositions across sentence boundaries. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add connective reasoning using only content already present in the source. COMPRESS = remove padding. FLAG_FOR_AUTHOR = leave substantively as-is and flag rather than guessing. In edit_summary, report only operations actually performed; do not count DISCOURSE_REPACKAGE merely because the sentence was in scope.",
+    "KEEP = do not alter sentence wording. KEEP classifications explain why: KEEP_VOICE, KEEP_EVIDENCE, KEEP_QUOTE, KEEP_TECHNICAL or KEEP_NATURAL. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = rebuild sentence architecture as needed. REWRITE_PATTERN in decisionCode means the sentence may be fluent individually but contributes to a diagnosed local/global pattern requiring a concrete sentence operation. SELECTIVE_ARGUMENT_DEVELOPMENT marks a paragraph whose intellectual work needs development; do not rewrite every sentence independently. DISCOURSE_REPACKAGE = the proposition/evidence belongs to a paragraph-level reconstruction; it is NOT an obligatory standalone rewrite and may remain, move, merge, split or be recast as the paragraph's reasoning requires. SPLIT_OR_MERGE = redistribute propositions across sentence boundaries. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add reasoning using only content already present in the source/context/evidence; it does not mean add words for their own sake. COMPRESS = remove padding. FLAG_FOR_AUTHOR = leave substantively as-is and flag rather than guessing. In edit_summary, report only operations actually performed; do not count paragraph scope as one compulsory edit per source sentence.",
     JSON.stringify(
       (plan.items || []).map((i) => ({
         sentenceIndex: i.sentenceIndex,
@@ -206,7 +219,7 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     ),
     plan.paragraphReorderSuggested
       ? "\nDocument-level note: a paragraph-level structural pattern was actually diagnosed. You may restructure sentence grouping or local paragraph order only as needed to resolve that pattern. Preserve the section's macro-argument sequence, claim-to-citation relationships and transitions between rhetorical stages. Do not move ideas merely to create novelty."
-      : "\nDocument-level note: no paragraph reorder was diagnosed. Preserve the existing macro-argument and paragraph sequence; perform any authorised reconstruction within that logical order.",
+      : "\nDocument-level note: no paragraph reorder was diagnosed. Preserve the existing macro-argument and paragraph sequence; perform any authorised reconstruction or development within that logical order.",
     "",
     "--- RESPONSE FORMAT ---",
     "Return a single JSON object matching exactly this shape, and nothing else:",

@@ -20,6 +20,17 @@
     } catch { return []; }
   }
 
+  function latestObservationSummary() {
+    const latest = loadObservations().slice(-1)[0];
+    if (!latest) return "No external detector result saved for this browser yet.";
+    const bits = [latest.detector || "External detector"];
+    if (latest.version) bits.push(latest.version);
+    if (Number.isFinite(Number(latest.aiScore))) bits.push(`AI ${latest.aiScore}%`);
+    if (Number.isFinite(Number(latest.humanScore))) bits.push(`Human ${latest.humanScore}%`);
+    if (Number.isFinite(Number(latest.paraphrasedScore))) bits.push(`Mixed/paraphrased ${latest.paraphrasedScore}%`);
+    return bits.join(" · ");
+  }
+
   function formatMetric(value, kind) {
     if (!Number.isFinite(Number(value))) return "n/a";
     if (kind === "ratio") return `${(Number(value) * 100).toFixed(1)}%`;
@@ -32,6 +43,35 @@
     const prefix = n > 0 ? "+" : "";
     if (kind === "ratio") return `${prefix}${(n * 100).toFixed(1)} pp`;
     return `${prefix}${n.toFixed(2)}`;
+  }
+
+  function waitForElement(id, timeoutMs = 3000) {
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const timer = setInterval(() => {
+        const element = $(id);
+        if (element || Date.now() - started > timeoutMs) {
+          clearInterval(timer);
+          resolve(element || null);
+        }
+      }, 80);
+    });
+  }
+
+  async function openDetectorLab(action = "view") {
+    document.querySelector('.tab-header[data-tab="detectorqa"]')?.click();
+    if (action === "record") {
+      const add = await waitForElement("addDetectorObservationBtn");
+      const entry = add?.closest(".research-entry") || document.querySelector("#tab-detectorqa .research-entry");
+      if (entry) {
+        entry.open = true;
+        entry.scrollIntoView({ behavior: "smooth", block: "start" });
+        $("manualDetector")?.focus();
+      }
+    } else if (action === "screenshot") {
+      const input = await waitForElement("detectorScreenshotInput");
+      if (input) input.click();
+    }
   }
 
   function renderAutomaticComparison(report, reason = "manual") {
@@ -75,17 +115,24 @@
       const candidate = report?.candidate_profiles?.whole_document || {};
       const reference = report?.corpus_reference || {};
       compact.innerHTML = `
-        <div><strong>Quick detector diagnostics</strong><span>linked to the current revision</span></div>
+        <div><strong>Writing pattern diagnostics</strong><span>linked to the current revision</span></div>
         <div class="quick-detector-grid">
           <span>Mean sentence words <strong>${esc(candidate.mean_sentence_words ?? "n/a")}</strong></span>
           <span>Sentence-length CV <strong>${esc(candidate.sentence_length_cv ?? "n/a")}</strong></span>
           <span>Short sentences <strong>${Number.isFinite(candidate.short_sentence_share) ? `${(candidate.short_sentence_share * 100).toFixed(1)}%` : "n/a"}</strong></span>
           <span>Corpus reference <strong>${esc(reference.evidence_strength || "n/a")}</strong></span>
         </div>
-        <button type="button" data-open-detector-tab>Open full Detector Research Lab</button>`;
-      compact.querySelector("[data-open-detector-tab]")?.addEventListener("click", () => {
-        document.querySelector('.tab-header[data-tab="detectorqa"]')?.click();
-      });
+        <div class="external-evidence-quick">
+          <div><strong>External detector evidence</strong><span>${esc(latestObservationSummary())}</span></div>
+          <div class="action-row">
+            <button type="button" data-record-detector-result>+ Add external result</button>
+            <button type="button" data-upload-detector-result>+ Upload result screenshot</button>
+            <button type="button" data-open-detector-tab>View test history / full lab</button>
+          </div>
+        </div>`;
+      compact.querySelector("[data-open-detector-tab]")?.addEventListener("click", () => openDetectorLab("view"));
+      compact.querySelector("[data-record-detector-result]")?.addEventListener("click", () => openDetectorLab("record"));
+      compact.querySelector("[data-upload-detector-result]")?.addEventListener("click", () => openDetectorLab("screenshot"));
     }
   }
 
@@ -234,7 +281,7 @@
     .auto-comparison-title{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}.auto-comparison-title>div{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}.auto-comparison-title span{opacity:.72;font-size:.86em}.comparison-badge{border:1px solid #52617a;border-radius:999px;padding:.25rem .55rem}
     .comparison-table{width:100%;border-collapse:collapse}.comparison-table th,.comparison-table td{padding:.55rem;border-bottom:1px solid #405269;text-align:left}.comparison-table td:nth-child(n+2){font-variant-numeric:tabular-nums}.delta-up::before{content:"↑ ";opacity:.65}.delta-down::before{content:"↓ ";opacity:.65}.delta-same::before{content:"→ ";opacity:.65}
     .comparison-notes{margin-top:.8rem}.comparison-notes ul{margin:.35rem 0 .2rem 1.2rem}.screenshot-observation-result{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin-top:.7rem;padding:.75rem;border-left:3px solid #5d79a4;background:rgba(5,11,18,.32)}
-    .quick-detector-summary>div:first-child{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}.quick-detector-summary>div:first-child span{opacity:.68}.quick-detector-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem!important;margin:.7rem 0}.quick-detector-grid span{padding:.5rem;background:rgba(4,10,18,.35);border-radius:6px}.quick-detector-grid strong{display:block;margin-top:.2rem}
+    .quick-detector-summary>div:first-child{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}.quick-detector-summary>div:first-child span{opacity:.68}.quick-detector-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem!important;margin:.7rem 0}.quick-detector-grid span{padding:.5rem;background:rgba(4,10,18,.35);border-radius:6px}.quick-detector-grid strong{display:block;margin-top:.2rem}.external-evidence-quick{margin-top:.8rem;padding-top:.8rem;border-top:1px solid #405269}.external-evidence-quick>div:first-child{display:flex;gap:.7rem;align-items:baseline;flex-wrap:wrap}.external-evidence-quick>div:first-child span{opacity:.72}
     @media(max-width:800px){.comparison-table{display:block;overflow-x:auto}.auto-comparison-title{align-items:flex-start}}
   `;
   document.head.appendChild(style);

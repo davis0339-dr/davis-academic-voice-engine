@@ -1,10 +1,11 @@
 // Hierarchical intervention planner.
 // Sequence: text understanding -> intent inference -> discourse diagnosis ->
 // paragraph intervention planning -> sentence operations -> surface refinement.
-// This prevents sentence-level fluency from masking document-level regularity.
+// This prevents sentence-level fluency from masking document-level regularity
+// and separates strong existing texture from argumentative sufficiency.
 
 const PLACEHOLDER_MARKERS = /\[(citation needed|TBD|TODO|XXX)\]/i;
-const CITATION_OR_NUMBER_RE = /(?:\([^)\n]{0,180}(?:18|19|20)\d{2}[a-z]?[^)\n]*\)|\b(?:18|19|20)\d{2}\b|\b\d+(?:\.\d+)?%\b|\b[ββα]\s*=|\bp\s*[<=>])/i;
+const CITATION_OR_NUMBER_RE = /(?:\([^\)\n]{0,180}(?:18|19|20)\d{2}[a-z]?[^\)\n]*\)|\b(?:18|19|20)\d{2}\b|\b\d+(?:\.\d+)?%\b|\b[ββα]\s*=|\bp\s*[<=>])/i;
 const DIRECT_QUOTE_RE = /^\s*[“\"][\s\S]+[”\"]\s*$/;
 const FIRST_PERSON_RE = /\b(?:I|we|my|our|ours)\b/;
 const TECHNICAL_RE = /(?:\b[A-Z]{2,}\b|\b(?:regression|estimator|coefficient|hypothesis|construct|variable|panel|logit|logistic|OLS|GLS|ANOVA|SEM|IFRS|IAS)\b)/i;
@@ -13,6 +14,7 @@ export const PLANNER_SEQUENCE = Object.freeze([
   "TEXT_UNDERSTANDING",
   "INTENT_INFERENCE",
   "DISCOURSE_DIAGNOSIS",
+  "ARGUMENTATIVE_SUFFICIENCY",
   "INTERVENTION_PLANNING",
   "PARAGRAPH_OPERATIONS",
   "SENTENCE_OPERATIONS",
@@ -33,6 +35,13 @@ export const PARAGRAPH_ACTIONS = Object.freeze({
   RESEQUENCE: "RESEQUENCE",
   CONDENSE: "CONDENSE",
   EXPAND_FROM_EXISTING_CONTENT: "EXPAND_FROM_EXISTING_CONTENT",
+  DEVELOP_EVIDENCE: "DEVELOP_EVIDENCE",
+  EXPLAIN_MECHANISM: "EXPLAIN_MECHANISM",
+  QUALIFY_EVIDENCE: "QUALIFY_EVIDENCE",
+  DISTINGUISH_MEASURES: "DISTINGUISH_MEASURES",
+  CONTEXTUALISE_SETTING: "CONTEXTUALISE_SETTING",
+  TEMPORALISE_EVIDENCE: "TEMPORALISE_EVIDENCE",
+  BUILD_GAP: "BUILD_GAP",
   MERGE_WITH_PREVIOUS: "MERGE_WITH_PREVIOUS",
   MERGE_WITH_NEXT: "MERGE_WITH_NEXT",
   BREAK_ARGUMENT: "BREAK_ARGUMENT",
@@ -65,7 +74,7 @@ const LEVELS = Object.freeze({
 const INTENT_BUDGETS = Object.freeze({
   [INTERVENTION_INTENTS.PRESERVE_POLISH]: { label: "restrained", conceptualStructuralChangeRange: "5-20%" },
   [INTERVENTION_INTENTS.CLARITY_FLOW]: { label: "moderate", conceptualStructuralChangeRange: "15-35%" },
-  [INTERVENTION_INTENTS.CONTEXT_SCHOLARLY_STRENGTHENING]: { label: "substantive", conceptualStructuralChangeRange: "25-50%" },
+  [INTERVENTION_INTENTS.CONTEXT_SCHOLARLY_STRENGTHENING]: { label: "developmental", conceptualStructuralChangeRange: "20-55%" },
   [INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION]: { label: "deep", conceptualStructuralChangeRange: "35-70%" },
   [INTERVENTION_INTENTS.DEEP_REDEVELOPMENT]: { label: "extensive", conceptualStructuralChangeRange: "55-90%" },
 });
@@ -83,6 +92,10 @@ function architectureSignalForSentence(diagnostics, index) {
   return (diagnostics.discourse_architecture?.signals || []).find((signal) => issueCoversSentence(signal, index));
 }
 
+function developmentSignalsForSentence(diagnostics, index) {
+  return (diagnostics.argumentative_sufficiency?.signals || []).filter((signal) => issueCoversSentence(signal, index));
+}
+
 function inferPreservationClass(sentence) {
   if (DIRECT_QUOTE_RE.test(sentence)) return KEEP_CLASSES.KEEP_QUOTE;
   if (CITATION_OR_NUMBER_RE.test(sentence)) return KEEP_CLASSES.KEEP_EVIDENCE;
@@ -95,6 +108,8 @@ function inferIntent(diagnostics, intensity, naturalisation) {
   const discourseSignals = diagnostics.qualitative_human_discourse?.signals || [];
   const contrastiveSignals = diagnostics.contrastive_language?.signals || [];
   const architectureSignals = diagnostics.discourse_architecture?.signals || [];
+  const sufficiency = diagnostics.argumentative_sufficiency || {};
+  const developmentSignals = sufficiency.signals || [];
   const placeholderCount = diagnostics.sentences.filter((sentence) => PLACEHOLDER_MARKERS.test(sentence)).length;
   const highDiscourse = discourseSignals.filter((signal) => signal.severity === "high").length;
   const highContrastive = contrastiveSignals.filter((signal) => signal.severity === "high").length;
@@ -104,6 +119,9 @@ function inferIntent(diagnostics, intensity, naturalisation) {
   const structuralIssueCount = diagnostics.structural_monotony?.length || 0;
   const cohesionIssueCount = diagnostics.cohesion?.length || 0;
   const genericCount = diagnostics.generic_phrasing?.length || 0;
+  const developmentNeed = sufficiency.development_need || "low";
+  const highDevelopment = developmentSignals.filter((signal) => signal.severity === "high").length;
+  const mediumDevelopment = developmentSignals.filter((signal) => signal.severity === "medium").length;
 
   let recommended = INTERVENTION_INTENTS.PRESERVE_POLISH;
   const rationale = [];
@@ -114,6 +132,16 @@ function inferIntent(diagnostics, intensity, naturalisation) {
   } else if (highDiscourse + highContrastive + highArchitecture > 0 || mediumArchitecture >= 2) {
     recommended = INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION;
     rationale.push("Document-level discourse diagnostics show patterned organisation that cannot be corrected reliably through local wording edits alone.");
+    if (developmentNeed !== "low") {
+      rationale.push("Argumentative-sufficiency diagnostics also show compressed evidential or contextual development, so reconstruction should complete the intellectual work without padding or inventing content.");
+    }
+  } else if (developmentNeed === "high" || highDevelopment > 0 || mediumDevelopment >= 2) {
+    recommended = INTERVENTION_INTENTS.CONTEXT_SCHOLARLY_STRENGTHENING;
+    rationale.push("The prose is academically usable, but evidence, conditions, measures or context are compressed enough that local polishing would preserve the under-development.");
+    rationale.push("Development must come only from the source, supplied manuscript context or researcher-provided evidence. Word-count growth is not a target.");
+  } else if (developmentNeed === "moderate") {
+    recommended = INTERVENTION_INTENTS.CONTEXT_SCHOLARLY_STRENGTHENING;
+    rationale.push("Selective argumentative development is warranted in diagnosed paragraphs even though the source does not require full discourse reconstruction.");
   } else if (paragraphPatternCount > 0 || cohesionIssueCount > 0 || structuralIssueCount >= 2) {
     recommended = INTERVENTION_INTENTS.CLARITY_FLOW;
     rationale.push("The source is substantively usable but its sequencing, cohesion or structural flow warrants intervention above simple proofreading.");
@@ -121,13 +149,15 @@ function inferIntent(diagnostics, intensity, naturalisation) {
     recommended = INTERVENTION_INTENTS.PRESERVE_POLISH;
     rationale.push("The main diagnosed weakness is local phrasing, so restrained editing is preferable to unnecessary reconstruction.");
   } else {
-    rationale.push("No strong structural defect was diagnosed; preserve existing reasoning and intervene lightly.");
+    rationale.push("No strong structural or argumentative-development defect was diagnosed; preserve existing reasoning and intervene lightly.");
   }
 
   let effective = recommended;
   let overrideApplied = false;
   if (naturalisation === "aggressive") {
-    effective = INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION;
+    effective = recommended === INTERVENTION_INTENTS.DEEP_REDEVELOPMENT
+      ? recommended
+      : INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION;
     overrideApplied = effective !== recommended;
     rationale.push("Aggressive naturalisation explicitly authorises deep structural restyling while factual preservation remains mandatory.");
   } else if (intensity === "minor") {
@@ -135,9 +165,12 @@ function inferIntent(diagnostics, intensity, naturalisation) {
     overrideApplied = effective !== recommended;
     rationale.push("Minor rewrite intensity caps intervention at local repair except where preservation or author flags require otherwise.");
   } else if (intensity === "moderate") {
-    effective = recommended === INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION
-      ? INTERVENTION_INTENTS.CLARITY_FLOW
-      : recommended;
+    if (recommended === INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION) {
+      effective = INTERVENTION_INTENTS.CONTEXT_SCHOLARLY_STRENGTHENING;
+      rationale.push("Moderate intensity does not authorise wholesale discourse reconstruction, but it does permit selective paragraph development where the diagnosis shows compressed evidence or reasoning.");
+    } else {
+      effective = recommended;
+    }
     overrideApplied = effective !== recommended;
   } else if (intensity === "deep" && recommended === INTERVENTION_INTENTS.PRESERVE_POLISH) {
     effective = INTERVENTION_INTENTS.CLARITY_FLOW;
@@ -161,6 +194,11 @@ function inferIntent(diagnostics, intensity, naturalisation) {
       structuralIssueCount,
       cohesionIssueCount,
       genericPhraseCount: genericCount,
+      argumentativeDevelopmentNeed: developmentNeed,
+      argumentativeDevelopmentScore: sufficiency.development_score ?? 0,
+      argumentativeDevelopmentSignalCount: developmentSignals.length,
+      highArgumentativeDevelopmentSignalCount: highDevelopment,
+      mediumArgumentativeDevelopmentSignalCount: mediumDevelopment,
     },
   };
 }
@@ -169,10 +207,30 @@ function paragraphHasSentence(block, sentenceIndex) {
   return Array.isArray(block?.sentenceIndices) && block.sentenceIndices.includes(sentenceIndex);
 }
 
+function developmentActionsForSignal(signal) {
+  switch (signal.id) {
+    case "evidence_compression":
+      return [PARAGRAPH_ACTIONS.DEVELOP_EVIDENCE, PARAGRAPH_ACTIONS.EXPAND_FROM_EXISTING_CONTENT];
+    case "conditional_finding_compression":
+      return [PARAGRAPH_ACTIONS.QUALIFY_EVIDENCE, PARAGRAPH_ACTIONS.EXPLAIN_MECHANISM, PARAGRAPH_ACTIONS.EXPAND_FROM_EXISTING_CONTENT];
+    case "measurement_bundle_compression":
+      return [PARAGRAPH_ACTIONS.DISTINGUISH_MEASURES, PARAGRAPH_ACTIONS.EXPAND_FROM_EXISTING_CONTENT];
+    case "institutional_context_compression":
+      return [PARAGRAPH_ACTIONS.CONTEXTUALISE_SETTING, PARAGRAPH_ACTIONS.EXPAND_FROM_EXISTING_CONTENT];
+    case "temporal_context_compression":
+      return [PARAGRAPH_ACTIONS.TEMPORALISE_EVIDENCE, PARAGRAPH_ACTIONS.EXPAND_FROM_EXISTING_CONTENT];
+    case "premature_local_synthesis":
+      return [PARAGRAPH_ACTIONS.REMOVE_REDUNDANT_CLOSURE];
+    default:
+      return [PARAGRAPH_ACTIONS.EXPAND_FROM_EXISTING_CONTENT];
+  }
+}
+
 function buildParagraphPlan(diagnostics, intent, naturalisation) {
   const structure = diagnostics.text_structure || { blocks: [] };
   const discourseSignals = diagnostics.qualitative_human_discourse?.signals || [];
   const architectureSignals = diagnostics.discourse_architecture?.signals || [];
+  const developmentSignals = diagnostics.argumentative_sufficiency?.signals || [];
   const repeatedParagraphLogic = discourseSignals.some((signal) => signal.issue === "repeated_paragraph_logic");
   const overSignposted = discourseSignals.some((signal) => signal.issue === "over_signposted_cohesion");
 
@@ -232,6 +290,16 @@ function buildParagraphPlan(diagnostics, intent, naturalisation) {
       reasons.push(signal.interpretation);
     }
 
+    const localDevelopmentSignals = developmentSignals.filter((signal) =>
+      block.sentenceIndices.some((index) => issueCoversSentence(signal, index)) || signal.blockIndex === block.blockIndex
+    );
+    if (intent.effective !== INTERVENTION_INTENTS.PRESERVE_POLISH) {
+      for (const signal of localDevelopmentSignals) {
+        actions.push(...developmentActionsForSignal(signal));
+        reasons.push(`${signal.interpretation} ${signal.action}`);
+      }
+    }
+
     if (repeatedParagraphLogic && block.type === "paragraph" && block.sentenceCount >= 2 && intent.effective === INTERVENTION_INTENTS.DISCOURSE_RECONSTRUCTION) {
       actions.push(PARAGRAPH_ACTIONS.REBUILD_DISCOURSE);
       reasons.push("The document repeats the same paragraph-level rhetorical recipe; this paragraph must be judged as part of that global pattern, not sentence by sentence.");
@@ -251,13 +319,20 @@ function buildParagraphPlan(diagnostics, intent, naturalisation) {
       actions.push(PARAGRAPH_ACTIONS.KEEP_PARAGRAPH);
       reasons.push(block.type === "list_item"
         ? "List item is treated as one semantic unit; preserve its enumerator and conceptual role unless a diagnosed pattern requires local sentence reconstruction."
-        : "No paragraph-level defect was diagnosed.");
+        : "No paragraph-level defect or development need was diagnosed.");
     }
 
     const dedupedActions = unique(actions);
     const precedence = [
       PARAGRAPH_ACTIONS.RESEQUENCE,
       PARAGRAPH_ACTIONS.REBUILD_DISCOURSE,
+      PARAGRAPH_ACTIONS.DEVELOP_EVIDENCE,
+      PARAGRAPH_ACTIONS.QUALIFY_EVIDENCE,
+      PARAGRAPH_ACTIONS.DISTINGUISH_MEASURES,
+      PARAGRAPH_ACTIONS.CONTEXTUALISE_SETTING,
+      PARAGRAPH_ACTIONS.TEMPORALISE_EVIDENCE,
+      PARAGRAPH_ACTIONS.EXPLAIN_MECHANISM,
+      PARAGRAPH_ACTIONS.BUILD_GAP,
       PARAGRAPH_ACTIONS.SYNTHESISE_EVIDENCE,
       PARAGRAPH_ACTIONS.REMOVE_REDUNDANT_CLOSURE,
       PARAGRAPH_ACTIONS.REDUCE_SIGNPOSTING,
@@ -308,6 +383,7 @@ function sentenceSignals(sentence, index, diagnostics) {
     (m) => m.issue === "choppy_sentence_run" && issueCoversSentence(m, index)
   );
   const architectureIssue = architectureSignalForSentence(diagnostics, index);
+  const developmentSignals = developmentSignalsForSentence(diagnostics, index);
   const isPlaceholder = PLACEHOLDER_MARKERS.test(sentence);
   return {
     hasGenericPhrase,
@@ -320,8 +396,23 @@ function sentenceSignals(sentence, index, diagnostics) {
     demonstrativeBridgeIssue,
     choppyRunIssue,
     architectureIssue,
+    developmentSignals,
     isPlaceholder,
   };
+}
+
+function paragraphHasDevelopmentAction(paragraphDecision) {
+  const actions = paragraphDecision?.actions || [];
+  return actions.some((action) => [
+    PARAGRAPH_ACTIONS.EXPAND_FROM_EXISTING_CONTENT,
+    PARAGRAPH_ACTIONS.DEVELOP_EVIDENCE,
+    PARAGRAPH_ACTIONS.EXPLAIN_MECHANISM,
+    PARAGRAPH_ACTIONS.QUALIFY_EVIDENCE,
+    PARAGRAPH_ACTIONS.DISTINGUISH_MEASURES,
+    PARAGRAPH_ACTIONS.CONTEXTUALISE_SETTING,
+    PARAGRAPH_ACTIONS.TEMPORALISE_EVIDENCE,
+    PARAGRAPH_ACTIONS.BUILD_GAP,
+  ].includes(action));
 }
 
 function planSentence(sentence, index, diagnostics, options) {
@@ -386,6 +477,17 @@ function planSentence(sentence, index, diagnostics, options) {
     return { level: LEVELS.DISCOURSE_REPACKAGE, reasons, preservationClass, decisionCode: "DISCOURSE_SCOPE" };
   }
 
+  if (paragraphHasDevelopmentAction(paragraphDecision) && paragraphDecision?.sentenceIndices?.[0] === index) {
+    reasons.push("This paragraph has a diagnosed argumentative-development need. Develop the existing evidence/qualification/context at paragraph level; do not inflate every sentence or add unsupported content.");
+    for (const signal of s.developmentSignals) reasons.push(`${signal.interpretation} ${signal.action}`);
+    return {
+      level: LEVELS.CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT,
+      reasons: unique(reasons),
+      preservationClass,
+      decisionCode: "SELECTIVE_ARGUMENT_DEVELOPMENT",
+    };
+  }
+
   if (s.demonstrativeBridgeIssue && naturalisation === "aggressive") {
     reasons.push("This sentence sits inside a cluster of repeated demonstrative bridge subjects. Keep the referential connection, but vary how the sentence grows from the preceding evidence so cohesion is not mechanically signposted.");
     return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons, preservationClass, decisionCode: "REWRITE_PATTERN" };
@@ -430,7 +532,7 @@ function planSentence(sentence, index, diagnostics, options) {
         reasons.push("Flagged wording/structure under Moderate intensity.");
         return { level: LEVELS.SENTENCE_RESTRUCTURE, reasons, preservationClass, decisionCode: LEVELS.SENTENCE_RESTRUCTURE };
       }
-      return { level: LEVELS.MICRO_EDIT, reasons: ["Unflagged; light pass only."], preservationClass, decisionCode: LEVELS.MICRO_EDIT };
+      return { level: LEVELS.MICRO_EDIT, reasons: ["Unflagged; light pass only unless a paragraph-level development action governs the material."], preservationClass, decisionCode: LEVELS.MICRO_EDIT };
 
     case "deep":
       if (flagged) {
@@ -484,12 +586,17 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
   const discourseSignals = diagnostics.qualitative_human_discourse?.signals || [];
   const contrastiveSignals = diagnostics.contrastive_language?.signals || [];
   const architectureSignals = diagnostics.discourse_architecture?.signals || [];
+  const developmentSignals = diagnostics.argumentative_sufficiency?.signals || [];
   const trainingPrinciples = [
     "Intent before intervention: diagnose what the writer needs before choosing rewrite depth.",
+    "Strong existing authorial texture and sufficient argumentative development are separate questions. Preserve good surface voice while still developing compressed evidence or reasoning where diagnosed.",
+    "Expand intellectual workload, not word count. Added words are justified only when they complete a rhetorical function already licensed by the source, manuscript context or researcher-provided evidence.",
     "Judge local sentences in global context: an individually strong sentence may still participate in a paragraph-level reconstruction when it contributes to repetitive document architecture.",
     "A discourse-level action is not a quota requiring every source sentence in that paragraph to be independently rewritten; preserve, move, merge, split or recast material according to the paragraph's reasoning needs.",
+    "Selective argumentative development is also not a sentence-length exercise. Develop evidence, mechanisms, conditions, measurement distinctions, institutional context, temporal context or the empirical gap only where those functions are diagnosed.",
     "Preserve authorial reasoning, evidence, technical meaning and lexical identity; do not confuse human variation with deliberate errors or randomisation.",
     "Prefer evidence-assembled reasoning over pre-packaged claim/explanation/implication templates when the source supports that development.",
+    "Do not force local synthesis after every small evidence cluster. Some paragraphs may end with evidence, a qualification or an unresolved tension that carries forward.",
     "Contextual grounding must come from the source, supplied context or verifiable user material; never invent local realities to make prose appear situated.",
     "Retain scholarly trace: citations, short quotations, author attributions, disagreement and qualification should remain visible where they are part of the source's intellectual development.",
     "Aim for high global scholarly competence with non-uniform local optimisation; not every sentence or paragraph needs a polished rhetorical payoff.",
@@ -500,6 +607,7 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
     ...discourseSignals.map((signal) => `${signal.interpretation} ${signal.action}`),
     ...contrastiveSignals.map((signal) => `Contrastive language signal (${signal.label}): ${signal.interpretation} ${signal.action}`),
     ...architectureSignals.map((signal) => `Discourse architecture signal (${signal.id}): ${signal.interpretation} ${signal.action}`),
+    ...developmentSignals.map((signal) => `Argumentative sufficiency signal (${signal.id}): ${signal.interpretation} ${signal.action}`),
   ];
 
   const paragraphReorderSuggested = diagnostics.structural_monotony.some(
@@ -517,13 +625,14 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
   }, {});
 
   return {
-    plannerVersion: "intent-discourse-v3",
+    plannerVersion: "intent-discourse-v4",
     sequence: PLANNER_SEQUENCE,
     intensity,
     lengthPreference: length,
     naturalisation: naturalisationLevel,
     intent,
     interventionBudget: intent.budget,
+    argumentativeSufficiency: diagnostics.argumentative_sufficiency || null,
     items,
     paragraphPlan,
     paragraphSummary,
@@ -532,6 +641,7 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
     qualitativeDiscourseSignalCount: discourseSignals.length,
     contrastiveLanguageSignalCount: contrastiveSignals.length,
     discourseArchitectureSignalCount: architectureSignals.length,
+    argumentativeDevelopmentSignalCount: developmentSignals.length,
     paragraphReorderSuggested,
     summary,
   };
