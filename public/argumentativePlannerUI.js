@@ -36,8 +36,8 @@
     if (!host) return;
     const plan = latestAnalysis?.plan || null;
     const sufficiency = plan?.argumentativeSufficiency || null;
-    const authority = latestRewrite?.intervention_authority || null;
-    const texture = latestRewrite?.authorial_texture || latestRewrite?.source_assessment?.authorial_texture || null;
+    const authority = latestRewrite?.intervention_authority || latestAnalysis?.intervention_authority || null;
+    const texture = latestRewrite?.authorial_texture || latestRewrite?.source_assessment?.authorial_texture || latestAnalysis?.authorial_texture || latestAnalysis?.source_assessment?.authorial_texture || null;
     if (!sufficiency && !authority) return;
 
     let panel = document.getElementById("argumentativeDevelopmentDashboard");
@@ -67,8 +67,8 @@
         <div><span>Argument development need</span><strong>${esc(title(need))}</strong></div>
         <div><span>Development score</span><strong>${esc(sufficiency?.development_score ?? "n/a")}</strong></div>
         <div><span>Affected paragraphs</span><strong>${pct(sufficiency?.affected_paragraph_ratio)}</strong></div>
-        <div><span>Development permission</span><strong>${esc(title(authority?.discourse_development_permission || "pending rewrite"))}</strong></div>
-        <div><span>Depth permission</span><strong>${esc(title(authority?.depth_permission || "pending rewrite"))}</strong></div>
+        <div><span>Development permission</span><strong>${esc(title(authority?.discourse_development_permission || "pending"))}</strong></div>
+        <div><span>Depth permission</span><strong>${esc(title(authority?.depth_permission || "pending"))}</strong></div>
       </div>
       <div class="argdev-rule"><strong>Core rule:</strong> strong authorial texture does not automatically mean the argument is sufficiently developed. Preserve good wording while developing only diagnosed evidence, conditions, measures, setting, time context or gap. Word-count growth is never the target.</div>
       ${signalChips ? `<div class="argdev-signals"><strong>Development signals</strong><div>${signalChips}</div></div>` : '<div class="argdev-signals"><strong>Development signals</strong><span class="muted"> None triggered.</span></div>'}
