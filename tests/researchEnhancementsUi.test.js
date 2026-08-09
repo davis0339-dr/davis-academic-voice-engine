@@ -5,6 +5,8 @@ import fs from "node:fs";
 const legacyUi = fs.readFileSync(new URL("../public/researchEnhancements.js", import.meta.url), "utf8");
 const quickBridge = fs.readFileSync(new URL("../public/detectorQuickBridge.js", import.meta.url), "utf8");
 const studioVoice = fs.readFileSync(new URL("../public/studioVoiceUI.js", import.meta.url), "utf8");
+const evidenceBank = fs.readFileSync(new URL("../public/researchEvidenceBankUI.js", import.meta.url), "utf8");
+const studioHtml = fs.readFileSync(new URL("../public/studio.html", import.meta.url), "utf8");
 const index = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const optional = fs.readFileSync(new URL("../public/optionalFeatures.js", import.meta.url), "utf8");
 const security = fs.readFileSync(new URL("../server/lib/security.js", import.meta.url), "utf8");
@@ -16,13 +18,26 @@ test("legacy combined enhancement script is retained for history but no longer l
   assert.match(optional, /\/detectorQuickBridge\.js/);
 });
 
-test("voice reasoning remains available in the isolated Research & Evidence Studio", () => {
+test("voice reasoning is an independent operational mode in the isolated Research & Evidence Studio", () => {
+  assert.match(studioVoice, /reasoningModeTypedBtn/);
+  assert.match(studioVoice, /reasoningModeVoiceBtn/);
   assert.match(studioVoice, /voiceReasoningConsent/);
   assert.match(studioVoice, /I understand and want to enable microphone transcription/);
   assert.match(studioVoice, /voiceReasoningTranscript/);
-  assert.match(studioVoice, /Add transcript to my reasoning/);
+  assert.match(studioVoice, /Build Argument Map from Voice/);
+  assert.match(studioVoice, /Append to Typed Reasoning/);
   assert.match(studioVoice, /does not store raw audio/i);
   assert.match(security, /microphone=\(self\)/);
+});
+
+test("large CSV/XLSX literature bank is independent from the eight-source evidence workspace", () => {
+  assert.match(studioHtml, /researchEvidenceBankUI\.js/);
+  assert.match(evidenceBank, /MAX_BANK_BYTES = 25 \* 1024 \* 1024/);
+  assert.match(evidenceBank, /MAX_BANK_ROWS = 10000/);
+  assert.match(evidenceBank, /Upload literature bank/);
+  assert.match(evidenceBank, /Find evidence for current reasoning/);
+  assert.match(evidenceBank, /Send selected to Evidence Workspace/);
+  assert.match(evidenceBank, /APA 7 REFERENCE CANDIDATE/);
 });
 
 test("detector screenshot UX remains in the lightweight editor-detector bridge", () => {
@@ -30,6 +45,8 @@ test("detector screenshot UX remains in the lightweight editor-detector bridge",
   assert.match(quickBridge, /image\/png/);
   assert.match(quickBridge, /image\/jpeg/);
   assert.match(quickBridge, /Turnitin, GPTZero/);
+  assert.match(quickBridge, /\+ Add external result/);
+  assert.match(quickBridge, /\+ Upload result screenshot/);
 });
 
 test("successful rewrite still triggers automatic source-to-revision comparison without loading studio tools", () => {
