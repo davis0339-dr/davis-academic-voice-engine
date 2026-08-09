@@ -10,7 +10,22 @@
   .workspace-nav a{display:inline-flex;align-items:center;padding:.42rem .7rem;border:1px solid #465b74;border-radius:999px;text-decoration:none;color:inherit;font-size:.86rem}
   .workspace-nav a.active{border-color:#62e0b0;background:rgba(98,224,176,.08)}
   .workspace-nav a:hover{background:rgba(255,255,255,.05)}
-  @media(max-width:760px){.topbar{align-items:flex-start;flex-wrap:wrap}.workspace-nav{width:100%;margin-left:0}}
+  .evidence-input-gateway{border-color:#4e779d!important}
+  .evidence-gateway-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap}
+  .evidence-gateway-head h3{margin:.1rem 0}.evidence-gateway-head p{margin:.35rem 0;color:var(--muted)}
+  .evidence-gateway-badge{border:1px solid #4e779d;border-radius:999px;padding:.25rem .55rem;color:#b9c9da;font-size:.78rem;white-space:nowrap}
+  .evidence-native-upload{display:grid;gap:.45rem;margin:.9rem 0}
+  .evidence-native-upload input[type="file"]{display:block;width:100%;max-width:760px;padding:.7rem;border:1px solid #56708a;border-radius:9px;background:var(--bg);color:var(--text);font-size:.9rem}
+  .evidence-native-upload input[type="file"]::file-selector-button{margin-right:.75rem;padding:.65rem 1rem;border:1px solid var(--accent);border-radius:7px;background:var(--accent);color:white;font-weight:700;cursor:pointer}
+  .evidence-gateway-drop{display:grid;gap:.3rem;padding:1rem;border:2px dashed #607d99;border-radius:10px;text-align:center;cursor:pointer;margin:.8rem 0;background:rgba(255,255,255,.02)}
+  .evidence-gateway-drop:hover,.evidence-gateway-drop.drag-active{border-color:var(--accent);background:rgba(91,141,239,.08)}
+  .evidence-gateway-drop span{color:var(--muted)}
+  .evidence-gateway-paste{margin-top:.8rem;padding:.75rem;border:1px solid var(--border);border-radius:9px}
+  .evidence-gateway-paste label{display:grid;gap:.35rem;margin:.65rem 0}
+  .evidence-gateway-paste input,.evidence-gateway-paste textarea{width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:.6rem}
+  .evidence-gateway-actions{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.6rem 0}
+  #evidenceGatewayStatus{display:block;margin-top:.5rem}
+  @media(max-width:760px){.topbar{align-items:flex-start;flex-wrap:wrap}.workspace-nav{width:100%;margin-left:0}.evidence-gateway-actions button{width:100%}}
 </style>
 <script>window.AVE_WORKSPACE="research-evidence-studio";</script>
 </head>
@@ -56,6 +71,42 @@
     </div>
   </details>
 
+  <section id="evidenceInputGateway" class="studio-evidence-card evidence-input-gateway">
+    <div class="evidence-gateway-head">
+      <div>
+        <h3>Evidence Workspace — add supporting materials</h3>
+        <p>This control is rendered directly in the Studio page so device upload and paste access do not depend on a secondary UI script loading correctly.</p>
+      </div>
+      <span class="evidence-gateway-badge">Evidence Gateway v3.0.0</span>
+    </div>
+
+    <label class="evidence-native-upload"><strong>Choose evidence files from this device</strong>
+      <input id="evidenceGatewayFiles" type="file" multiple accept=".txt,.md,.markdown,.docx,.pdf,.csv,.xlsx,text/plain,text/markdown,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+      <span class="muted">TXT, MD, DOCX, text-based PDF, CSV and XLSX. Selected files are transferred into the Researcher Studio Evidence Workspace.</span>
+    </label>
+
+    <div id="evidenceGatewayDropZone" class="evidence-gateway-drop" role="button" tabindex="0" aria-label="Drag and drop evidence files here or press Enter to choose files">
+      <strong>Drag and drop evidence files here</strong>
+      <span>Journal articles, reports, supporting documents, datasets and Excel workbooks</span>
+    </div>
+
+    <details class="evidence-gateway-paste" open>
+      <summary><strong>Paste a document, article excerpt, report or supporting source</strong></summary>
+      <div class="evidence-gateway-actions">
+        <button id="pasteGatewayClipboardBtn" type="button">Paste text from clipboard</button>
+        <span class="muted">or click in the box and use Ctrl+V / Cmd+V</span>
+      </div>
+      <label>Source title / label
+        <input id="evidenceGatewayPasteTitle" type="text" maxlength="120" placeholder="e.g. Anderson et al. (2004), supervisor memo, industry report" />
+      </label>
+      <label>Source text
+        <textarea id="evidenceGatewayPasteText" rows="7" placeholder="Paste the article, journal excerpt, report passage, supporting document, dataset notes or other source material here…"></textarea>
+      </label>
+      <button id="addGatewayPastedSourceBtn" type="button">Add pasted source to Evidence Workspace</button>
+    </details>
+    <span id="evidenceGatewayStatus" class="file-status" aria-live="polite">Ready for device files, drag-and-drop, or pasted evidence.</span>
+  </section>
+
   <section class="tabs">
     <div class="tab-headers">
       <button class="tab-header active" data-tab="evidence">Evidence &amp; Methodology</button>
@@ -77,6 +128,7 @@
 <script src="/runtimeGuard.js"></script>
 <script src="/researchStudioCandidateBridge.js"></script>
 <script src="/researchStudioUI.js"></script>
+<script src="/researchStudioEvidenceGateway.js?v=3.0.0"></script>
 <script src="/researchStudioEvidenceCoreUI.js?v=2.2.0"></script>
 <script src="/researchStudioCapabilitiesUI.js"></script>
 <script src="/researchEvidenceBankUI.js"></script>
