@@ -10,6 +10,7 @@ import { analyseHumanDiscourse } from "./humanDiscourse.js";
 import { assessContrastiveLanguage } from "./contrastiveLanguage.js";
 import { parseTextStructure } from "./textStructure.js";
 import { analyseDiscourseArchitecture } from "./discourseArchitecture.js";
+import { assessArgumentativeSufficiency } from "./argumentativeSufficiency.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -172,6 +173,7 @@ export function diagnose(text) {
   const humanDiscourse = analyseHumanDiscourse(text);
   const contrastiveLanguage = assessContrastiveLanguage(text, { humanDiscourse });
   const discourseArchitecture = analyseDiscourseArchitecture(text, textStructure);
+  const argumentativeSufficiency = assessArgumentativeSufficiency(text, textStructure);
   const monotony = findMonotony(sentences);
 
   const structuralMonotony = [
@@ -200,6 +202,7 @@ export function diagnose(text) {
     paragraph_patterns: paragraphPatterns,
     rhetorical_scaffolding: rhetoricalScaffolding,
     discourse_architecture: discourseArchitecture,
+    argumentative_sufficiency: argumentativeSufficiency,
     cohesion: transitionStacking,
     evidence_alignment: [],
     qualitative_human_discourse: humanDiscourse,
