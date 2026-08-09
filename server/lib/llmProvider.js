@@ -6,7 +6,6 @@ const ANTHROPIC_VERSION = "2023-06-01";
 
 export const HealthState = Object.freeze({
   READY: "READY",
-  CONFIGURED: "CONFIGURED",
   NOT_CONFIGURED: "NOT_CONFIGURED",
   AUTH_FAILED: "AUTH_FAILED",
   RATE_LIMITED: "RATE_LIMITED",
@@ -29,6 +28,10 @@ function isConfigured() {
   return Boolean(apiKey && apiKey.trim().length > 0);
 }
 
+// Fast configuration-only status used by page startup. `READY` here means the
+// application is configured to accept provider-backed work; live provider reachability
+// is deliberately not probed on every page load. The response tells callers whether
+// a live probe was actually performed.
 function configurationHealth() {
   if (!isConfigured()) {
     return {
@@ -38,8 +41,8 @@ function configurationHealth() {
     };
   }
   return {
-    state: HealthState.CONFIGURED,
-    message: "Provider credentials are configured. Live provider connectivity is checked only on demand or during an actual model request.",
+    state: HealthState.READY,
+    message: "Provider credentials are configured. Live connectivity is checked during model work or by an explicit diagnostic probe.",
     live_probe_performed: false,
   };
 }
