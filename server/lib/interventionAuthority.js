@@ -165,7 +165,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     rule: authorialMode
       ? "Deep Authorial Reconstruction preserves argument, evidence, citations, numbers, methods, variables, qualifications, epistemic strength, factual relationships and technical meaning; it does not require preservation of source sentence wording or sentence boundaries. Maximum breadth is an authority ceiling and the minimum is only an execution safeguard, never a rewrite target."
       : deepDiscourseMode
-        ? "Deep discourse reconstruction may redevelop every diagnosed sentence when the planner places the whole passage in intervention scope. The breadth ceiling follows that diagnosed scope rather than imposing an arbitrary cap; factual and semantic preservation remain separate hard requirements."
+        ? "Deep discourse reconstruction may redevelop every diagnosed sentence when the planner places the whole passage in intervention scope. The breadth ceiling follows that diagnosed scope rather than imposing an arbitrary 95% cap; factual and semantic preservation remain separate hard requirements."
         : selectiveDevelopment
           ? "Selective argumentative development may add explanatory space only where the planner identifies compressed evidence, conditions, measures or context. Strong surface texture remains protected, and expansion is justified by rhetorical work rather than desired word count."
           : "Maximum changed-sentence breadth is an authorised disturbance ceiling, never a rewrite target. Minimum changed-sentence breadth is only a plausibility safeguard for demanding plans. Diagnosis determines where intervention is warranted; clean text may remain unchanged.",
