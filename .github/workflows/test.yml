@@ -52,9 +52,9 @@ jobs:
           node --check public/detectorResearchUI.js
           node --check public/detectorEvidenceUI.js
           node --check public/researchStudioUI.js
+          node --check public/researchStudioEvidenceCoreUI.js
           node --check public/researchStudioCapabilitiesUI.js
           node --check public/researchStudioCandidateBridge.js
-          node --check public/researchStudioSourceExpansionUI.js
           node --check public/longDocumentEvidenceHandoffUI.js
           node --check public/longDocumentVNextUI.js
           node --check server/lib/iterativeRewriteGuard.js
@@ -106,8 +106,10 @@ jobs:
           grep -q '/rewriteLineage.js' public/optionalFeatures.js
           grep -q '/longDocumentVNextUI.js' public/optionalFeatures.js
           grep -q '/researchStudioUI.js' studio-smoke.html
+          grep -q '/researchStudioEvidenceCoreUI.js' studio-smoke.html
           grep -q '/researchStudioCandidateBridge.js' studio-smoke.html
-          grep -q '/researchStudioSourceExpansionUI.js' studio-smoke.html
+          grep -q 'browseResearchEvidenceBtn' public/researchStudioEvidenceCoreUI.js
+          grep -q 'evidencePasteText' public/researchStudioEvidenceCoreUI.js
           grep -q 'evidence-enhance-candidate' server/routes/evidenceEnhance.js
           cat server-smoke.log
       - name: Run test suite
