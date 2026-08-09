@@ -6,6 +6,7 @@ const ANTHROPIC_VERSION = "2023-06-01";
 
 export const HealthState = Object.freeze({
   READY: "READY",
+  CONFIGURED: "CONFIGURED",
   NOT_CONFIGURED: "NOT_CONFIGURED",
   AUTH_FAILED: "AUTH_FAILED",
   RATE_LIMITED: "RATE_LIMITED",
@@ -26,6 +27,21 @@ function getConfig() {
 function isConfigured() {
   const { apiKey } = getConfig();
   return Boolean(apiKey && apiKey.trim().length > 0);
+}
+
+function configurationHealth() {
+  if (!isConfigured()) {
+    return {
+      state: HealthState.NOT_CONFIGURED,
+      message: "ANTHROPIC_API_KEY is not set.",
+      live_probe_performed: false,
+    };
+  }
+  return {
+    state: HealthState.CONFIGURED,
+    message: "Provider credentials are configured. Live provider connectivity is checked only on demand or during an actual model request.",
+    live_probe_performed: false,
+  };
 }
 
 function providerFailure(status, bodyText, retryAfter = null) {
@@ -113,7 +129,7 @@ async function callAnthropic({ system, messages, maxTokens = 4096, timeoutOverri
 
 async function checkHealth() {
   if (!isConfigured()) {
-    return { state: HealthState.NOT_CONFIGURED, message: "ANTHROPIC_API_KEY is not set." };
+    return { state: HealthState.NOT_CONFIGURED, message: "ANTHROPIC_API_KEY is not set.", live_probe_performed: true };
   }
   try {
     await callAnthropic({
@@ -122,17 +138,19 @@ async function checkHealth() {
       maxTokens: 8,
       timeoutOverrideMs: 10000,
     });
-    return { state: HealthState.READY, message: "Provider reachable and authenticated." };
+    return { state: HealthState.READY, message: "Provider reachable and authenticated.", live_probe_performed: true };
   } catch (err) {
     return {
       state: err.healthState || HealthState.PROVIDER_ERROR,
       message: err.message,
+      live_probe_performed: true,
     };
   }
 }
 
 export const llmProvider = {
   isConfigured,
+  configurationHealth,
   checkHealth,
   callAnthropic,
 };
