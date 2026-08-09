@@ -27,7 +27,8 @@ test("Aggressive does not create rewrite scope in the diagnosis-scoped planner",
     lengthPreference: "expand",
     naturalisation: "aggressive",
   });
-  assert.equal(plan.scopePolicyVersion, "diagnosis-scoped-naturalisation-v1");
+  assert.equal(plan.scopePolicyVersion, "diagnosis-scoped-naturalisation-v2");
+  assert.equal(plan.diagnosticIntensity, "auto");
   assert.notEqual(plan.intent.recommended, "discourse_reconstruction");
   assert.ok(plan.scopePrinciples.some((rule) => /Aggressive is a treatment style, not a rewrite-scope generator/i.test(rule)));
   assert.ok((plan.items || []).some((item) => item.level === "KEEP" || item.level === "MICRO_EDIT"));
