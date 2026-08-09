@@ -102,6 +102,37 @@ jobs:
           curl -L -sS --connect-timeout 8 --max-time 20 "$LIVE_URL/api/health" > live-health.json 2>/dev/null || true
           curl -L -sS --connect-timeout 8 --max-time 20 "$LIVE_URL/" > live-root.html 2>/dev/null || true
           exit 0
+      - name: Headless browser runtime probe
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+          LIVE_URL='https://davis-academic-voice-engine.onrender.com'
+          BROWSER="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
+          echo "browser=$BROWSER" | tee browser-runtime.log
+          if [ -z "$BROWSER" ]; then
+            echo 'No Chromium-family browser preinstalled on runner.' | tee -a browser-runtime.log
+            exit 0
+          fi
+          timeout 35s "$BROWSER" \
+            --headless=new \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-dev-shm-usage \
+            --virtual-time-budget=15000 \
+            --enable-logging=stderr \
+            --v=0 \
+            --dump-dom "$LIVE_URL/" > live-browser-dom.html 2> browser-runtime.log
+          BROWSER_EXIT=$?
+          echo "browser_exit=$BROWSER_EXIT" >> browser-runtime.log
+          echo '--- key rendered states ---' >> browser-runtime.log
+          grep -Eo 'LLM: [^<]+' live-browser-dom.html | head -5 >> browser-runtime.log || true
+          grep -Eo 'build: [^<]+' live-browser-dom.html | head -5 >> browser-runtime.log || true
+          grep -Eo 'Single editor: [^<]+' live-browser-dom.html | head -5 >> browser-runtime.log || true
+          grep -Eo 'Current beta benchmark: [^<]+' live-browser-dom.html | head -5 >> browser-runtime.log || true
+          grep -Eo 'Could not load coverage data|Loading corpus coverage…|checking service status…|Single editor capacity: loading…' live-browser-dom.html >> browser-runtime.log || true
+          cat browser-runtime.log
+          exit 0
       - name: Run test suite
         shell: bash
         run: |
@@ -129,5 +160,7 @@ jobs:
             live-render-probe.txt
             live-root.html
             live-health.json
+            browser-runtime.log
+            live-browser-dom.html
           if-no-files-found: ignore
           retention-days: 7
