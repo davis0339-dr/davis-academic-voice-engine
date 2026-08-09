@@ -10,6 +10,7 @@ import { rewriteRouter } from "./routes/rewrite.js";
 import { detectorScanRouter } from "./routes/detectorScan.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { researchStudioRouter } from "./routes/researchStudio.js";
+import { evidenceEnhanceRouter } from "./routes/evidenceEnhance.js";
 import { llmProvider } from "./lib/llmProvider.js";
 import {
   securityHeaders,
@@ -35,11 +36,11 @@ app.use(securityHeaders);
 // Apply abuse controls before reading potentially expensive request bodies.
 app.use("/api", generalApiLimiter, enforceSameOrigin, protectExpensiveApi, expensiveConcurrencyGate);
 
-// Long-document jobs need more room than the single editor. A detector-result
-// screenshot is separately bounded to one PNG/JPEG with a 2 MB decoded image
-// limit; base64 expansion requires a slightly larger JSON envelope. All other
-// API surfaces retain the smaller generic JSON limit.
+// Long-document jobs need more room than the single editor. Evidence enhancement
+// may carry both the reworked candidate and fidelity-reference source plus approved
+// evidence links, so it shares the larger chapter-scale JSON envelope.
 app.use("/api/jobs", express.json({ limit: "1mb", strict: true, type: "application/json" }));
+app.use("/api/research/evidence-enhance-candidate", express.json({ limit: "1mb", strict: true, type: "application/json" }));
 app.use("/api/detector-screenshot", express.json({ limit: "3mb", strict: true, type: "application/json" }));
 app.use("/api", express.json({ limit: "512kb", strict: true, type: "application/json" }));
 app.use(jsonBodyErrorHandler);
@@ -53,6 +54,7 @@ app.use("/api", rewriteRouter);
 app.use("/api", detectorScanRouter);
 app.use("/api", jobsRouter);
 app.use("/api", researchStudioRouter);
+app.use("/api", evidenceEnhanceRouter);
 
 // One backend, two deliberately separate browser workspaces. The existing root
 // remains the Editor + Detector so current bookmarks do not break.
