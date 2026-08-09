@@ -21,6 +21,7 @@
     ["/authorialTextureUI.js", null],
     ["/longDocumentIntelligenceUI.js", null],
     ["/longDocumentVNextUI.js", null],
+    ["/longDocumentExecutionAuditUI.js", null],
   ];
 
   function dataProperty(dataKey) {
