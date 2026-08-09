@@ -11,6 +11,7 @@
     .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   const title = (value) => String(value || "n/a").replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
   const pct = (value) => Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : "n/a";
+  const countWords = (value) => (String(value || "").trim().match(/\S+/g) || []).length;
 
   function schedule() {
     if (timer) clearTimeout(timer);
@@ -31,14 +32,62 @@
     return response;
   };
 
+  function resolveSufficiency() {
+    const plan = latestAnalysis?.plan || null;
+    if (plan?.argumentativeSufficiency) return plan.argumentativeSufficiency;
+    if (latestRewrite?.argumentative_sufficiency) return latestRewrite.argumentative_sufficiency;
+    if (latestRewrite?.diagnostics?.argumentative_sufficiency) return latestRewrite.diagnostics.argumentative_sufficiency;
+
+    // Direct Analyse & Revise responses currently expose the planner's sufficiency
+    // decision inside intervention_intent.evidence even when the full signal object
+    // is not returned. Use that real planner evidence rather than falsely showing
+    // “Not Assessed”.
+    const evidence = latestRewrite?.intervention_intent?.evidence || latestAnalysis?.plan?.intent?.evidence || null;
+    if (!evidence || !evidence.argumentativeDevelopmentNeed) return null;
+    return {
+      version: latestRewrite?.planner_version ? `${latestRewrite.planner_version} summary` : "planner sufficiency summary",
+      development_need: evidence.argumentativeDevelopmentNeed,
+      development_score: evidence.argumentativeDevelopmentScore ?? null,
+      affected_paragraph_ratio: null,
+      signals: [],
+      signal_count: evidence.argumentativeDevelopmentSignalCount ?? 0,
+      high_signal_count: evidence.highArgumentativeDevelopmentSignalCount ?? 0,
+      medium_signal_count: evidence.mediumArgumentativeDevelopmentSignalCount ?? 0,
+      interpretation: "The direct revision response returned the planner's argumentative-development decision but not the full paragraph-level signal payload. The need/score shown here is the actual planner result, not a UI guess.",
+      guardrail: "Run Analyse Only when you want the full paragraph-level sufficiency signal list before revising.",
+    };
+  }
+
+  function lengthAudit() {
+    if (!latestRewrite) return null;
+    const source = document.getElementById("sourceText")?.value || "";
+    const revised = latestRewrite.revised_text || document.getElementById("revisedText")?.value || "";
+    const preference = document.getElementById("lengthPreference")?.value || "auto";
+    const sourceWords = countWords(source);
+    const revisedWords = countWords(revised);
+    if (!sourceWords || !revisedWords) return null;
+    const delta = revisedWords - sourceWords;
+    const deltaPct = sourceWords ? (delta / sourceWords) * 100 : 0;
+    let respected = true;
+    let note = "Length stayed within the selected preference's ordinary flexibility.";
+    if (preference === "expand" && delta < 0) {
+      respected = false;
+      note = "Expand was selected, but the revision became shorter. The current engine should not treat this as fully compliant unless compression was explicitly necessary; a warning is shown instead of silently calling the preference satisfied.";
+    } else if (preference === "concise" && delta > 0) {
+      respected = false;
+      note = "Concise was selected, but the revision became longer. Review whether the added reasoning was necessary.";
+    }
+    return { preference, sourceWords, revisedWords, delta, deltaPct, respected, note };
+  }
+
   function render() {
     const host = document.getElementById("tab-changes");
     if (!host) return;
-    const plan = latestAnalysis?.plan || null;
-    const sufficiency = plan?.argumentativeSufficiency || null;
+    const sufficiency = resolveSufficiency();
     const authority = latestRewrite?.intervention_authority || latestAnalysis?.intervention_authority || null;
     const texture = latestRewrite?.authorial_texture || latestRewrite?.source_assessment?.authorial_texture || latestAnalysis?.authorial_texture || latestAnalysis?.source_assessment?.authorial_texture || null;
-    if (!sufficiency && !authority) return;
+    const lenAudit = lengthAudit();
+    if (!sufficiency && !authority && !lenAudit) return;
 
     let panel = document.getElementById("argumentativeDevelopmentDashboard");
     if (!panel) {
@@ -56,7 +105,8 @@
       return acc;
     }, {});
     const signalChips = Object.entries(signalCounts).map(([key, count]) => `<span><strong>${esc(key)}</strong> ${esc(count)}</span>`).join(" ");
-    const need = sufficiency?.development_need || "not assessed";
+    const need = sufficiency?.development_need || "not available";
+    const signalCount = sufficiency?.signal_count ?? signals.length;
 
     panel.innerHTML = `
       <div class="argdev-title"><div><strong>Argumentative sufficiency & selective development</strong><span>${esc(sufficiency?.version || "planner development layer")}</span></div><strong class="argdev-need ${esc(need)}">${esc(title(need))}</strong></div>
@@ -66,19 +116,21 @@
         <div><span>Preservation priority</span><strong>${esc(title(texture?.preservation_priority || "n/a"))}</strong></div>
         <div><span>Argument development need</span><strong>${esc(title(need))}</strong></div>
         <div><span>Development score</span><strong>${esc(sufficiency?.development_score ?? "n/a")}</strong></div>
-        <div><span>Affected paragraphs</span><strong>${pct(sufficiency?.affected_paragraph_ratio)}</strong></div>
+        <div><span>Development signals</span><strong>${esc(signalCount)}</strong></div>
+        <div><span>Affected paragraphs</span><strong>${sufficiency?.affected_paragraph_ratio === null || sufficiency?.affected_paragraph_ratio === undefined ? "full signal view: Analyse Only" : pct(sufficiency.affected_paragraph_ratio)}</strong></div>
         <div><span>Development permission</span><strong>${esc(title(authority?.discourse_development_permission || "pending"))}</strong></div>
         <div><span>Depth permission</span><strong>${esc(title(authority?.depth_permission || "pending"))}</strong></div>
       </div>
       <div class="argdev-rule"><strong>Core rule:</strong> strong authorial texture does not automatically mean the argument is sufficiently developed. Preserve good wording while developing only diagnosed evidence, conditions, measures, setting, time context or gap. Word-count growth is never the target.</div>
-      ${signalChips ? `<div class="argdev-signals"><strong>Development signals</strong><div>${signalChips}</div></div>` : '<div class="argdev-signals"><strong>Development signals</strong><span class="muted"> None triggered.</span></div>'}
+      ${lenAudit ? `<div class="length-audit ${lenAudit.respected ? "ok" : "warn"}"><strong>Length preference audit:</strong> ${esc(title(lenAudit.preference))} · source ${esc(lenAudit.sourceWords)} words → revised ${esc(lenAudit.revisedWords)} words (${lenAudit.delta >= 0 ? "+" : ""}${esc(lenAudit.delta)}, ${lenAudit.deltaPct >= 0 ? "+" : ""}${esc(lenAudit.deltaPct.toFixed(1))}%). <span>${esc(lenAudit.note)}</span></div>` : ""}
+      ${signalChips ? `<div class="argdev-signals"><strong>Development signals</strong><div>${signalChips}</div></div>` : signalCount ? `<div class="argdev-signals"><strong>Development signals</strong><span class="muted"> ${esc(signalCount)} planner signal(s) triggered; run Analyse Only to inspect the paragraph-level types before revision.</span></div>` : '<div class="argdev-signals"><strong>Development signals</strong><span class="muted"> None triggered.</span></div>'}
       ${sufficiency?.interpretation ? `<details><summary>Why this matters</summary><p>${esc(sufficiency.interpretation)}</p><p class="muted">${esc(sufficiency.guardrail || "")}</p></details>` : ""}
       ${authority?.rule ? `<details><summary>Current author-choice authority</summary><p>${esc(authority.rule)}</p></details>` : ""}`;
   }
 
   const style = document.createElement("style");
   style.textContent = `
-    .argdev-dashboard{margin:0 0 18px;padding:16px;border:1px solid #44677a;border-radius:10px;background:rgba(24,47,57,.48);line-height:1.45}.argdev-title{display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap}.argdev-title>div{display:flex;gap:.55rem;align-items:baseline;flex-wrap:wrap}.argdev-title span{opacity:.65;font-size:.82em}.argdev-need{padding:.25rem .55rem;border-radius:999px;background:rgba(98,224,176,.1);color:#62e0b0}.argdev-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:.55rem;margin:.8rem 0}.argdev-grid>div{padding:.6rem;background:rgba(7,17,24,.35);border-radius:7px}.argdev-grid span{display:block;opacity:.7;font-size:.82em}.argdev-grid strong{display:block;margin-top:.18rem}.argdev-rule{padding:.75rem;border-left:3px solid #62e0b0;background:rgba(5,13,18,.3)}.argdev-signals{margin-top:.75rem}.argdev-signals>div{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem}.argdev-signals span{border:1px solid #496174;border-radius:999px;padding:.2rem .45rem;font-size:.82em}.argdev-dashboard details{margin-top:.65rem}
+    .argdev-dashboard{margin:0 0 18px;padding:16px;border:1px solid #44677a;border-radius:10px;background:rgba(24,47,57,.48);line-height:1.45}.argdev-title{display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap}.argdev-title>div{display:flex;gap:.55rem;align-items:baseline;flex-wrap:wrap}.argdev-title span{opacity:.65;font-size:.82em}.argdev-need{padding:.25rem .55rem;border-radius:999px;background:rgba(98,224,176,.1);color:#62e0b0}.argdev-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:.55rem;margin:.8rem 0}.argdev-grid>div{padding:.6rem;background:rgba(7,17,24,.35);border-radius:7px}.argdev-grid span{display:block;opacity:.7;font-size:.82em}.argdev-grid strong{display:block;margin-top:.18rem}.argdev-rule{padding:.75rem;border-left:3px solid #62e0b0;background:rgba(5,13,18,.3)}.argdev-signals{margin-top:.75rem}.argdev-signals>div{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem}.argdev-signals span{border:1px solid #496174;border-radius:999px;padding:.2rem .45rem;font-size:.82em}.argdev-dashboard details{margin-top:.65rem}.length-audit{margin-top:.75rem;padding:.7rem;border-radius:7px;border:1px solid #405269}.length-audit.ok{border-left:3px solid #4caf7d}.length-audit.warn{border-left:3px solid #e0a941;background:rgba(224,169,65,.08)}.length-audit span{display:block;margin-top:.2rem;opacity:.82}
   `;
   document.head.appendChild(style);
 })();
