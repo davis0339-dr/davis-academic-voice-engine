@@ -5,10 +5,13 @@ import { spawnSync } from "node:child_process";
 
 const index = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const guard = readFileSync(new URL("../public/runtimeGuard.js", import.meta.url), "utf8");
+const optional = readFileSync(new URL("../public/optionalFeatures.js", import.meta.url), "utf8");
 
-test("runtime guard is valid browser JavaScript", () => {
-  const result = spawnSync(process.execPath, ["--check", new URL("../public/runtimeGuard.js", import.meta.url).pathname], { encoding: "utf8" });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+test("runtime guard and optional loader are valid browser JavaScript", () => {
+  for (const rel of ["../public/runtimeGuard.js", "../public/optionalFeatures.js"]) {
+    const result = spawnSync(process.execPath, ["--check", new URL(rel, import.meta.url).pathname], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  }
 });
 
 test("startup GET requests have a bounded timeout and visible fallback", () => {
@@ -19,21 +22,22 @@ test("startup GET requests have a bounded timeout and visible fallback", () => {
   assert.match(guard, /status check timed out/);
 });
 
-test("optional UI layers are loaded explicitly before authorial dynamic-loader guards", () => {
+test("advanced UI layers are not parser blocking and each fails open", () => {
   const runtimeGuard = index.indexOf('src="/runtimeGuard.js"');
-  const studio = index.indexOf('src="/researchStudioUI.js"');
-  const capabilities = index.indexOf('src="/researchStudioCapabilitiesUI.js"');
-  const evidence = index.indexOf('src="/detectorEvidenceUI.js"');
-  const detector = index.indexOf('src="/detectorResearchUI.js"');
-  const authorial = index.indexOf('src="/authorialTextureUI.js"');
+  const app = index.indexOf('src="/app.js"');
+  const loader = index.indexOf('src="/optionalFeatures.js"');
   assert.ok(runtimeGuard > 0);
-  assert.ok(studio > runtimeGuard);
-  assert.ok(capabilities > studio);
-  assert.ok(evidence > capabilities);
-  assert.ok(detector > evidence);
-  assert.ok(authorial > detector);
-  assert.match(index, /data-research-studio-ui="true"/);
-  assert.match(index, /data-research-studio-capabilities-ui="true"/);
-  assert.match(index, /data-detector-evidence-ui="true"/);
-  assert.match(index, /data-detector-research-ui="true"/);
+  assert.ok(app > runtimeGuard);
+  assert.ok(loader > app);
+
+  assert.match(optional, /\/researchEnhancements\.js/);
+  assert.match(optional, /\/plannerObservability\.js/);
+  assert.match(optional, /\/rewriteVerdict\.js/);
+  assert.match(optional, /\/researchStudioUI\.js/);
+  assert.match(optional, /\/researchStudioCapabilitiesUI\.js/);
+  assert.match(optional, /\/detectorEvidenceUI\.js/);
+  assert.match(optional, /\/detectorResearchUI\.js/);
+  assert.match(optional, /\/authorialTextureUI\.js/);
+  assert.match(optional, /SCRIPT_TIMEOUT_MS\s*=\s*8000/);
+  assert.match(optional, /script\.onerror/);
 });
