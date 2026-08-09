@@ -19,11 +19,14 @@ function explicitCeiling(intensity) {
 
 function effectiveNaturalisation(requested, intensity) {
   if (requested === "off") return "off";
-  if (intensity === "minor") return "faithful";
-  // Authorial is a Deep-only authority mode. Outside Deep, use its adaptive
-  // language treatment without pretending that authorial reconstruction was authorised.
-  if (requested === "authorial") return "aggressive";
-  return requested;
+  // The current aggressive planner still treats its flag as paragraph-level scope.
+  // Until that implementation is fully diagnosis-scoped, only an explicit Deep
+  // choice may activate aggressive execution. Moderate/Auto retain the requested
+  // preference as metadata but execute the safer faithful treatment so naturalisation
+  // cannot silently enlarge authorial authority.
+  if (intensity !== "deep") return "faithful";
+  if (requested === "authorial" || requested === "aggressive") return "aggressive";
+  return "faithful";
 }
 
 export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, authorialTexture } = {}) {
@@ -78,7 +81,7 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
       plan_execution_priority: "sentence_flow_and_selective_development",
       detector_targeting: false,
       depth_permission: "moderate_diagnostic_ceiling",
-      rationale: "The author explicitly selected Moderate. The engine may restructure sentences, repair flow and selectively develop diagnosed under-explained reasoning, but may not silently convert the run into wholesale discourse reconstruction or paragraph resequencing. Aggressive naturalisation, when selected, changes the treatment of authorised passages rather than enlarging the authority ceiling.",
+      rationale: "The author explicitly selected Moderate. The engine may restructure sentences, repair flow and selectively develop diagnosed under-explained reasoning, but may not silently convert the run into wholesale discourse reconstruction or paragraph resequencing. A requested Aggressive/Authorial preference is retained as the user's preference but is executed faithfully at this ceiling until aggressive paragraph treatment is fully diagnosis-scoped.",
     };
   }
 
@@ -128,7 +131,7 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
       plan_execution_priority: "diagnostic_led",
       detector_targeting: false,
       depth_permission: "as_diagnosed",
-      rationale: "Auto keeps diagnosis in control of intervention depth. The selected naturalisation treatment may alter cadence and sentence architecture inside authorised scope, but it does not itself create structural authority. Existing authorial texture affects preservation priority without becoming a blanket keep rule.",
+      rationale: "Auto keeps diagnosis in control of intervention depth. Existing authorial texture affects preservation priority without becoming a blanket keep rule. Aggressive treatment is not allowed to create structural authority by itself; the current Auto execution remains faithful while diagnosis chooses the needed intervention.",
     };
   }
 
