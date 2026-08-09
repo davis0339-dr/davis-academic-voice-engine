@@ -3,7 +3,7 @@
 
 import { extractProtectedSpans } from "./protect.js";
 import { diagnose } from "./diagnostics.js";
-import { buildInterventionPlan } from "./planner.js";
+import { buildDiagnosisScopedPlan } from "./diagnosisScopedPlanner.js";
 import { resolveProfile } from "./styleProfileStore.js";
 import { buildSystemPrompt } from "./promptContract.js";
 import { auditPreservation } from "./preservation.js";
@@ -23,6 +23,14 @@ import {
 } from "./iterativeRewriteGuard.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
+const SUBSTANTIVE_PLAN_LEVELS = new Set([
+  "SENTENCE_RESTRUCTURE",
+  "SPLIT_OR_MERGE",
+  "PARAGRAPH_REORDER",
+  "CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT",
+  "COMPRESS",
+  "DISCOURSE_REPACKAGE",
+]);
 
 function measuredGuidance(deviation, family) {
   return {
@@ -41,7 +49,7 @@ function measuredGuidance(deviation, family) {
 export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation }) {
   const protectedSpans = extractProtectedSpans(sourceText);
   const diagnostics = diagnose(sourceText);
-  const plan = buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPreference, naturalisation });
+  const plan = buildDiagnosisScopedPlan(diagnostics, { rewriteIntensity, lengthPreference, naturalisation });
   const profileResolution = resolveProfile(styleFilters);
   const cadenceDeviation = assessCadenceDeviation(sourceText, styleFilters);
   const languageFingerprint = measureLanguageFingerprint(sourceText);
@@ -65,6 +73,7 @@ export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarInt
       rhetorical_scaffolding: diagnostics.rhetorical_scaffolding,
       text_structure: diagnostics.text_structure,
       discourse_architecture: diagnostics.discourse_architecture,
+      argumentative_sufficiency: diagnostics.argumentative_sufficiency,
       qualitative_human_discourse: diagnostics.qualitative_human_discourse,
       contrastive_language: diagnostics.contrastive_language,
       cohesion: diagnostics.cohesion,
@@ -124,8 +133,6 @@ async function runModelPass({ systemPrompt, sourceText }) {
   let responseRepairUsed = false;
 
   if (!parseResult.ok) {
-    // One syntax-only recovery attempt. This is intentionally separate from the
-    // writing/rewrite retries: it repairs JSON transport syntax, not prose.
     const repairResult = await llmProvider.callAnthropic({
       system: buildJsonRepairSystemPrompt(),
       messages: [{ role: "user", content: llmResult.text }],
@@ -142,8 +149,6 @@ async function runModelPass({ systemPrompt, sourceText }) {
 
   if (!parseResult.ok) {
     const err = new Error(`Model did not return valid JSON after one syntax-recovery attempt: ${parseResult.error?.message || "unknown parse error"}`);
-    // Keep raw provider text available to server-side error handling/debugging;
-    // normal UI should surface only the concise error message/code.
     err.rawResponse = llmResult.text;
     err.code = "INVALID_MODEL_RESPONSE";
     throw err;
@@ -178,7 +183,7 @@ function qualityCorrectionBlock(quality) {
   return [
     "",
     "--- AGGRESSIVE REWRITE QUALITY CORRECTION ---",
-    "The previous attempt failed one or more structural/cadence quality checks.",
+    "The previous attempt failed one or more structural/cadence quality checks inside material that the diagnostic plan actually selected for substantive reconstruction.",
     issueLines || "- The previous attempt did not meet the required quality profile.",
     nearSourceExamples(quality),
     "Rewrite again from the ORIGINAL source below, not by cosmetically editing the previous attempt.",
@@ -202,7 +207,7 @@ function finalRescueBlock(quality) {
     "The user message for this pass contains both the ORIGINAL SOURCE and the CURRENT CANDIDATE REVISION.",
     "Repair the CURRENT CANDIDATE. Use the original as factual/citation authority and as evidence of the writer's lexical register; do not automatically restore or automatically reject its wording.",
     "Where a candidate sentence still follows a diagnosed unwanted source skeleton, rebuild it from the underlying proposition. Where the candidate instead became more abstract, compressed or over-polished than the source, simplify it and restore ordinary academic verbs and natural asymmetry.",
-    "If phrase overlap remains high, change information packaging where the plan requires it. If lexical formality or nominalisation has inflated, reduce that drift rather than chasing more textual distance.",
+    "If phrase overlap remains high, change information packaging only where the plan requires it. If lexical formality or nominalisation has inflated, reduce that drift rather than chasing more textual distance.",
     "If the prose is choppy, merge adjacent statements that belong to one analytical unit. If it is uniformly dense, allow concise descriptive or evidential sentences where the reasoning permits them.",
     "Maintain defensible postgraduate academic prose without turning every paragraph into a mini-abstract or every sentence into a polished summary statement.",
     "Every citation, number, quotation, acronym, technical term and factual relationship from the original must remain correct and no new factual content may be introduced.",
@@ -222,9 +227,6 @@ function measuredLanguagePenalty(text, family) {
   const fp = measureLanguageFingerprint(text);
   const deviation = assessLanguageDeviation(fp, family);
   if (!deviation.available || !Number.isFinite(deviation.family_alignment_score)) return 0;
-  // Soft signal only: the pilot corpus should break ties between otherwise
-  // similar failed candidates, never override preservation or rewrite-depth
-  // gates and never force a passage to a single numeric style target.
   return (1 - deviation.family_alignment_score) * 0.25;
 }
 
@@ -239,8 +241,31 @@ function qualityOptions(analysis, humanCadence) {
   };
 }
 
-function qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality) {
-  return naturalisationLevel === "aggressive" && (!transformationQuality.passed || iterativeQuality?.blocking);
+function plannedSubstantiveRatio(plan) {
+  const entries = Object.entries(plan?.summary || {});
+  const total = entries.reduce((sum, [, count]) => sum + (Number(count) || 0), 0) || 1;
+  const substantive = entries.reduce((sum, [level, count]) => sum + (SUBSTANTIVE_PLAN_LEVELS.has(level) ? Number(count) || 0 : 0), 0);
+  return substantive / total;
+}
+
+function qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, plan) {
+  const substantiveRatio = plannedSubstantiveRatio(plan);
+  // Aggressive quality gates only apply when diagnosis already placed a material
+  // part of the passage inside substantive reconstruction scope. This prevents
+  // unchanged-sentence/phrase-overlap thresholds from forcing needless rewrites.
+  return naturalisationLevel === "aggressive" && substantiveRatio >= 0.30 && (!transformationQuality.passed || iterativeQuality?.blocking);
+}
+
+function wholeDocumentContextBlock(documentContext) {
+  if (!documentContext) return "";
+  return [
+    "",
+    "--- WHOLE-DOCUMENT INTELLECTUAL CONTEXT (Long Document only) ---",
+    "This chunk belongs to a larger manuscript that has already been read as a whole. Use the map below to understand what this local passage must contribute to the complete argument. This context grants NO additional rewrite authority. The local diagnostic plan still decides what may change.",
+    "Carry forward intellectual dependencies, variables, definitions, methods, study stage and unresolved argument needs. Do NOT carry forward sentence rhythm, transition formulas, preferred paragraph closures or other stylistic templates from previous chunks.",
+    "If the whole-document map identifies an evidence need, do not invent evidence. Leave that need for the Research Evidence Bank/researcher workflow unless the evidence is already present in the supplied source/context.",
+    JSON.stringify(documentContext, null, 2),
+  ].join("\n");
 }
 
 export async function rewrite({
@@ -252,6 +277,7 @@ export async function rewrite({
   naturalisation,
   precedingContext,
   documentGlossary,
+  documentContext,
   rewriteLineage,
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
@@ -268,6 +294,8 @@ export async function rewrite({
   const humanCadence = analysis.diagnostics.cadence_deviation?.family || null;
   const qOptions = qualityOptions(analysis, humanCadence);
   const measuredLanguageFamily = analysis.measured_language_family;
+  const substantiveRatio = plannedSubstantiveRatio(analysis.plan);
+  const qualityGateEnforced = naturalisationLevel === "aggressive" && substantiveRatio >= 0.30;
 
   const systemPrompt = buildSystemPrompt({
     styleProfile: analysis.style_profile_used.effective,
@@ -278,7 +306,7 @@ export async function rewrite({
     documentGlossary,
     humanCadence,
     naturalisation: naturalisationLevel,
-  }) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage });
+  }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage });
 
   let parsed = await runModelPass({ systemPrompt, sourceText });
   let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
@@ -296,7 +324,7 @@ export async function rewrite({
   let preRescueQuality = null;
   let preRescueIterativeQuality = null;
 
-  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality)) {
+  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)) {
     firstAttemptQuality = transformationQuality;
     firstAttemptIterativeQuality = iterativeQuality;
     const corrected = await runModelPass({
@@ -322,7 +350,7 @@ export async function rewrite({
     }
   }
 
-  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality)) {
+  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)) {
     preRescueQuality = transformationQuality;
     preRescueIterativeQuality = iterativeQuality;
     const candidateText = parsed.revised_text;
@@ -373,10 +401,13 @@ export async function rewrite({
     intervention_intent: analysis.plan.intent,
     paragraph_plan_summary: analysis.plan.paragraphSummary,
     planner_version: analysis.plan.plannerVersion,
+    planner_scope_policy_version: analysis.plan.scopePolicyVersion || null,
     planner_sequence: analysis.plan.sequence,
     preservation,
     transformation_quality: {
       ...transformationQuality,
+      enforced: qualityGateEnforced,
+      substantive_plan_ratio: Number(substantiveRatio.toFixed(3)),
       corrective_retry_used: qualityRetryUsed,
       rescue_retry_used: rescueRetryUsed,
       first_attempt: firstAttemptQuality,
@@ -417,22 +448,25 @@ export async function rewrite({
       cadence_targeting: naturalisationLevel !== "off",
       syntactic_diversity: naturalisationLevel !== "off",
       texture_exemplar: naturalisationLevel === "aggressive",
-      aggressive_keep_override: naturalisationLevel === "aggressive",
-      transformation_quality_gate: naturalisationLevel === "aggressive",
-      academic_register_gate: naturalisationLevel === "aggressive",
-      protected_span_adjusted_overlap: naturalisationLevel === "aggressive",
-      near_source_sentence_gate: naturalisationLevel === "aggressive",
+      aggressive_keep_override: false,
+      diagnosis_scoped_naturalisation: true,
+      expand_is_development_permission_not_quota: true,
+      transformation_quality_gate: qualityGateEnforced,
+      academic_register_gate: qualityGateEnforced,
+      protected_span_adjusted_overlap: qualityGateEnforced,
+      near_source_sentence_gate: qualityGateEnforced,
       measured_language_family_guidance: naturalisationLevel !== "off",
-      measured_language_soft_candidate_selection: naturalisationLevel === "aggressive",
-      final_academic_rescue: naturalisationLevel === "aggressive",
+      measured_language_soft_candidate_selection: qualityGateEnforced,
+      final_academic_rescue: qualityGateEnforced,
       iterative_rewrite_guard: lineage.chained_from_prior_revision,
-      iterative_regularisation_gate: lineage.chained_from_prior_revision && naturalisationLevel === "aggressive",
+      iterative_regularisation_gate: lineage.chained_from_prior_revision && qualityGateEnforced,
       hierarchical_intent_planning: true,
       paragraph_discourse_planning: true,
       discourse_architecture_diagnostics: true,
       semantic_text_structure: true,
       scholarly_trace_preservation: true,
       evidence_assembled_reasoning_guidance: true,
+      whole_document_context_used: Boolean(documentContext),
       response_syntax_recovery: true,
       human_family_measured_sources: humanCadence?.measuredSources ?? 0,
       measured_language_pilot_sources: measuredLanguageFamily?.measured_document_count ?? 0,
