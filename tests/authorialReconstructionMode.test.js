@@ -34,12 +34,13 @@ test("Minor also caps ordinary aggressive naturalisation", () => {
   assert.equal(policy.adaptive_reconstruction, false);
 });
 
-test("Moderate permits sentence and flow repair but not hidden authorial reconstruction", () => {
+test("Moderate permits sentence, flow and diagnosed selective development but not hidden authorial reconstruction", () => {
   const policy = resolveRewriteModePolicy({ rewriteIntensity: "moderate", naturalisation: "authorial", authorialTexture: strongTexture });
   assert.equal(policy.effective_naturalisation, "faithful");
   assert.equal(policy.effective_intensity, "moderate");
   assert.equal(policy.authorial_reconstruction, false);
-  assert.equal(policy.depth_permission, "sentence_level_where_diagnosed");
+  assert.equal(policy.depth_permission, "moderate_diagnostic_ceiling");
+  assert.equal(policy.plan_execution_priority, "sentence_flow_and_selective_development");
 });
 
 test("authorial intervention authority is broad only when authorial mode is paired with Deep", () => {
