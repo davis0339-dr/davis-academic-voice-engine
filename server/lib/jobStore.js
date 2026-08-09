@@ -1,5 +1,6 @@
-// Phase 3: long-document background jobs with per-chunk progress,
-// safe fallback, retries, quality gates and document-level preservation.
+// Long-document background jobs with whole-document understanding, per-chunk
+// diagnosis-scoped execution, safe fallback, retries, preservation and a final
+// cross-chunk regularisation audit.
 
 import { randomUUID } from "node:crypto";
 import { buildDocumentMap } from "./documentMap.js";
@@ -7,9 +8,17 @@ import { chunkDocument } from "./chunker.js";
 import { rewrite } from "./pipeline.js";
 import { auditPreservation } from "./preservation.js";
 import { inferSectionFromHeading } from "./sectionLanguageGuide.js";
+import {
+  buildWholeDocumentBlueprint,
+  compactBlueprintForChunk,
+  deriveLongDocumentChunkPolicy,
+  auditWholeDocumentRegularity,
+  globalRepairContext,
+} from "./longDocumentIntelligence.js";
 
 const jobs = new Map();
 const MAX_TRANSIENT_ATTEMPTS = 4;
+const MAX_GLOBAL_REPAIR_CHUNKS = 4;
 const TRANSIENT_CODES = new Set([
   "NETWORK_TIMEOUT",
   "RATE_LIMITED",
@@ -131,29 +140,28 @@ function completePassthroughChunk(chunk) {
   chunk.transformationQuality = {
     level: "passthrough",
     passed: true,
+    enforced: false,
     reasons: [],
     note: "Formal academic structure preserved verbatim; no LLM rewrite was attempted.",
   };
   chunk.languageQuality = null;
+  chunk.executionPolicy = {
+    requested: null,
+    effective: null,
+    explanation: "Formal structure is protected and passed through verbatim.",
+  };
   finishChunkTiming(chunk);
 }
 
-function finalizeIfComplete(job) {
-  if (job.providerBlock) return;
-  const allAttempted = job.chunks.every((c) => c.status === "done" || c.status === "failed");
-  if (!allAttempted) return;
-
-  const anyFailed = job.chunks.some((c) => c.status === "failed");
-  const reassembledText = job.chunks.map(assembleChunkText).join("\n\n");
-  const documentPreservation = auditPreservation(job.sourceText, reassembledText, job.documentMap.protectedSpans);
-
-  job.reassembledText = reassembledText;
-  job.documentPreservation = documentPreservation;
-  job.status = anyFailed ? "completed_with_errors" : "completed";
-  job.completedAt = new Date().toISOString();
+function previousRevisedTail(job, chunk, maxChars = 500) {
+  const position = job.chunks.findIndex((item) => item.index === chunk.index);
+  if (position <= 0) return "";
+  const previous = job.chunks[position - 1];
+  const text = previous?.revisedText || previous?.sourceText || "";
+  return String(text).slice(-maxChars).trim();
 }
 
-async function processChunk(job, chunk) {
+async function processChunk(job, chunk, { globalRepair = false } = {}) {
   chunk.status = "processing";
   chunk.error = null;
   chunk.attempts = chunk.attempts || 0;
@@ -171,23 +179,36 @@ async function processChunk(job, chunk) {
   if (inferredSection) chunkStyleFilters.section = inferredSection;
   chunk.inferredSection = inferredSection || chunkStyleFilters.section || null;
 
+  const policy = deriveLongDocumentChunkPolicy({
+    sourceText: chunk.sourceText,
+    requestedIntensity: job.options.rewriteIntensity,
+    requestedNaturalisation: job.options.naturalisation,
+    requestedLengthPreference: job.options.lengthPreference,
+  });
+  chunk.executionPolicy = policy;
+
+  const baseDocumentContext = globalRepair
+    ? globalRepairContext(job.wholeDocumentBlueprint, job.wholeDocumentAudit, chunk)
+    : compactBlueprintForChunk(job.wholeDocumentBlueprint, chunk);
+
   for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt++) {
     chunk.attempts += 1;
     try {
       const result = await rewrite({
         sourceText: chunk.sourceText,
         styleFilters: chunkStyleFilters,
-        rewriteIntensity: job.options.rewriteIntensity,
+        rewriteIntensity: policy.effective.intensity,
         grammarIntensity: job.options.grammarIntensity,
-        lengthPreference: job.options.lengthPreference,
-        naturalisation: job.options.naturalisation,
-        precedingContext: chunk.precedingContextTail,
+        lengthPreference: globalRepair ? "maintain" : policy.effective.lengthPreference,
+        naturalisation: globalRepair ? "faithful" : policy.effective.naturalisation,
+        precedingContext: previousRevisedTail(job, chunk) || chunk.precedingContextTail,
         documentGlossary: job.documentMap.glossary,
+        documentContext: baseDocumentContext,
       });
 
-      if (job.options.naturalisation === "aggressive" && result.transformation_quality && !result.transformation_quality.passed) {
+      if (result.transformation_quality?.enforced && !result.transformation_quality.passed) {
         const err = new Error(
-          `Aggressive rewrite failed the quality gate after corrective rewriting: ${result.transformation_quality.reasons.join(" ")}`
+          `Diagnosed aggressive reconstruction failed the quality gate after corrective rewriting: ${(result.transformation_quality.reasons || []).join(" ")}`
         );
         err.code = "QUALITY_GATE_FAILED";
         throw err;
@@ -199,8 +220,11 @@ async function processChunk(job, chunk) {
       chunk.preservation = auditPreservation(chunk.sourceText, revisedText);
       chunk.transformationQuality = result.transformation_quality || null;
       chunk.languageQuality = result.language_quality || null;
+      chunk.interventionIntent = result.intervention_intent || null;
+      chunk.plannerScopePolicyVersion = result.planner_scope_policy_version || null;
       chunk.status = "done";
       chunk.error = null;
+      if (globalRepair) chunk.globalRepairApplied = true;
       finishChunkTiming(chunk);
       return;
     } catch (err) {
@@ -217,12 +241,60 @@ async function processChunk(job, chunk) {
         continue;
       }
 
+      if (globalRepair && chunk.revisedText) {
+        // A failed optional repair must never destroy an already preserved first-pass candidate.
+        chunk.status = "done";
+        chunk.globalRepairError = { code, message: err.message };
+        finishChunkTiming(chunk);
+        return;
+      }
+
       chunk.status = "failed";
       chunk.error = { code, message: err.message };
       finishChunkTiming(chunk);
       return;
     }
   }
+}
+
+function assembleAndAudit(job) {
+  const reassembledText = job.chunks.map(assembleChunkText).join("\n\n");
+  job.reassembledText = reassembledText;
+  job.documentPreservation = auditPreservation(job.sourceText, reassembledText, job.documentMap.protectedSpans);
+  job.wholeDocumentAudit = auditWholeDocumentRegularity({
+    sourceText: job.sourceText,
+    revisedText: reassembledText,
+    chunks: job.chunks,
+  });
+}
+
+async function finalizeJob(job) {
+  if (job.providerBlock) return;
+  const allAttempted = job.chunks.every((c) => c.status === "done" || c.status === "failed");
+  if (!allAttempted) return;
+
+  assembleAndAudit(job);
+  job.globalRepair = { attempted: false, targetChunkIndices: [], repairedChunkIndices: [] };
+
+  if (!job.wholeDocumentAudit.passed && job.wholeDocumentAudit.target_chunk_indices.length) {
+    job.globalRepair.attempted = true;
+    job.globalRepair.targetChunkIndices = job.wholeDocumentAudit.target_chunk_indices.slice(0, MAX_GLOBAL_REPAIR_CHUNKS);
+    job.phase = "selective_global_repair";
+
+    for (const index of job.globalRepair.targetChunkIndices) {
+      const chunk = job.chunks.find((item) => item.index === index);
+      if (!chunk || chunk.status !== "done" || chunk.rewriteMode === "passthrough") continue;
+      await processChunk(job, chunk, { globalRepair: true });
+      if (chunk.globalRepairApplied) job.globalRepair.repairedChunkIndices.push(index);
+    }
+    assembleAndAudit(job);
+  }
+
+  const anyFailed = job.chunks.some((c) => c.status === "failed");
+  job.candidateStatus = job.wholeDocumentAudit.passed ? "accepted" : "review_required";
+  job.status = anyFailed ? "completed_with_errors" : "completed";
+  job.phase = job.candidateStatus === "accepted" ? "complete" : "complete_review_required";
+  job.completedAt = new Date().toISOString();
 }
 
 async function processJob(jobId) {
@@ -232,6 +304,15 @@ async function processJob(jobId) {
   job.providerBlock = null;
   job.startedAt = job.startedAt || new Date().toISOString();
 
+  if (!job.wholeDocumentBlueprint) {
+    job.phase = "whole_document_understanding";
+    job.wholeDocumentBlueprint = await buildWholeDocumentBlueprint({
+      fullText: job.sourceText,
+      documentMap: job.documentMap,
+    });
+  }
+
+  job.phase = "chunk_revision";
   for (const chunk of job.chunks) {
     if (chunk.status !== "queued") continue;
     await processChunk(job, chunk);
@@ -246,7 +327,8 @@ async function processJob(jobId) {
       return;
     }
   }
-  finalizeIfComplete(job);
+  job.phase = "whole_document_audit";
+  await finalizeJob(job);
 }
 
 export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation }) {
@@ -264,11 +346,16 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
   const job = {
     id: randomUUID(),
     status: "queued",
+    phase: "queued",
+    candidateStatus: null,
     createdAt: new Date().toISOString(),
     startedAt: null,
     completedAt: null,
     sourceText: text,
     documentMap,
+    wholeDocumentBlueprint: null,
+    wholeDocumentAudit: null,
+    globalRepair: null,
     chunkMethod: method,
     chunkPolicy: { targetWords, hardMaxWords },
     options: { styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation },
@@ -280,6 +367,11 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
       preservation: null,
       transformationQuality: null,
       languageQuality: null,
+      interventionIntent: null,
+      executionPolicy: null,
+      plannerScopePolicyVersion: null,
+      globalRepairApplied: false,
+      globalRepairError: null,
       inferredSection: inferSectionFromHeading(c.heading),
       error: null,
       attempts: 0,
@@ -319,13 +411,18 @@ export function retryChunk(jobId, chunkIndex) {
   chunk.error = null;
   chunk.transformationQuality = null;
   chunk.languageQuality = null;
+  chunk.globalRepairApplied = false;
+  chunk.globalRepairError = null;
   chunk.startedAt = null;
   chunk.completedAt = null;
   chunk.durationMs = null;
   job.status = "processing";
+  job.phase = "chunk_retry";
   job.completedAt = null;
   job.reassembledText = null;
   job.documentPreservation = null;
+  job.wholeDocumentAudit = null;
+  job.globalRepair = null;
   job.providerBlock = null;
 
   processJob(jobId).catch((err) => {
@@ -350,9 +447,26 @@ export function summarizeJob(job) {
   const remainingCount = Math.max(0, chunkCount - doneCount - failedCount);
   const estimatedRemainingMs = averageChunkDurationMs ? averageChunkDurationMs * remainingCount : null;
 
+  const blueprint = job.wholeDocumentBlueprint
+    ? {
+        version: job.wholeDocumentBlueprint.version,
+        generated_by: job.wholeDocumentBlueprint.generated_by,
+        document_goal: job.wholeDocumentBlueprint.document_goal,
+        argument_arc: (job.wholeDocumentBlueprint.argument_arc || []).map((item) => ({
+          heading: item.heading,
+          role: item.role,
+          downstream_dependency: item.downstream_dependency,
+        })),
+        evidence_needs: job.wholeDocumentBlueprint.evidence_needs || [],
+        planning_warning: job.wholeDocumentBlueprint.planning_warning || null,
+      }
+    : null;
+
   return {
     id: job.id,
     status: job.status,
+    phase: job.phase || null,
+    candidateStatus: job.candidateStatus || null,
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     completedAt: job.completedAt,
@@ -365,7 +479,11 @@ export function summarizeJob(job) {
       headingCount: job.documentMap.headings.length,
       glossary: job.documentMap.glossary,
       citationCount: job.documentMap.protectedSpans.citations.length,
+      wordCount: job.documentMap.wordCount,
     },
+    wholeDocumentBlueprint: blueprint,
+    wholeDocumentAudit: job.wholeDocumentAudit,
+    globalRepair: job.globalRepair,
     chunks: job.chunks.map((c) => ({
       index: c.index,
       heading: c.heading,
@@ -382,6 +500,11 @@ export function summarizeJob(job) {
       preservation: c.preservation,
       transformationQuality: c.transformationQuality,
       languageQuality: c.languageQuality,
+      interventionIntent: c.interventionIntent,
+      executionPolicy: c.executionPolicy,
+      plannerScopePolicyVersion: c.plannerScopePolicyVersion,
+      globalRepairApplied: c.globalRepairApplied,
+      globalRepairError: c.globalRepairError,
     })),
     reassembledText: job.reassembledText,
     documentPreservation: job.documentPreservation,
