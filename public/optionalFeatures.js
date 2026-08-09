@@ -20,6 +20,7 @@
     ["/rewriteVerdict.js", null],
     ["/authorialTextureUI.js", null],
     ["/longDocumentIntelligenceUI.js", null],
+    ["/longDocumentVNextUI.js", null],
   ];
 
   function dataProperty(dataKey) {
