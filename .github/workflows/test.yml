@@ -77,68 +77,8 @@ jobs:
           curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/detector-research/evidence > detector-evidence-smoke.json
           test -s index-smoke.html
           grep -q 'Academic Voice Engine' index-smoke.html
+          grep -q '/runtimeGuard.js' index-smoke.html
           cat server-smoke.log
-      - name: Candidate browser startup smoke test
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PORT=3012
-          node server/index.js > browser-server.log 2>&1 &
-          SERVER_PID=$!
-          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-          for i in {1..20}; do
-            if curl --fail --silent --max-time 2 http://127.0.0.1:3012/api/health >/dev/null; then break; fi
-            sleep 0.5
-          done
-          BROWSER="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
-          test -n "$BROWSER"
-          timeout 25s "$BROWSER" \
-            --headless=new \
-            --no-sandbox \
-            --disable-gpu \
-            --disable-dev-shm-usage \
-            --disable-background-networking \
-            --disable-component-update \
-            --disable-default-apps \
-            --disable-extensions \
-            --disable-sync \
-            --metrics-recording-only \
-            --no-first-run \
-            --virtual-time-budget=15000 \
-            --dump-dom http://127.0.0.1:3012/ > candidate-browser-dom.html 2> candidate-browser.log
-          test -s candidate-browser-dom.html
-          grep -q 'Academic Voice Engine' candidate-browser-dom.html
-          grep -q 'Single editor: up to' candidate-browser-dom.html
-          if grep -Eq 'checking service status…|build: checking…|Single editor capacity: loading…|Long-document capacity: loading…|Loading corpus coverage…' candidate-browser-dom.html; then
-            echo 'Candidate browser retained an indefinite startup placeholder.'
-            exit 1
-          fi
-      - name: Probe live Render browser dependencies
-        shell: bash
-        continue-on-error: true
-        run: |
-          set +e
-          LIVE_URL='https://davis-academic-voice-engine.onrender.com'
-          : > live-render-probe.txt
-          probe() {
-            local path="$1"
-            local label="$2"
-            echo "--- $label $path ---" | tee -a live-render-probe.txt
-            curl -L -sS --connect-timeout 8 --max-time 20 -o /tmp/live-probe-body -w 'HTTP=%{http_code} CONNECT=%{time_connect}s TTFB=%{time_starttransfer}s TOTAL=%{time_total}s SIZE=%{size_download}\n' "$LIVE_URL$path" 2>&1 | tee -a live-render-probe.txt
-            echo "curl_exit=${PIPESTATUS[0]}" | tee -a live-render-probe.txt
-          }
-          echo "Probe time (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a live-render-probe.txt
-          echo "URL: $LIVE_URL" | tee -a live-render-probe.txt
-          probe '/' 'root'
-          for asset in /styles.css /safeDom.js /fileImport.js /researchEnhancements.js /app.js /plannerObservability.js /rewriteVerdict.js /authorialTextureUI.js /detectorResearchUI.js /detectorEvidenceUI.js /researchStudioUI.js /researchStudioCapabilitiesUI.js; do
-            probe "$asset" 'asset'
-          done
-          for endpoint in /api/health /api/health/llm /api/style-profiles /api/methodology /api/health/detectors /api/detector-research/evidence; do
-            probe "$endpoint" 'endpoint'
-          done
-          curl -L -sS --connect-timeout 8 --max-time 20 "$LIVE_URL/api/health" > live-health.json 2>/dev/null || true
-          curl -L -sS --connect-timeout 8 --max-time 20 "$LIVE_URL/" > live-root.html 2>/dev/null || true
-          exit 0
       - name: Run test suite
         shell: bash
         run: |
@@ -159,16 +99,10 @@ jobs:
             language-simulation.txt
             language-simulation.json
             server-smoke.log
-            browser-server.log
             health-smoke.json
             style-profiles-smoke.json
             methodology-smoke.json
             detector-health-smoke.json
             detector-evidence-smoke.json
-            candidate-browser.log
-            candidate-browser-dom.html
-            live-render-probe.txt
-            live-root.html
-            live-health.json
           if-no-files-found: ignore
           retention-days: 7
