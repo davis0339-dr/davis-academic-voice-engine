@@ -4,6 +4,8 @@
 // definitions, conceptual models, variable tables, equations/statistical plans,
 // schedules and references) are passed through rather than paraphrased.
 
+import { countWords } from "../config/limits.js";
+
 const DEFAULT_TARGET_WORDS = 800;
 const HARD_MAX_MULTIPLIER = 1.25;
 
@@ -11,7 +13,7 @@ const PASSTHROUGH_HEADING = /^(?:research questions? and hypotheses|research que
 const STANDALONE_INSTITUTIONAL = /^(?:Section|Chapter)\s+\d+(?:\.\d+)*$/i;
 
 function wordCount(text) {
-  return (text.match(/[A-Za-z0-9']+/g) || []).length;
+  return countWords(text);
 }
 
 function splitParagraphs(text) {
@@ -117,10 +119,6 @@ function chunkByHeadings(fullText, headings, targetWords, hardMaxWords) {
   if (preamble) rawChunks.push({ heading: null, reattachHeading: false, body: preamble, rewriteMode: "passthrough" });
 
   for (const section of sections) {
-    // Standalone institutional labels such as “Section 1” often have no body
-    // because the next line is itself a heading (“Introduction”). Preserve the
-    // empty structural label as an atomic passthrough chunk rather than silently
-    // dropping it during reassembly.
     if (!section.body) {
       if (STANDALONE_INSTITUTIONAL.test(section.heading || "")) {
         rawChunks.push({ heading: section.heading, reattachHeading: true, body: "", rewriteMode: "passthrough" });

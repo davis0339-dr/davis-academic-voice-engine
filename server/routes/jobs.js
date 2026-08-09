@@ -31,19 +31,17 @@ jobsRouter.post("/jobs", (req, res) => {
   }
 
   try {
-    // Long Document currently processes chunks directly through the production
-    // rewrite pipeline rather than the single-editor pre-resolution route. Keep
-    // Deep Authorial Reconstruction semantically consistent here by reusing the
-    // aggressive structural engine at deep intensity. Preservation still runs on
-    // every chunk and again after reassembly.
-    const authorial = naturalisation === "authorial";
+    // Preserve the user's selected controls as authority ceilings. The Long
+    // Document intelligence layer now decides chunk-by-chunk whether Aggressive
+    // treatment or Expand is actually warranted by diagnosis. Authorial no
+    // longer silently becomes Aggressive across every chunk.
     const job = createJob({
       text,
       styleFilters: styleFilters || {},
-      rewriteIntensity: authorial ? "deep" : rewriteIntensity,
+      rewriteIntensity,
       grammarIntensity,
       lengthPreference,
-      naturalisation: authorial ? "aggressive" : naturalisation,
+      naturalisation,
     });
     res.status(202).json({ ...summarizeJob(job), requestedNaturalisation: naturalisation || "faithful", requestId: req.requestId });
   } catch (err) {

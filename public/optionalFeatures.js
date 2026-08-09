@@ -8,7 +8,8 @@
   // the editor. The corrected manuscript counter loads first so all later
   // observability panels use the same approximate lexical count as server limits.
   // Rewrite lineage then loads before other fetch wrappers so later wrappers see
-  // the lineage-enriched request rather than bypass it.
+  // the lineage-enriched request rather than bypass it. Long Document intelligence
+  // is display/handoff only and does not alter the 1,500-word editor controls.
   const EDITOR_ENHANCERS = [
     ["/wordCountCompatibility.js", null],
     ["/rewriteLineage.js", null],
@@ -18,6 +19,7 @@
     ["/argumentativePlannerUI.js", null],
     ["/rewriteVerdict.js", null],
     ["/authorialTextureUI.js", null],
+    ["/longDocumentIntelligenceUI.js", null],
   ];
 
   function dataProperty(dataKey) {
