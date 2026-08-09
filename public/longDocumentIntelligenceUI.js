@@ -3,6 +3,7 @@
 
   const nativeFetch = window.fetch.bind(window);
   const HANDOFF_KEY = "academicVoice.longdocEvidenceNeeds.v1";
+  const BENCHMARK_KEY = "academicVoice.longdocBenchmarks.v2";
   let latestJob = null;
   let renderTimer = null;
 
@@ -31,19 +32,37 @@
     return job?.wholeDocumentBlueprint?.evidence_needs || [];
   }
 
+  function readBenchmarks(jobId) {
+    try {
+      const rows = JSON.parse(localStorage.getItem(BENCHMARK_KEY) || "[]");
+      return Array.isArray(rows) ? rows.filter((row) => row?.jobId === jobId) : [];
+    } catch { return []; }
+  }
+
   function sendEvidenceNeeds(job) {
     const needs = evidenceNeeds(job);
     if (!needs.length) return;
+    const includeEvidence = Boolean(document.getElementById("longdocIncludeEvidence")?.checked);
+    const status = document.getElementById("longdocStatus");
+    if (!includeEvidence) {
+      if (status) status.textContent = "Enable ‘Include external evidence’ first. Evidence development is researcher-controlled and will not be activated implicitly.";
+      return;
+    }
     try {
       localStorage.setItem(HANDOFF_KEY, JSON.stringify({
         createdAt: new Date().toISOString(),
         documentGoal: job.wholeDocumentBlueprint?.document_goal || "",
         jobId: job.id,
         needs,
+        includeEvidence: true,
+        evidenceDepth: document.getElementById("longdocEvidenceDepth")?.value || "targeted",
+        sourceText: document.getElementById("longdocSource")?.value || "",
+        candidateText: job.reassembledText || "",
+        wholeDocumentAudit: job.wholeDocumentAudit || null,
+        externalDetectorResults: readBenchmarks(job.id),
       }));
       window.location.href = "/studio?handoff=longdoc-evidence";
     } catch (err) {
-      const status = document.getElementById("longdocStatus");
       if (status) status.textContent = `Could not prepare evidence handoff: ${err.message}`;
     }
   }
@@ -80,7 +99,7 @@
       </div>
       ${blueprint.planning_warning ? `<p class="warning-item">${esc(blueprint.planning_warning)}</p>` : ""}
       <details><summary>Argument arc</summary>${arc.map((item) => `<div class="longdoc-arc-item"><strong>${esc(item.heading || "stage")}</strong><p>${esc(item.role || "")}</p>${item.downstream_dependency ? `<p class="muted">Feeds into: ${esc(item.downstream_dependency)}</p>` : ""}</div>`).join("")}</details>
-      ${needs.length ? `<details><summary>Research Evidence Bank needs (${needs.length})</summary>${needs.map((need) => `<div class="longdoc-evidence-need"><strong>${esc(need.section || need.need_type || "Evidence need")}</strong><p>${esc(need.query)}</p><p class="muted">${esc(need.rationale || "")}</p></div>`).join("")}<button type="button" data-send-longdoc-evidence>Send these needs to Research & Evidence Studio</button></details>` : '<p class="muted">No external evidence need was identified in the current whole-document planning pass.</p>'}
+      ${needs.length ? `<details><summary>Research Evidence Bank needs (${needs.length})</summary>${needs.map((need) => `<div class="longdoc-evidence-need"><strong>${esc(need.section || need.need_type || "Evidence need")}</strong><p>${esc(need.query)}</p><p class="muted">${esc(need.rationale || "")}</p></div>`).join("")}<button type="button" data-send-longdoc-evidence>Improve this reworked candidate in Research & Evidence Studio</button></details>` : '<p class="muted">No external evidence need was identified in the current whole-document planning pass.</p>'}
     </section>`;
   }
 
