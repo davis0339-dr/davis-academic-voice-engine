@@ -1,0 +1,242 @@
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const OBSERVATION_STORAGE_KEY = "academicVoice.detectorObservations.v1";
+  const MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
+  const ALLOWED_SCREENSHOT_TYPES = new Set(["image/png", "image/jpeg"]);
+  const upstreamFetch = window.fetch.bind(window);
+
+  function esc(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+
+  function loadObservations() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(OBSERVATION_STORAGE_KEY) || "[]");
+      return Array.isArray(parsed) ? parsed.slice(-20) : [];
+    } catch { return []; }
+  }
+
+  function formatMetric(value, kind) {
+    if (!Number.isFinite(Number(value))) return "n/a";
+    if (kind === "ratio") return `${(Number(value) * 100).toFixed(1)}%`;
+    return Number(value).toFixed(2);
+  }
+
+  function formatDelta(value, kind) {
+    if (!Number.isFinite(Number(value))) return "n/a";
+    const n = Number(value);
+    const prefix = n > 0 ? "+" : "";
+    if (kind === "ratio") return `${prefix}${(n * 100).toFixed(1)} pp`;
+    return `${prefix}${n.toFixed(2)}`;
+  }
+
+  function renderAutomaticComparison(report, reason = "manual") {
+    const comparison = report?.comparison;
+    if (!comparison) return;
+    ensureDetectorEnhancements();
+    const target = $("detectorAutoComparison");
+    if (!target) return;
+    const rows = (comparison.metrics || []).map((row) => `
+      <tr>
+        <td>${esc(row.label)}</td>
+        <td>${esc(formatMetric(row.source, row.kind))}</td>
+        <td>${esc(formatMetric(row.revised, row.kind))}</td>
+        <td class="delta-${esc(row.direction)}">${esc(formatDelta(row.delta, row.kind))}</td>
+        <td>${esc(formatMetric(comparison.revised_opening_two_paragraphs?.[row.key], row.kind))}</td>
+      </tr>`).join("");
+    target.innerHTML = `
+      <section class="auto-comparison-card">
+        <div class="auto-comparison-title">
+          <div><strong>Quick source → revision diagnostics</strong><span>${reason === "rewrite" ? " refreshed automatically after this rewrite" : " current comparison"}</span></div>
+          <span class="comparison-badge">before/after · not an authorship score</span>
+        </div>
+        <p class="muted">The editor and detector remain linked. This lightweight comparison runs after revision without loading the heavier Research & Evidence Studio.</p>
+        <table class="research-table comparison-table">
+          <thead><tr><th>Metric</th><th>Source</th><th>Revised</th><th>Change</th><th>Opening 2 prose paragraphs</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${(comparison.interpretations || []).length ? `<div class="comparison-notes"><strong>What changed:</strong><ul>${comparison.interpretations.map((note) => `<li>${esc(note)}</li>`).join("")}</ul></div>` : ""}
+        <p class="muted">${esc(comparison.note || "")}</p>
+      </section>`;
+
+    const changes = $("tab-changes");
+    if (changes) {
+      let compact = $("quickDetectorSummary");
+      if (!compact) {
+        compact = document.createElement("section");
+        compact.id = "quickDetectorSummary";
+        compact.className = "quick-detector-summary";
+        changes.appendChild(compact);
+      }
+      const candidate = report?.candidate_profiles?.whole_document || {};
+      const reference = report?.corpus_reference || {};
+      compact.innerHTML = `
+        <div><strong>Quick detector diagnostics</strong><span>linked to the current revision</span></div>
+        <div class="quick-detector-grid">
+          <span>Mean sentence words <strong>${esc(candidate.mean_sentence_words ?? "n/a")}</strong></span>
+          <span>Sentence-length CV <strong>${esc(candidate.sentence_length_cv ?? "n/a")}</strong></span>
+          <span>Short sentences <strong>${Number.isFinite(candidate.short_sentence_share) ? `${(candidate.short_sentence_share * 100).toFixed(1)}%` : "n/a"}</strong></span>
+          <span>Corpus reference <strong>${esc(reference.evidence_strength || "n/a")}</strong></span>
+        </div>
+        <button type="button" data-open-detector-tab>Open full Detector Research Lab</button>`;
+      compact.querySelector("[data-open-detector-tab]")?.addEventListener("click", () => {
+        document.querySelector('.tab-header[data-tab="detectorqa"]')?.click();
+      });
+    }
+  }
+
+  async function requestComparison(source, candidate, reason = "manual") {
+    if (!source && !candidate) return;
+    try {
+      const response = await upstreamFetch("/api/detector-research", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceText: source || "", candidateText: candidate || "", observations: loadObservations() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || "Comparison failed");
+      renderAutomaticComparison(data, reason);
+      const status = $("detectorStatus");
+      if (status && reason === "rewrite") status.textContent = "Quick source ↔ revised diagnostics refreshed automatically.";
+    } catch (err) {
+      const status = $("detectorStatus");
+      if (status && reason === "rewrite") status.textContent = `Quick comparison could not refresh: ${err.message}`;
+    }
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not read the screenshot."));
+      reader.onload = () => {
+        const dataUrl = String(reader.result || "");
+        const comma = dataUrl.indexOf(",");
+        if (comma < 0) return reject(new Error("Could not decode the screenshot."));
+        resolve(dataUrl.slice(comma + 1));
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function populateManualObservation(observation) {
+    const detectorSelect = $("manualDetector");
+    if (detectorSelect) {
+      const match = [...detectorSelect.options].find((option) => option.value.toLowerCase() === String(observation.detector || "").toLowerCase());
+      detectorSelect.value = match ? match.value : "Other";
+    }
+    if ($("manualDetectorVersion")) $("manualDetectorVersion").value = observation.version || "";
+    if ($("manualDetectorClass")) $("manualDetectorClass").value = observation.classification || "uncertain";
+    if ($("manualAiScore")) $("manualAiScore").value = Number.isFinite(Number(observation.aiScore)) ? observation.aiScore : "";
+    if ($("manualHumanScore")) $("manualHumanScore").value = Number.isFinite(Number(observation.humanScore)) ? observation.humanScore : "";
+    if ($("manualParaphraseScore")) $("manualParaphraseScore").value = Number.isFinite(Number(observation.paraphrasedScore)) ? observation.paraphrasedScore : "";
+    if ($("manualFlaggedSentences")) $("manualFlaggedSentences").value = (observation.flaggedSentenceIndices || []).map((n) => Number(n) + 1).join(",");
+    if ($("manualDetectorNotes")) $("manualDetectorNotes").value = `Screenshot extraction (${observation.confidence || "unknown"} confidence): ${observation.visibleSummary || ""}`.slice(0, 1000);
+  }
+
+  async function analyseDetectorScreenshot() {
+    const input = $("detectorScreenshotInput");
+    const status = $("detectorScreenshotStatus");
+    const preview = $("detectorScreenshotPreview");
+    const file = input?.files?.[0];
+    if (!file) return void (status && (status.textContent = "Choose one PNG or JPEG screenshot first."));
+    if (!ALLOWED_SCREENSHOT_TYPES.has(file.type)) {
+      if (status) status.textContent = "Only PNG or JPEG screenshots are accepted.";
+      input.value = "";
+      return;
+    }
+    if (file.size > MAX_SCREENSHOT_BYTES) {
+      if (status) status.textContent = "Screenshot is larger than 2 MB. Crop/compress the result summary and try again.";
+      input.value = "";
+      return;
+    }
+    if (status) status.textContent = "Reading the visible detector summary…";
+    try {
+      const base64 = await fileToBase64(file);
+      const response = await upstreamFetch("/api/detector-screenshot", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mimeType: file.type, imageBase64: base64 }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || "Screenshot analysis failed");
+      const observation = data.observation || {};
+      populateManualObservation(observation);
+      if (preview) preview.innerHTML = `
+        <div class="screenshot-observation-result">
+          <strong>${esc(observation.detector || "Detector result")}</strong>
+          ${Number.isFinite(Number(observation.aiScore)) ? `<span>AI ${esc(observation.aiScore)}%</span>` : ""}
+          ${Number.isFinite(Number(observation.humanScore)) ? `<span>Human ${esc(observation.humanScore)}%</span>` : ""}
+          ${Number.isFinite(Number(observation.paraphrasedScore)) ? `<span>Paraphrased ${esc(observation.paraphrasedScore)}%</span>` : ""}
+          <p>${esc(observation.visibleSummary || "")}</p>
+        </div>`;
+      if (status) status.textContent = "Screenshot read. Review the extracted values, then save the observation.";
+    } catch (err) {
+      if (status) status.textContent = `Screenshot analysis failed: ${err.message}`;
+    }
+  }
+
+  function ensureDetectorEnhancements() {
+    const panel = $("tab-detectorqa");
+    if (!panel) return;
+    if (!$("detectorAutoComparison")) {
+      const comparison = document.createElement("div");
+      comparison.id = "detectorAutoComparison";
+      const results = $("detectorResearchResults");
+      if (results) panel.insertBefore(comparison, results);
+      else panel.appendChild(comparison);
+    }
+    if (!$("detectorScreenshotInput")) {
+      const manual = panel.querySelector(".research-entry");
+      const box = document.createElement("section");
+      box.className = "detector-screenshot-card";
+      box.innerHTML = `
+        <h4>Upload one detector-result screenshot</h4>
+        <p class="muted">Optional shortcut for a result summary from Turnitin, GPTZero or another detector. One PNG/JPEG only, maximum 2 MB. Upload the summary screen, not a Turnitin report/PDF.</p>
+        <div class="file-toolbar">
+          <label class="file-button" for="detectorScreenshotInput">Choose detector screenshot</label>
+          <input id="detectorScreenshotInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" />
+          <button id="analyseDetectorScreenshotBtn" type="button">Read screenshot</button>
+          <span id="detectorScreenshotStatus" class="file-status">No image selected.</span>
+        </div>
+        <div id="detectorScreenshotPreview"></div>`;
+      if (manual) panel.insertBefore(box, manual); else panel.prepend(box);
+      $("detectorScreenshotInput")?.addEventListener("change", () => {
+        const file = $("detectorScreenshotInput")?.files?.[0];
+        if ($("detectorScreenshotStatus")) $("detectorScreenshotStatus").textContent = file ? `${file.name} · ${(file.size / 1024).toFixed(0)} KB` : "No image selected.";
+      });
+      $("analyseDetectorScreenshotBtn")?.addEventListener("click", analyseDetectorScreenshot);
+    }
+  }
+
+  window.fetch = async function detectorQuickBridgeFetch(input, init) {
+    const response = await upstreamFetch(input, init);
+    const url = typeof input === "string" ? input : input?.url || "";
+    if (/\/api\/rewrite(?:\?|$)/.test(url) && response.ok) {
+      response.clone().json().then((data) => {
+        const source = $("sourceText")?.value || "";
+        const revised = data.revised_text || $("revisedText")?.value || "";
+        window.setTimeout(() => requestComparison(source, revised, "rewrite"), 50);
+      }).catch(() => {});
+    }
+    if (/\/api\/detector-research(?:\?|$)/.test(url) && response.ok) {
+      response.clone().json().then((data) => renderAutomaticComparison(data, "manual")).catch(() => {});
+    }
+    return response;
+  };
+
+  const style = document.createElement("style");
+  style.textContent = `
+    .auto-comparison-card,.detector-screenshot-card,.quick-detector-summary{margin:1rem 0;padding:1rem;border:1px solid #405269;border-radius:10px;background:rgba(22,31,44,.42)}
+    .auto-comparison-title{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}.auto-comparison-title>div{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}.auto-comparison-title span{opacity:.72;font-size:.86em}.comparison-badge{border:1px solid #52617a;border-radius:999px;padding:.25rem .55rem}
+    .comparison-table{width:100%;border-collapse:collapse}.comparison-table th,.comparison-table td{padding:.55rem;border-bottom:1px solid #405269;text-align:left}.comparison-table td:nth-child(n+2){font-variant-numeric:tabular-nums}.delta-up::before{content:"↑ ";opacity:.65}.delta-down::before{content:"↓ ";opacity:.65}.delta-same::before{content:"→ ";opacity:.65}
+    .comparison-notes{margin-top:.8rem}.comparison-notes ul{margin:.35rem 0 .2rem 1.2rem}.screenshot-observation-result{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin-top:.7rem;padding:.75rem;border-left:3px solid #5d79a4;background:rgba(5,11,18,.32)}
+    .quick-detector-summary>div:first-child{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}.quick-detector-summary>div:first-child span{opacity:.68}.quick-detector-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem!important;margin:.7rem 0}.quick-detector-grid span{padding:.5rem;background:rgba(4,10,18,.35);border-radius:6px}.quick-detector-grid strong{display:block;margin-top:.2rem}
+    @media(max-width:800px){.comparison-table{display:block;overflow-x:auto}.auto-comparison-title{align-items:flex-start}}
+  `;
+  document.head.appendChild(style);
+  ensureDetectorEnhancements();
+})();
