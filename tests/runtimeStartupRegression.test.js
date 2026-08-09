@@ -19,7 +19,7 @@ test("startup GET requests have a bounded timeout and visible fallback", () => {
   assert.match(guard, /\/api\/health\/llm/);
   assert.match(guard, /\/api\/style-profiles/);
   assert.match(guard, /AbortController/);
-  assert.match(guard, /status check timed out/);
+  assert.match(guard, /startup status unavailable/);
 });
 
 test("advanced UI layers are not parser blocking and each fails open", () => {
