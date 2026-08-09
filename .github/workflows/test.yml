@@ -40,6 +40,11 @@ jobs:
           node --check public/app.js
           node --check public/fileImport.js
           node --check public/runtimeGuard.js
+          node --check public/optionalFeatures.js
+          node --check public/detectorQuickBridge.js
+          node --check public/workspaceHandoff.js
+          node --check public/studioBootstrap.js
+          node --check public/studioVoiceUI.js
           node --check public/plannerObservability.js
           node --check public/rewriteVerdict.js
           node --check public/authorialTextureUI.js
@@ -49,6 +54,7 @@ jobs:
           node --check public/researchStudioCapabilitiesUI.js
           node --check server/lib/researcherAgency.js
           node --check server/routes/researchStudio.js
+          node --check server/index.js
       - name: Production-style server startup smoke test
         shell: bash
         run: |
@@ -71,13 +77,21 @@ jobs:
             exit 1
           fi
           curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/ > index-smoke.html
+          curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/editor > editor-smoke.html
+          curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/studio > studio-smoke.html
           curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/style-profiles > style-profiles-smoke.json
           curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/methodology > methodology-smoke.json
           curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/health/detectors > detector-health-smoke.json
           curl --fail --silent --show-error --max-time 3 http://127.0.0.1:3011/api/detector-research/evidence > detector-evidence-smoke.json
           test -s index-smoke.html
+          test -s editor-smoke.html
+          test -s studio-smoke.html
           grep -q 'Academic Voice Engine' index-smoke.html
+          grep -q 'Editor + Detector' editor-smoke.html
+          grep -q 'Research &amp; Evidence Studio' studio-smoke.html
           grep -q '/runtimeGuard.js' index-smoke.html
+          grep -q '/detectorQuickBridge.js' public/optionalFeatures.js
+          grep -q '/researchStudioUI.js' studio-smoke.html
           cat server-smoke.log
       - name: Run test suite
         shell: bash
@@ -100,6 +114,9 @@ jobs:
             language-simulation.json
             server-smoke.log
             health-smoke.json
+            index-smoke.html
+            editor-smoke.html
+            studio-smoke.html
             style-profiles-smoke.json
             methodology-smoke.json
             detector-health-smoke.json
