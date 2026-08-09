@@ -84,10 +84,10 @@
           <option value="off">Off (clarity only)</option>
           <option value="faithful" selected>Faithful (keep my wording)</option>
           <option value="aggressive">Aggressive / Adaptive reconstruction</option>
-          <option value="authorial">Deep Authorial Reconstruction (evidence-safe)</option>
+          <option value="authorial">Deep Authorial Reconstruction — requires Deep</option>
         </select>
       </label>
-      <div class="limit-hint">Deep Authorial Reconstruction keeps the research design, evidence, citations, variables and technical meaning locked while permitting broader paragraph and sentence redevelopment.</div>
+      <div class="limit-hint">Deep Authorial Reconstruction keeps the research design, evidence, citations, variables and technical meaning locked while permitting broader paragraph and sentence redevelopment. The interface now prevents a Moderate + Deep Authorial combination from being silently executed as Faithful.</div>
 
       <div id="profileEvidence" class="evidence-box">Evidence strength: —</div>
     </div>
@@ -152,6 +152,35 @@
       <button id="analyseDetectorResearchBtn" disabled>Open measured detector diagnostics</button>
       <span id="detectorStatus" class="llm-status">Detector lab loads when this tab is opened.</span>
     </div>
+
+    <section id="detectorScreenshotGateway" class="detector-screenshot-card detector-screenshot-gateway">
+      <div class="detector-gateway-title">
+        <h4>Upload external detector result screenshot</h4>
+        <span class="detector-gateway-version">Detector Gateway v1.0.0</span>
+      </div>
+      <p class="muted">This control is mounted directly in the core Editor page so it does not depend on an optional detector panel appearing correctly. Choose or drop one PNG/JPEG result-summary screenshot (maximum 2 MB), read the visible scores, review them, then save the observation against this browser's test history.</p>
+      <div class="detector-gateway-controls">
+        <label>Detector shown in screenshot
+          <select id="detectorScreenshotDetector">
+            <option value="auto" selected>Auto-detect from screenshot</option>
+            <option value="GPTZero">GPTZero</option>
+            <option value="Turnitin">Turnitin</option>
+            <option value="Copyleaks">Copyleaks</option>
+            <option value="Originality.ai">Originality.ai</option>
+            <option value="Stealthwriter">Stealthwriter</option>
+            <option value="Other">Other</option>
+          </select>
+        </label>
+        <label>Screenshot file
+          <input id="detectorScreenshotInput" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" />
+        </label>
+        <button id="chooseDetectorEvidenceScreenshotBtn" type="button">Choose from device</button>
+        <button id="analyseDetectorScreenshotBtn" class="primary" type="button">Read selected screenshot</button>
+      </div>
+      <div id="detectorScreenshotDropZone" tabindex="0" role="button" aria-label="Drop or paste a detector screenshot">Drop PNG/JPEG here, click to choose a file, or focus this box and paste a screenshot from the clipboard.</div>
+      <span id="detectorScreenshotStatus" class="file-status">No detector-result screenshot selected.</span>
+      <div id="detectorScreenshotPreview"></div>
+    </section>
 
     <details class="research-entry" open>
       <summary>Record a result from a detector you checked manually</summary>
@@ -225,12 +254,13 @@
   </div>
 </section>
 
-<!-- Editor + Detector remains one workspace. Research/evidence development is now
-     isolated at /studio so it cannot add DOM observers, evidence panels or studio
-     controls to the manuscript editor while the user is writing. -->
+<!-- Core controls are mounted directly here. They must remain usable even if later
+     optional diagnostics fail to load. -->
 <script src="/safeDom.js"></script>
 <script src="/fileImport.js"></script>
 <script src="/runtimeGuard.js"></script>
+<script src="/modeControlGuard.js?v=1.0.0"></script>
+<script src="/detectorScreenshotGateway.js?v=1.0.0"></script>
 <script src="/app.js"></script>
 <script src="/workspaceHandoff.js" defer></script>
 <script src="/optionalFeatures.js" defer></script>
