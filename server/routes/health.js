@@ -14,6 +14,7 @@ healthRouter.get("/health", (_req, res) => {
     status: "ok",
     uptimeSeconds: process.uptime(),
     build: getBuildInfo(),
+    llm: llmProvider.configurationHealth(),
     capabilities: {
       singleEditorWordLimit: SINGLE_EDITOR_WORD_LIMIT,
       longDocumentWordLimit: LONG_DOCUMENT_WORD_LIMIT,
@@ -29,9 +30,15 @@ healthRouter.get("/health", (_req, res) => {
   });
 });
 
-// Fail fast, small enumerated state set, no indefinite spinner.
-healthRouter.get("/health/llm", async (_req, res) => {
+// Startup status must be cheap. By default this endpoint reports configuration
+// only and does not make an external Anthropic request. A live probe remains
+// available explicitly at /api/health/llm?probe=1 for diagnostics.
+healthRouter.get("/health/llm", async (req, res) => {
+  if (String(req.query?.probe || "") !== "1") {
+    return res.json(llmProvider.configurationHealth());
+  }
+
   const result = await llmProvider.checkHealth();
-  const httpStatus = result.state === "READY" ? 200 : result.state === "NOT_CONFIGURED" ? 200 : 502;
-  res.status(httpStatus).json(result);
+  const httpStatus = ["READY", "NOT_CONFIGURED"].includes(result.state) ? 200 : 502;
+  return res.status(httpStatus).json(result);
 });
