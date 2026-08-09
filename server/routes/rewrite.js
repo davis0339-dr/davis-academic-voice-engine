@@ -9,6 +9,7 @@ import { deriveInterventionAuthority } from "../lib/interventionAuthority.js";
 import { extractProtectedSpans } from "../lib/protect.js";
 import { auditPreservation } from "../lib/preservation.js";
 import { assessTransformationQuality } from "../lib/transformationQuality.js";
+import { assessIterativeRegularisation } from "../lib/iterativeRewriteGuard.js";
 import { surgicalHumanEdit } from "../lib/surgicalHumanEdit.js";
 import {
   AUTHORIAL_EXECUTION_RECOVERY_LIMIT,
@@ -78,6 +79,21 @@ function refreshTransformationQuality(sourceText, result, revisedText, naturalis
   };
 }
 
+function refreshIterativeQuality(sourceText, result, revisedText, rewriteLineage) {
+  const previous = result?.iterative_rewrite_quality || {};
+  const refreshed = assessIterativeRegularisation({
+    sourceText,
+    candidateText: revisedText,
+    rewriteLineage,
+  });
+  return {
+    ...refreshed,
+    first_attempt: previous.first_attempt || null,
+    pre_rescue_attempt: previous.pre_rescue_attempt || null,
+    recomputed_after_residual_rework: true,
+  };
+}
+
 function finalCandidateStatus(compliance, residual, sourceRetainedForSafety = false) {
   if (sourceRetainedForSafety) return "no_safe_edit_available";
   if (!compliance?.execution_passed && !compliance?.preservation_ok) return "execution_and_preservation_failed";
@@ -93,7 +109,7 @@ function finalCandidateStatus(compliance, residual, sourceRetainedForSafety = fa
 
 rewriteRouter.post("/rewrite", async (req, res) => {
   const requestId = randomUUID();
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation } = req.body || {};
+  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, rewriteLineage } = req.body || {};
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string.", requestId });
@@ -101,6 +117,9 @@ rewriteRouter.post("/rewrite", async (req, res) => {
 
   try {
     enforceWordLimit(text, SINGLE_EDITOR_WORD_LIMIT, "Single-text editor");
+    if (typeof rewriteLineage?.rootSourceText === "string" && rewriteLineage.rootSourceText.trim()) {
+      enforceWordLimit(rewriteLineage.rootSourceText, SINGLE_EDITOR_WORD_LIMIT, "Rewrite lineage root source");
+    }
   } catch (err) {
     return res.status(413).json({
       error: err.code,
@@ -136,6 +155,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
     grammarIntensity,
     lengthPreference,
     naturalisation: naturalisationLevel,
+    rewriteLineage,
   });
 
   const runRewrite = () => runRewriteWith();
@@ -183,12 +203,10 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       const authorialExecutionRecoveryAttempts = [];
       const authorialExecutionRecoveryErrors = [];
 
-      // Deep Authorial Reconstruction treats under-execution as a recoverable
-      // generation failure, not a safety success. This loop is deliberately
-      // independent of the pipeline's cadence/quality retries: a candidate can
-      // be linguistically acceptable yet still fail to execute the structural
-      // plan. We therefore permit up to two additional full deep attempts while
-      // keeping preservation as a hard candidate-selection gate.
+      // Explicit Deep structural modes treat concrete under-execution as a
+      // recoverable generation failure. The loop is independent of the internal
+      // cadence/quality retries so a linguistically fluent but structurally shallow
+      // candidate is not accepted merely because it preserved facts.
       if (shouldAttemptAuthorialExecutionRecovery({ modePolicy, compliance: executionCompliance })) {
         firstAttemptCompliance = executionCompliance;
         for (
@@ -231,14 +249,14 @@ rewriteRouter.post("/rewrite", async (req, res) => {
             authorialExecutionRecoveryErrors.push({
               attempt: recoveryAttempt,
               code: retryErr.code || retryErr.healthState || "AUTHORIAL_EXECUTION_RECOVERY_FAILED",
-              message: retryErr.message || "The authorial execution recovery attempt failed.",
+              message: retryErr.message || "The Deep structural execution recovery attempt failed.",
             });
           }
         }
       }
 
-      // High-preservation over-execution remains a separate failure mode. This is
-      // never used merely because Deep Authorial Reconstruction under-executed.
+      // High-preservation over-execution remains a separate failure mode. It is
+      // never used merely because Deep reconstruction under-executed.
       if (
         executionCompliance.over_executed &&
         sourceAssessment.authorial_texture?.preservation_priority === "high"
@@ -277,6 +295,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
                 "off",
                 { protectedSpans }
               ),
+              iterative_rewrite_quality: refreshIterativeQuality(text, result, surgicalRecovery.revised_text, rewriteLineage),
               surgical_recovery: surgicalRecovery,
               safety_fallback: null,
             };
@@ -324,6 +343,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
               "off",
               { protectedSpans: extractProtectedSpans(text) }
             ),
+            iterative_rewrite_quality: refreshIterativeQuality(text, result, text, rewriteLineage),
             preservation: auditPreservation(text, text, extractProtectedSpans(text)),
             surgical_recovery: surgicalRecovery,
             safety_fallback: {
@@ -336,9 +356,9 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         }
       }
 
-      // Ordinary modes retain the existing one-shot reconciliation rule. Deep
-      // Authorial Reconstruction uses the dedicated recovery loop above and is
-      // never suppressed merely because the internal quality pipeline already ran.
+      // Ordinary modes retain the existing one-shot reconciliation rule. Explicit
+      // Deep structural modes use the dedicated recovery loop above and are never
+      // suppressed merely because the internal quality pipeline already ran.
       if (
         !authorialExecutionRecoveryUsed &&
         !sourceRetainedForSafety &&
@@ -425,6 +445,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
               revised_text: residualRework.revised_text,
               preservation: residualRework.preservation || result.preservation,
               transformation_quality: refreshedQuality,
+              iterative_rewrite_quality: refreshIterativeQuality(text, result, residualRework.revised_text, rewriteLineage),
             };
             executionCompliance = assessExecutionCompliance(result);
           }
@@ -498,15 +519,19 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       if (sourceRetainedForSafety) {
         verdictNote = "No safe local correction survived after the broad rewrite exceeded authorial-preservation authority. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.execution_passed && executionCompliance.preservation_ok) {
-        verdictNote = "The first Deep Authorial candidate under-executed the structural plan. Automatic authorial execution recovery produced a preservation-safe candidate that now satisfies execution compliance; under-execution was treated as a generation defect, not as a safe stopping point.";
+        verdictNote = "The first Deep candidate under-executed the structural plan. Automatic Deep execution recovery produced a preservation-safe candidate that now satisfies execution compliance; under-execution was treated as a generation defect, not as a safe stopping point.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.under_executed) {
-        verdictNote = `Deep Authorial Reconstruction remained under-executed after ${authorialExecutionRecoveryAttempts.length} recovery attempt(s). This is reported as an execution failure, not as a successful safety-preserving revision.`;
+        verdictNote = `Deep reconstruction remained under-executed after ${authorialExecutionRecoveryAttempts.length} recovery attempt(s). This is reported as an execution failure, not as a successful safety-preserving revision.`;
       } else if (overExecutionRecoveryUsed) {
-        verdictNote = "The broad rewrite was rejected for over-editing. Only exact local grammar/clarity corrections that passed preservation and intervention ceilings were applied; all other source wording was retained.";
+        verdictNote = executionCompliance.deep_plan_superseded_by_surgical_fallback
+          ? "The broad Deep rewrite was rejected for over-editing and a bounded surgical fallback was applied. That local fallback may be preservation-safe, but it is explicitly classified as under-execution of the requested Deep structural plan rather than a successful Deep revision."
+          : "The broad rewrite was rejected for over-editing. Only exact local grammar/clarity corrections that passed preservation and intervention ceilings were applied; all other source wording was retained.";
       } else if (residualVerdict === "not_run_execution_blocked") {
         verdictNote = "Residual discourse quality was not declared unnecessary: that stage was blocked by a concrete execution failure. Final status separates concrete plan execution, preservation-aware visible-change plausibility, maximum authorised breadth, factual preservation and residual discourse risk.";
+      } else if (result.iterative_rewrite_quality?.blocking) {
+        verdictNote = "The candidate still shows cumulative rewrite-chain regularisation relative to the retained root source. It is preserved for auditability, but the result should be reviewed rather than treated as a successful authorial recovery.";
       } else {
-        verdictNote = "Final status separates concrete plan execution, preservation-aware visible-change plausibility, maximum authorised breadth, factual preservation and residual discourse risk. Strong existing authorial texture narrows ordinary modes; Deep Authorial Reconstruction preserves semantic/evidential fidelity while materially executing diagnosed redevelopment.";
+        verdictNote = "Final status separates concrete plan execution, preservation-aware visible-change plausibility, maximum authorised breadth, factual preservation, rewrite-chain regularisation and residual discourse risk. Strong existing authorial texture narrows ordinary modes; Deep reconstruction may materially redevelop diagnosed passages without requiring lexical inflation or uniform polish.";
       }
 
       result.candidate_verdict = {
@@ -515,6 +540,9 @@ rewriteRouter.post("/rewrite", async (req, res) => {
           : executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
         preservation: sourceRetainedForSafety ? "source-preserved" : executionCompliance.preservation_ok ? "passed" : "failed",
         residual: residualVerdict,
+        rewrite_chain: result.iterative_rewrite_quality?.available
+          ? (result.iterative_rewrite_quality.blocking ? "regularisation-risk" : "within-root-register-band")
+          : "not-applicable",
         final_status: finalCandidateStatus(executionCompliance, residualRework, sourceRetainedForSafety),
         note: verdictNote,
       };
