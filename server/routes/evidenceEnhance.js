@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { llmProvider, HealthState } from "../lib/llmProvider.js";
 import {
-  acceptedArgumentNodes,
   extractJsonObject,
   normalizeArgumentMap,
   normalizeEvidenceLinks,
@@ -13,14 +12,14 @@ const EVIDENCE_ENHANCE_SYSTEM = `You are the evidence-development pass of an aca
 
 The BASE DRAFT is already a reworked manuscript candidate. Improve THAT candidate; do not discard it and write a new generic essay from the argument map.
 
-The researcher's approved argument map is the intellectual authority. Researcher-approved evidence links are the only external evidence you may introduce. Use no unsupported fact, date, number, citation, theory, finding, variable, method or causal claim.
+The researcher's explicitly approved argument map is the intellectual authority. Explicitly approved evidence links are the only external evidence you may introduce. Use no unsupported fact, date, number, citation, theory, finding, variable, method or causal claim.
 
 Your job is selective evidence-led development:
 - strengthen an under-supported claim when approved evidence genuinely supports it;
 - qualify or narrow a claim when the approved evidence is conditional or mixed;
 - distinguish measures, settings, time periods or mechanisms when that distinction improves the argument;
 - contextualise a claim when evidence provides relevant setting or temporal information;
-- develop an under-explained mechanism only when it is licensed by the argument map and/or approved evidence;
+- develop an under-explained mechanism only when it is licensed by the approved argument map and/or approved evidence;
 - leave already sufficient passages substantially intact.
 
 Do NOT make every paragraph follow claim -> evidence -> interpretation -> synthesis. Do NOT append a polished summary sentence to every paragraph. Do NOT expand simply to increase word count. Do NOT optimise for, target, or claim to defeat any AI detector.
@@ -88,18 +87,18 @@ evidenceEnhanceRouter.post("/research/evidence-enhance-candidate", async (req, r
     return res.status(400).json({ error: "EVIDENCE_DISABLED", message: "Include Evidence is off for this workflow. The base draft was not evidence-enhanced.", requestId: req.requestId });
   }
 
-  const approvedNodes = acceptedArgumentNodes(argumentMap);
+  const approvedNodes = argumentMap.nodes.filter((node) => ["accepted", "modified"].includes(node.researcher_status));
   if (!approvedNodes.length) {
-    return res.status(400).json({ error: "BAD_REQUEST", message: "Approve or modify at least one argument node before evidence enhancement.", requestId: req.requestId });
+    return res.status(400).json({ error: "NO_APPROVED_ARGUMENTS", message: "Explicitly accept or modify at least one argument node before evidence enhancement.", requestId: req.requestId });
   }
 
   const usableEvidence = evidenceLinks
-    .filter((link) => link.researcher_status !== "rejected")
+    .filter((link) => ["accepted", "modified"].includes(link.researcher_status))
     .filter((link) => !["insufficient", "candidate"].includes(link.relationship))
     .slice(0, evidenceLimit(evidenceDepth));
 
   if (!usableEvidence.length) {
-    return res.status(400).json({ error: "NO_APPROVED_EVIDENCE", message: "No researcher-approved evidential links are available. Align and approve evidence before enhancing the reworked candidate.", requestId: req.requestId });
+    return res.status(400).json({ error: "NO_APPROVED_EVIDENCE", message: "No explicitly researcher-approved evidential links are available. Align evidence and choose Accept link or Accept with my interpretation before enhancing the reworked candidate.", requestId: req.requestId });
   }
 
   try {
@@ -117,7 +116,7 @@ evidenceEnhanceRouter.post("/research/evidence-enhance-candidate", async (req, r
           academic_context: styleFilters,
           evidence_depth: evidenceDepth,
           additional_constraints: constraints || null,
-          instruction: "Improve the supplied BASE DRAFT selectively with the approved evidence. Preserve its research architecture and do not rewrite unaffected passages merely for variation.",
+          instruction: "Improve the supplied BASE DRAFT selectively with the explicitly approved evidence. Preserve its research architecture and do not rewrite unaffected passages merely for variation.",
         }),
       }],
       maxTokens: 8000,
@@ -140,7 +139,7 @@ evidenceEnhanceRouter.post("/research/evidence-enhance-candidate", async (req, r
       evidence_changes: changes,
       base_draft_used: true,
       evidence_depth: evidenceDepth,
-      note: "This pass develops the reworked candidate from researcher-approved evidence. It does not use detector scores as generation targets.",
+      note: "This pass develops the reworked candidate from explicitly researcher-approved evidence. It does not use detector scores as generation targets.",
       requestId: req.requestId,
     });
   } catch (err) {
