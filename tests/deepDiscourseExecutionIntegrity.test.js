@@ -88,3 +88,44 @@ test("explicit deep aggressive mode receives dedicated structural under-executio
 
   assert.equal(should, true);
 });
+
+test("surgical safety fallback cannot masquerade as successful Deep structural execution", () => {
+  const authority = deriveInterventionAuthority({
+    planSummary: discourseHeavyPlan,
+    authorialTexture: strongTexture,
+    requestedIntensity: "deep",
+    requestedNaturalisation: "aggressive",
+    effectiveIntent: "discourse_reconstruction",
+  });
+
+  const compliance = assessExecutionCompliance({
+    intervention_plan_summary: discourseHeavyPlan,
+    intervention_intent: { effective: "discourse_reconstruction" },
+    intervention_authority: authority,
+    edit_summary: {
+      kept: 49,
+      micro_edits: 1,
+      sentence_restructures: 0,
+      split_or_merge: 0,
+      paragraph_reorders: 0,
+    },
+    transformation_quality: { unchanged_sentence_ratio: 0.98 },
+    preservation: preservationPassed(),
+    surgical_recovery: {
+      attempted: true,
+      considered_clear_edit_count: 2,
+      applied_edit_count: 1,
+      execution_status: "surgical_plan_passed",
+      rejected_edits: [{ rejected_reason: "replacement_not_surgical" }],
+    },
+  });
+
+  assert.equal(compliance.surgical_plan_passed, true);
+  assert.equal(compliance.deep_plan_superseded_by_surgical_fallback, true);
+  assert.equal(compliance.execution_passed, false);
+  assert.equal(compliance.execution_status, "under-executed");
+  assert.equal(compliance.plan_fidelity_status, "under-executed");
+  assert.equal(compliance.candidate_status, "execution_under");
+  assert.equal(compliance.structural_coverage, 0);
+  assert.ok(compliance.under_execution_codes.includes("DEEP_PLAN_SUPERSEDED_BY_SURGICAL_FALLBACK"));
+});
