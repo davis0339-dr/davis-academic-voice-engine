@@ -5,9 +5,12 @@
   const loaded = new Map();
 
   // These modules directly enrich Analyse/Rewrite responses, so they stay with
-  // the editor. Rewrite lineage loads first because later fetch wrappers should
-  // see the lineage-enriched request rather than bypass it.
+  // the editor. The corrected manuscript counter loads first so all later
+  // observability panels use the same approximate lexical count as server limits.
+  // Rewrite lineage then loads before other fetch wrappers so later wrappers see
+  // the lineage-enriched request rather than bypass it.
   const EDITOR_ENHANCERS = [
+    ["/wordCountCompatibility.js", null],
     ["/rewriteLineage.js", null],
     ["/detectorQuickBridge.js", null],
     ["/plannerObservability.js", null],
@@ -51,7 +54,6 @@
   async function loadEditorEnhancers() {
     for (const [src, dataKey] of EDITOR_ENHANCERS) {
       await loadOne(src, dataKey);
-      // Yield a frame between modules so the browser can paint and respond.
       await new Promise((resolve) => requestAnimationFrame(() => resolve()));
     }
   }
@@ -63,8 +65,6 @@
     const clear = document.getElementById("clearDetectorObservationsBtn");
     if (status) status.textContent = "Loading measured detector diagnostics…";
 
-    // detectorResearchUI historically self-loaded the full academic evidence
-    // developer. A marker keeps that heavy panel out of the editor; /studio owns it.
     if (!document.querySelector('script[data-detector-evidence-ui="true"]')) {
       const marker = document.createElement("script");
       marker.type = "application/json";
