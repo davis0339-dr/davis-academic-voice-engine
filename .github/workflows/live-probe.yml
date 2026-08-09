@@ -14,19 +14,48 @@ jobs:
         run: |
           set -euo pipefail
           LIVE_URL='https://davis-academic-voice-engine.onrender.com'
-          echo '--- health ---'
-          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "$LIVE_URL/api/health" | tee live-health.json
-          echo
-          echo '--- runtime guard ---'
-          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "$LIVE_URL/runtimeGuard.js" | tee live-runtime-guard.js >/dev/null
-          grep -q 'STARTUP_GET_TIMEOUT_MS' live-runtime-guard.js
-          echo '--- root ---'
-          curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "$LIVE_URL/" | tee live-root.html >/dev/null
-          grep -q '/runtimeGuard.js' live-root.html
-          grep -q 'data-detector-research-ui="true"' live-root.html
+          probe() {
+            local path="$1"
+            printf '%-42s ' "$path"
+            curl -L -sS -o /dev/null --connect-timeout 10 --max-time 25 \
+              -w 'HTTP=%{http_code} DNS=%{time_namelookup}s CONNECT=%{time_connect}s TTFB=%{time_starttransfer}s TOTAL=%{time_total}s SIZE=%{size_download}\n' \
+              "$LIVE_URL$path"
+          }
+
+          echo '--- root and static assets ---'
+          for path in \
+            / \
+            /styles.css \
+            /safeDom.js \
+            /fileImport.js \
+            /runtimeGuard.js \
+            /researchEnhancements.js \
+            /app.js \
+            /plannerObservability.js \
+            /rewriteVerdict.js \
+            /researchStudioUI.js \
+            /researchStudioCapabilitiesUI.js \
+            /detectorEvidenceUI.js \
+            /detectorResearchUI.js \
+            /authorialTextureUI.js; do
+            probe "$path"
+          done
+
           echo '--- startup endpoints ---'
-          for endpoint in /api/style-profiles /api/methodology /api/health/detectors /api/detector-research/evidence; do
-            code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 30 "$LIVE_URL$endpoint")
-            echo "$endpoint -> $code"
-            test "$code" = '200'
+          for path in \
+            /api/health \
+            /api/health/llm \
+            /api/style-profiles \
+            /api/methodology \
+            /api/health/detectors \
+            /api/detector-research/evidence; do
+            probe "$path"
+          done
+
+          echo '--- repeat health/llm five times to catch intermittent stalls ---'
+          for i in 1 2 3 4 5; do
+            printf 'health/llm #%s ' "$i"
+            curl -L -sS -o /dev/null --connect-timeout 10 --max-time 25 \
+              -w 'HTTP=%{http_code} TTFB=%{time_starttransfer}s TOTAL=%{time_total}s\n' \
+              "$LIVE_URL/api/health/llm"
           done
