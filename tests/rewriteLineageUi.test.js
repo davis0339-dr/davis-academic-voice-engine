@@ -14,7 +14,7 @@ test("editor loads rewrite lineage before other fetch-wrapping enhancers", () =>
 
 test("rewrite lineage wrapper injects root-source metadata only on rewrite POSTs", () => {
   const script = fs.readFileSync(new URL("../public/rewriteLineage.js", import.meta.url), "utf8");
-  assert.match(script, /\/api\/rewrite/);
+  assert.ok(script.includes("\\/api\\/rewrite"));
   assert.match(script, /rewriteLineage/);
   assert.match(script, /rootSourceText/);
   assert.match(script, /sourceGeneration/);
