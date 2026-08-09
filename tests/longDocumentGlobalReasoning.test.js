@@ -6,6 +6,7 @@ import { buildDocumentMap } from "../server/lib/documentMap.js";
 import {
   buildFallbackBlueprint,
   deriveLongDocumentChunkPolicy,
+  auditTransformationCoverage,
   auditWholeDocumentRegularity,
 } from "../server/lib/longDocumentIntelligence.js";
 
@@ -21,20 +22,20 @@ const patternedAcademic = [
   "Three conclusions therefore follow from the discussion. First, the evidence is mixed. Second, the mechanisms are context dependent. Third, further integrated analysis is warranted.",
 ].join("\n\n");
 
-test("Aggressive does not create rewrite scope in the diagnosis-scoped planner", () => {
+test("Deep Aggressive/Authorial keeps diagnosis but supplies real structural execution authority", () => {
   const plan = buildDiagnosisScopedPlan(diagnose(cleanAcademic), {
     rewriteIntensity: "deep",
     lengthPreference: "expand",
     naturalisation: "aggressive",
   });
-  assert.equal(plan.scopePolicyVersion, "diagnosis-scoped-naturalisation-v2");
-  assert.equal(plan.diagnosticIntensity, "auto");
-  assert.notEqual(plan.intent.recommended, "discourse_reconstruction");
-  assert.ok(plan.scopePrinciples.some((rule) => /Aggressive is a treatment style, not a rewrite-scope generator/i.test(rule)));
-  assert.ok((plan.items || []).some((item) => item.level === "KEEP" || item.level === "MICRO_EDIT"));
+  assert.equal(plan.scopePolicyVersion, "diagnosis-guided-authority-v3");
+  assert.equal(plan.diagnosticIntensity, "deep");
+  assert.equal(plan.authorialAuthorityActive, true);
+  assert.ok(plan.scopePrinciples.some((rule) => /researcher-selected mode supplies the intervention authority/i.test(rule)));
+  assert.ok((plan.paragraphPlan || []).some((item) => (item.actions || []).includes("REBUILD_DISCOURSE")));
 });
 
-test("Long Document narrows Deep + Expand + Aggressive when a clean chunk has no diagnosed development need", () => {
+test("Long Document does not silently downgrade Deep + Aggressive on a locally clean substantive chunk", () => {
   const policy = deriveLongDocumentChunkPolicy({
     sourceText: cleanAcademic,
     requestedIntensity: "deep",
@@ -42,13 +43,27 @@ test("Long Document narrows Deep + Expand + Aggressive when a clean chunk has no
     requestedLengthPreference: "expand",
   });
   assert.equal(policy.requested.naturalisation, "aggressive");
-  assert.equal(policy.effective.naturalisation, "faithful");
+  assert.equal(policy.effective.naturalisation, "aggressive");
   assert.equal(policy.effective.lengthPreference, "maintain");
-  assert.equal(policy.aggressive_authorised, false);
+  assert.equal(policy.authorial_authority, true);
+  assert.equal(policy.aggressive_authorised, true);
   assert.equal(policy.expansion_authorised, false);
 });
 
-test("Long Document may use Aggressive only when Deep authority and a deep diagnosis both exist", () => {
+test("Minor still blocks aggressive treatment from becoming hidden deep reconstruction", () => {
+  const policy = deriveLongDocumentChunkPolicy({
+    sourceText: patternedAcademic,
+    requestedIntensity: "minor",
+    requestedNaturalisation: "aggressive",
+    requestedLengthPreference: "maintain",
+  });
+  assert.equal(policy.effective.intensity, "minor");
+  assert.equal(policy.effective.naturalisation, "faithful");
+  assert.equal(policy.authorial_authority, false);
+  assert.equal(policy.aggressive_authorised, false);
+});
+
+test("Long Document uses Deep Aggressive when a deep diagnosis also exists", () => {
   const policy = deriveLongDocumentChunkPolicy({
     sourceText: patternedAcademic,
     requestedIntensity: "deep",
@@ -78,10 +93,42 @@ test("fallback whole-document blueprint maps the intellectual arc before chunk r
   ].join("\n");
   const map = buildDocumentMap(text);
   const blueprint = buildFallbackBlueprint(text, map);
-  assert.equal(blueprint.version, "longdoc-blueprint-v1");
+  assert.equal(blueprint.version, "longdoc-blueprint-v2");
   assert.ok(blueprint.argument_arc.length >= 4);
   assert.match(blueprint.document_goal, /complete argument/i);
   assert.ok(blueprint.consistency_constraints.some((rule) => /variables|methods|study stage/i.test(rule)));
+  assert.ok(blueprint.rhetoric_safeguards.some((rule) => /preserve the research and formal artefacts/i.test(rule)));
+});
+
+test("Deep Authorial transformation coverage rejects an 85% exact-retention pattern", () => {
+  const sourceParagraphs = Array.from({ length: 20 }, (_, index) =>
+    `Governance paragraph ${index + 1} explains a distinct financing mechanism and its implications for creditor assessment.`
+  );
+  const revisedParagraphs = sourceParagraphs.map((paragraph, index) =>
+    index < 17 ? paragraph : `Creditor assessment is developed differently in revised substantive paragraph ${index + 1}, while the original research meaning remains fixed.`
+  );
+  const chunks = sourceParagraphs.map((sourceText, index) => ({
+    index,
+    heading: null,
+    sourceText,
+    revisedText: revisedParagraphs[index],
+    wordCount: 90,
+    rewriteMode: "rewrite",
+  }));
+
+  const audit = auditTransformationCoverage({
+    sourceText: sourceParagraphs.join("\n\n"),
+    revisedText: revisedParagraphs.join("\n\n"),
+    chunks,
+    requestedIntensity: "deep",
+    requestedNaturalisation: "authorial",
+  });
+
+  assert.equal(audit.enforced, true);
+  assert.equal(audit.mode_class, "deep_authorial");
+  assert.equal(audit.passed, false);
+  assert.equal(audit.under_transformed_for_selected_mode, true);
+  assert.ok(audit.target_chunk_indices.length >= 17);
 });
 
 test("whole-document audit rejects a candidate that becomes systematically more choreographed across chunks", () => {
@@ -108,7 +155,7 @@ test("whole-document audit rejects a candidate that becomes systematically more 
   }));
 
   const audit = auditWholeDocumentRegularity({ sourceText, revisedText, chunks });
-  assert.equal(audit.version, "longdoc-global-audit-v1");
+  assert.equal(audit.version, "longdoc-global-audit-v2");
   assert.equal(audit.passed, false);
   assert.equal(audit.status, "selective_repair_required");
   assert.ok(audit.risk_delta > 0);
