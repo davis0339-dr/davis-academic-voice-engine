@@ -8,7 +8,7 @@
   // the editor. The Researcher Studio, evidence-development UI and detector
   // evidence base are deliberately excluded from this workspace.
   const EDITOR_ENHANCERS = [
-    ["/researchEnhancements.js", null],
+    ["/detectorQuickBridge.js", null],
     ["/plannerObservability.js", null],
     ["/rewriteVerdict.js", null],
     ["/authorialTextureUI.js", null],
