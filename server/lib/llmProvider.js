@@ -28,6 +28,25 @@ function isConfigured() {
   return Boolean(apiKey && apiKey.trim().length > 0);
 }
 
+// Fast configuration-only status used by page startup. `READY` here means the
+// application is configured to accept provider-backed work; live provider reachability
+// is deliberately not probed on every page load. The response tells callers whether
+// a live probe was actually performed.
+function configurationHealth() {
+  if (!isConfigured()) {
+    return {
+      state: HealthState.NOT_CONFIGURED,
+      message: "ANTHROPIC_API_KEY is not set.",
+      live_probe_performed: false,
+    };
+  }
+  return {
+    state: HealthState.READY,
+    message: "Provider credentials are configured. Live connectivity is checked during model work or by an explicit diagnostic probe.",
+    live_probe_performed: false,
+  };
+}
+
 function providerFailure(status, bodyText, retryAfter = null) {
   let healthState = HealthState.PROVIDER_ERROR;
   let message = `Provider error ${status}: ${bodyText.slice(0, 500)}`;
@@ -113,7 +132,7 @@ async function callAnthropic({ system, messages, maxTokens = 4096, timeoutOverri
 
 async function checkHealth() {
   if (!isConfigured()) {
-    return { state: HealthState.NOT_CONFIGURED, message: "ANTHROPIC_API_KEY is not set." };
+    return { state: HealthState.NOT_CONFIGURED, message: "ANTHROPIC_API_KEY is not set.", live_probe_performed: true };
   }
   try {
     await callAnthropic({
@@ -122,17 +141,19 @@ async function checkHealth() {
       maxTokens: 8,
       timeoutOverrideMs: 10000,
     });
-    return { state: HealthState.READY, message: "Provider reachable and authenticated." };
+    return { state: HealthState.READY, message: "Provider reachable and authenticated.", live_probe_performed: true };
   } catch (err) {
     return {
       state: err.healthState || HealthState.PROVIDER_ERROR,
       message: err.message,
+      live_probe_performed: true,
     };
   }
 }
 
 export const llmProvider = {
   isConfigured,
+  configurationHealth,
   checkHealth,
   callAnthropic,
 };
