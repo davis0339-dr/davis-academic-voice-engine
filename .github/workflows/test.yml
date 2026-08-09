@@ -52,6 +52,7 @@ jobs:
           node --check public/detectorResearchUI.js
           node --check public/detectorEvidenceUI.js
           node --check public/researchStudioUI.js
+          node --check public/researchStudioEvidenceGateway.js
           node --check public/researchStudioEvidenceCoreUI.js
           node --check public/researchStudioCapabilitiesUI.js
           node --check public/researchStudioCandidateBridge.js
@@ -106,8 +107,13 @@ jobs:
           grep -q '/rewriteLineage.js' public/optionalFeatures.js
           grep -q '/longDocumentVNextUI.js' public/optionalFeatures.js
           grep -q '/researchStudioUI.js' studio-smoke.html
+          grep -q '/researchStudioEvidenceGateway.js?v=3.0.0' studio-smoke.html
+          grep -q 'evidenceGatewayFiles' studio-smoke.html
+          grep -q 'evidenceGatewayPasteText' studio-smoke.html
+          grep -q 'Evidence Gateway v3.0.0' studio-smoke.html
           grep -q '/researchStudioEvidenceCoreUI.js' studio-smoke.html
           grep -q '/researchStudioCandidateBridge.js' studio-smoke.html
+          grep -q 'transferToResearchStudio' public/researchStudioEvidenceGateway.js
           grep -q 'browseResearchEvidenceBtn' public/researchStudioEvidenceCoreUI.js
           grep -q 'evidencePasteText' public/researchStudioEvidenceCoreUI.js
           grep -q 'evidence-enhance-candidate' server/routes/evidenceEnhance.js
