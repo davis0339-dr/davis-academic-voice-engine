@@ -3,14 +3,26 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Academic Voice Engine — Editor</title>
+<title>Academic Voice Engine — Editor + Detector</title>
 <link rel="stylesheet" href="/styles.css" />
+<style>
+  .workspace-nav{display:flex;gap:.6rem;align-items:center;margin-left:auto;flex-wrap:wrap}
+  .workspace-nav a{display:inline-flex;align-items:center;padding:.42rem .7rem;border:1px solid #465b74;border-radius:999px;text-decoration:none;color:inherit;font-size:.86rem}
+  .workspace-nav a.active{border-color:#62e0b0;background:rgba(98,224,176,.08)}
+  .workspace-nav a:hover{background:rgba(255,255,255,.05)}
+  @media(max-width:760px){.topbar{align-items:flex-start;flex-wrap:wrap}.workspace-nav{width:100%;margin-left:0}}
+</style>
+<script>window.AVE_WORKSPACE="editor-detector";</script>
 </head>
 <body>
 <header class="topbar">
   <div class="brand">Academic Voice Engine <span class="tag">Beta</span></div>
   <div id="llmStatus" class="llm-status">LLM: starting</div>
   <a id="buildBadge" class="build-badge" href="#" target="_blank" rel="noopener" title="Click to view this exact deployed commit on GitHub">build: pending</a>
+  <nav class="workspace-nav" aria-label="Voice Engine workspaces">
+    <a class="active" href="/editor">Editor + Detector</a>
+    <a id="openStudioLink" href="/studio">Research &amp; Evidence Studio</a>
+  </nav>
 </header>
 
 <main class="layout">
@@ -115,7 +127,6 @@
     <button class="tab-header" data-tab="diagnostics">Writing Quality</button>
     <button class="tab-header" data-tab="preservation">Preservation</button>
     <button class="tab-header" data-tab="profile">Style Profile</button>
-    <button class="tab-header" data-tab="methodology">Methodology</button>
     <button class="tab-header" data-tab="detectorqa">Detector Research Lab</button>
     <button class="tab-header" data-tab="longdoc">Long Document</button>
   </div>
@@ -132,16 +143,14 @@
   <div id="tab-profile" class="tab-panel">
     <p class="muted">Select controls above to see which evidence-backed style family is actually being used.</p>
   </div>
-  <div id="tab-methodology" class="tab-panel">
-    <p class="muted">Loading corpus coverage…</p>
-  </div>
+  <div id="tab-methodology" class="tab-panel" hidden aria-hidden="true"></div>
   <div id="tab-detectorqa" class="tab-panel">
-    <p class="detector-disclaimer">Loading…</p>
+    <p class="detector-disclaimer">Writing-pattern research only. Live third-party detector integrations are disabled by design. The editor and quick source↔revision comparison remain in this workspace; the heavier evidence-development tools now live in Research &amp; Evidence Studio.</p>
     <div class="action-row">
-      <button id="scanSourceBtn">Scan source with configured detectors</button>
-      <button id="scanRevisedBtn">Scan revised with configured detectors</button>
-      <button id="analyseDetectorResearchBtn">Analyse source ↔ revised patterns</button>
-      <span id="detectorStatus" class="llm-status"></span>
+      <button id="scanSourceBtn" hidden disabled>Scan source with configured detectors</button>
+      <button id="scanRevisedBtn" hidden disabled>Scan revised with configured detectors</button>
+      <button id="analyseDetectorResearchBtn" disabled>Open measured detector diagnostics</button>
+      <span id="detectorStatus" class="llm-status">Detector lab loads when this tab is opened.</span>
     </div>
 
     <details class="research-entry" open>
@@ -186,8 +195,8 @@
         </label>
       </div>
       <div class="action-row">
-        <button id="addDetectorObservationBtn">Add observation</button>
-        <button id="clearDetectorObservationsBtn">Clear observations</button>
+        <button id="addDetectorObservationBtn" disabled>Add observation</button>
+        <button id="clearDetectorObservationsBtn" disabled>Clear observations</button>
       </div>
       <div id="manualObservationList" class="detector-observation-list"></div>
     </details>
@@ -216,13 +225,14 @@
   </div>
 </section>
 
-<!-- Keep the core editor on the critical path only. Advanced/diagnostic layers
-     are loaded after window.load so a slow optional asset cannot hold the page
-     parser before app.js runs. -->
+<!-- Editor + Detector remains one workspace. Research/evidence development is now
+     isolated at /studio so it cannot add DOM observers, evidence panels or studio
+     controls to the manuscript editor while the user is writing. -->
 <script src="/safeDom.js"></script>
 <script src="/fileImport.js"></script>
 <script src="/runtimeGuard.js"></script>
 <script src="/app.js"></script>
+<script src="/workspaceHandoff.js" defer></script>
 <script src="/optionalFeatures.js" defer></script>
 </body>
 </html>

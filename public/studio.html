@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Academic Voice Engine — Research & Evidence Studio</title>
+<link rel="stylesheet" href="/styles.css" />
+<style>
+  .workspace-nav{display:flex;gap:.6rem;align-items:center;margin-left:auto;flex-wrap:wrap}
+  .workspace-nav a{display:inline-flex;align-items:center;padding:.42rem .7rem;border:1px solid #465b74;border-radius:999px;text-decoration:none;color:inherit;font-size:.86rem}
+  .workspace-nav a.active{border-color:#62e0b0;background:rgba(98,224,176,.08)}
+  .workspace-nav a:hover{background:rgba(255,255,255,.05)}
+  @media(max-width:760px){.topbar{align-items:flex-start;flex-wrap:wrap}.workspace-nav{width:100%;margin-left:0}}
+</style>
+<script>window.AVE_WORKSPACE="research-evidence-studio";</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Academic Voice Engine <span class="tag">Research &amp; Evidence Studio</span></div>
+  <a id="studioBuildBadge" class="build-badge" href="#" target="_blank" rel="noopener">build: pending</a>
+  <nav class="workspace-nav" aria-label="Voice Engine workspaces">
+    <a href="/editor">Editor + Detector</a>
+    <a class="active" href="/studio">Research &amp; Evidence Studio</a>
+  </nav>
+</header>
+
+<main class="studio-shell">
+  <section class="studio-evidence-card">
+    <h2>Research &amp; Evidence Studio</h2>
+    <p>This workspace contains the heavier evidence-development and researcher-reasoning tools. It uses the same Davis Voice Engine backend, but it is isolated from the Editor + Detector page so its corpus panels, source workspace and reasoning tools cannot slow manuscript editing.</p>
+    <div id="studioShellStatus" class="status-message" aria-live="polite"></div>
+  </section>
+
+  <details class="studio-evidence-card" open>
+    <summary><strong>Editor context handoff</strong></summary>
+    <p class="muted">When you open this workspace from the editor, the current source and revision are copied here through browser-local handoff only. They are not required; you can also work independently.</p>
+    <div class="studio-context">
+      <label class="studio-context-card">Source/manuscript context
+        <textarea id="sourceText" placeholder="Optional manuscript context from the Editor…"></textarea>
+      </label>
+      <label class="studio-context-card">Current revised context
+        <textarea id="revisedText" placeholder="Optional revised text for integrity checking…"></textarea>
+      </label>
+    </div>
+  </details>
+
+  <details class="studio-evidence-card">
+    <summary><strong>Style-family context</strong></summary>
+    <div class="studio-filters">
+      <label>Document type<select id="documentType"></select></label>
+      <label>Region<select id="region"></select></label>
+      <label>Degree<select id="degree"></select></label>
+      <label>Discipline<select id="discipline"></select></label>
+      <label>Research mode<select id="researchMode"></select></label>
+      <label>Section<select id="section"></select></label>
+    </div>
+  </details>
+
+  <section class="tabs">
+    <div class="tab-headers">
+      <button class="tab-header active" data-tab="evidence">Evidence &amp; Methodology</button>
+    </div>
+
+    <div id="tab-evidence" class="tab-panel active">
+      <div id="studioMethodology"><p class="muted">Loading corpus coverage…</p></div>
+      <section class="studio-evidence-card">
+        <h3>Detector research evidence basis</h3>
+        <p class="muted">This is the development/evidence view that was removed from the live editor. It documents what the detector-research layer genuinely measures now and what still requires deeper NLP/statistical implementation.</p>
+        <div id="detectorResearchResults"></div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<script src="/safeDom.js"></script>
+<script src="/fileImport.js"></script>
+<script src="/runtimeGuard.js"></script>
+<script src="/researchStudioUI.js"></script>
+<script src="/researchStudioCapabilitiesUI.js"></script>
+<script src="/detectorEvidenceUI.js"></script>
+<script src="/studioVoiceUI.js"></script>
+<script src="/studioBootstrap.js"></script>
+</body>
+</html>

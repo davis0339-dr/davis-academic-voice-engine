@@ -89,24 +89,3 @@
     .atv5-panel details{margin-top:10px}.atv5-panel summary{cursor:pointer;color:#a9bedf}.atv5-components{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.atv5-components span{padding:4px 7px;border:1px solid #465b74;border-radius:5px;font-size:.8em}.atv5-panel p{font-size:.82em;opacity:.7}`;
   document.head.appendChild(style);
 })();
-
-(() => {
-  if (document.querySelector('script[data-detector-research-ui="true"]')) return;
-  const script = document.createElement("script");
-  script.src = "/detectorResearchUI.js"; script.dataset.detectorResearchUi = "true"; script.defer = true;
-  document.head.appendChild(script);
-})();
-
-(() => {
-  if (document.querySelector('script[data-research-studio-ui="true"]')) return;
-  const script = document.createElement("script");
-  script.src = "/researchStudioUI.js"; script.dataset.researchStudioUi = "true"; script.defer = true;
-  document.head.appendChild(script);
-})();
-
-(() => {
-  if (document.querySelector('script[data-research-studio-capabilities-ui="true"]')) return;
-  const script = document.createElement("script");
-  script.src = "/researchStudioCapabilitiesUI.js"; script.dataset.researchStudioCapabilitiesUi = "true"; script.defer = true;
-  document.head.appendChild(script);
-})();

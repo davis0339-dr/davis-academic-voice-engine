@@ -22,6 +22,7 @@ import {
 } from "./lib/security.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(__dirname, "..", "public");
 const app = express();
 
 app.disable("x-powered-by");
@@ -53,7 +54,16 @@ app.use("/api", detectorScanRouter);
 app.use("/api", jobsRouter);
 app.use("/api", researchStudioRouter);
 
-app.use(express.static(path.join(__dirname, "..", "public"), {
+// One backend, two deliberately separate browser workspaces. The existing root
+// remains the Editor + Detector so current bookmarks do not break.
+app.get(["/editor", "/editor/"], (_req, res) => {
+  res.sendFile(path.join(publicDir, "index.html"));
+});
+app.get(["/studio", "/studio/"], (_req, res) => {
+  res.sendFile(path.join(publicDir, "studio.html"));
+});
+
+app.use(express.static(publicDir, {
   etag: true,
   maxAge: 0,
   setHeaders(res) {
