@@ -5,9 +5,10 @@
   const loaded = new Map();
 
   // These modules directly enrich Analyse/Rewrite responses, so they stay with
-  // the editor. The Researcher Studio, evidence-development UI and detector
-  // evidence base are deliberately excluded from this workspace.
+  // the editor. Rewrite lineage loads first because later fetch wrappers should
+  // see the lineage-enriched request rather than bypass it.
   const EDITOR_ENHANCERS = [
+    ["/rewriteLineage.js", null],
     ["/detectorQuickBridge.js", null],
     ["/plannerObservability.js", null],
     ["/rewriteVerdict.js", null],
