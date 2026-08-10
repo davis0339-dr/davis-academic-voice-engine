@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
-test("manuscript-first coauthoring starts independently of the Editor and preserves the post-editor workflow", () => {
+test("manuscript-first coauthoring starts independently of the Editor and preserves the evidence-and-integrity workflow", () => {
   const ui = read("public/researchCoauthoringUI.js");
   const studio = read("public/studio.html");
 
@@ -17,8 +17,12 @@ test("manuscript-first coauthoring starts independently of the Editor and preser
   assert.match(ui, /This can start independently of the Editor/i);
   assert.match(ui, /Use current Source text/);
   assert.match(ui, /Use current Revised text/);
-  assert.match(studio, /forward evidence-and-judgment workflow remains available/i);
   assert.match(ui, /existing post-editor framework remains separate and intact/i);
+
+  assert.match(studio, /Researcher-led manuscript development/i);
+  assert.match(studio, /manuscript → researcher reasoning → approved argument map → evidence alignment\/challenge → controlled reconstruction → integrity check/i);
+  assert.match(studio, /id="researchEvidenceWorkspaceCard"/);
+  assert.match(studio, /id="integrityResults"/);
 });
 
 test("coauthoring explicitly prefers the researcher's own understanding without blocking typed answers", () => {
