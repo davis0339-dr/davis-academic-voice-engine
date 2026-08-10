@@ -1,0 +1,1 @@
+Implementation work should now update the live diagnostic/planner code to conform to `docs/authorial-texture-redesign.md`. This note exists only to mark the redesign as a blocking implementation item; it is not a substitute for the code changes or acceptance tests.
