@@ -39,14 +39,25 @@ test("Evidence gateway no longer promises an indefinite automatic transfer while
   assert.match(router, /processing did not complete within 90 seconds/i);
 });
 
-test("Studio loads the router after the Literature Evidence Bank and cache-busts the core Research Studio scripts", () => {
+test("Literature Evidence Bank retains every worksheet instead of silently choosing only the largest sheet", () => {
+  const bank = read("public/researchEvidenceBankUI.js");
+  assert.match(bank, /BANK_VERSION\s*=\s*"3\.2\.0"/);
+  assert.match(bank, /sheets:\s*\[\]/);
+  assert.match(bank, /state\.sheets\s*=\s*sheets/);
+  assert.match(bank, /literatureBankSheetSelect/);
+  assert.match(bank, /worksheet\(s\) retained/i);
+  assert.match(bank, /mappingBySheet/);
+  assert.doesNotMatch(bank, /sheets\.reduce\(\(best, current\).*current\.records\.length > best\.records\.length/s);
+});
+
+test("Studio loads the sheet-aware bank before the router and cache-busts the core Research Studio scripts", () => {
   const html = read("public/studio.html");
-  const bankIndex = html.indexOf("researchEvidenceBankUI.js?v=3.1.0");
+  const bankIndex = html.indexOf("researchEvidenceBankUI.js?v=3.2.0");
   const routerIndex = html.indexOf("researchEvidenceUploadRouter.js?v=3.1.1");
   assert.ok(bankIndex >= 0, "Literature Evidence Bank script should be present");
   assert.ok(routerIndex > bankIndex, "upload router must load after Literature Evidence Bank UI");
   assert.match(html, /Evidence Gateway v3\.1\.1/);
   assert.match(html, /researchStudioUI\.js\?v=3\.1\.0/);
   assert.match(html, /fileImport\.js\?v=3\.1\.0/);
-  assert.match(html, /CSV\/XLSX: Literature Evidence Bank \(25 MB, up to 10,000 indexed rows/i);
+  assert.match(html, /CSV\/XLSX: Literature Evidence Bank \(25 MB, up to 10,000 indexed rows per worksheet/i);
 });
