@@ -24,6 +24,13 @@ test("Jand Guy-sized workbook is routed to the 25 MB Literature Evidence Bank in
   assert.match(router, /copyFilesIntoInput\(bankInput, \[file\]\)/);
 });
 
+test("spreadsheet routing also intercepts the internal Research Studio file chooser", () => {
+  const router = read("public/researchEvidenceUploadRouter.js");
+  assert.match(router, /event\.target\?\.id !== "researchEvidenceFiles"/);
+  assert.match(router, /interceptDirectWorkspaceSpreadsheetChange/);
+  assert.match(router, /document\.addEventListener\("change", interceptDirectWorkspaceSpreadsheetChange, true\)/);
+});
+
 test("Evidence gateway no longer promises an indefinite automatic transfer while Studio is absent", () => {
   const router = read("public/researchEvidenceUploadRouter.js");
   assert.match(router, /TARGET_WAIT_MS\s*=\s*12000/);
@@ -35,9 +42,10 @@ test("Evidence gateway no longer promises an indefinite automatic transfer while
 test("Studio loads the router after the Literature Evidence Bank and cache-busts the core Research Studio scripts", () => {
   const html = read("public/studio.html");
   const bankIndex = html.indexOf("researchEvidenceBankUI.js?v=3.1.0");
-  const routerIndex = html.indexOf("researchEvidenceUploadRouter.js?v=3.1.0");
+  const routerIndex = html.indexOf("researchEvidenceUploadRouter.js?v=3.1.1");
   assert.ok(bankIndex >= 0, "Literature Evidence Bank script should be present");
   assert.ok(routerIndex > bankIndex, "upload router must load after Literature Evidence Bank UI");
+  assert.match(html, /Evidence Gateway v3\.1\.1/);
   assert.match(html, /researchStudioUI\.js\?v=3\.1\.0/);
   assert.match(html, /fileImport\.js\?v=3\.1\.0/);
   assert.match(html, /CSV\/XLSX: Literature Evidence Bank \(25 MB, up to 10,000 indexed rows/i);
