@@ -11,6 +11,7 @@ import { assessContrastiveLanguage } from "./contrastiveLanguage.js";
 import { parseTextStructure } from "./textStructure.js";
 import { analyseDiscourseArchitecture } from "./discourseArchitecture.js";
 import { assessArgumentativeSufficiency } from "./argumentativeSufficiency.js";
+import { analyseDiscourseRegularity } from "./discourseRegularityForensics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -172,7 +173,16 @@ export function diagnose(text) {
   const rhetoricalScaffolding = findRhetoricalScaffolding(sentences);
   const humanDiscourse = analyseHumanDiscourse(text);
   const contrastiveLanguage = assessContrastiveLanguage(text, { humanDiscourse });
-  const discourseArchitecture = analyseDiscourseArchitecture(text, textStructure);
+  const baseDiscourseArchitecture = analyseDiscourseArchitecture(text, textStructure);
+  const discourseRegularityForensics = analyseDiscourseRegularity(text, textStructure);
+  const discourseArchitecture = {
+    ...baseDiscourseArchitecture,
+    signals: [
+      ...(baseDiscourseArchitecture?.signals || []),
+      ...(discourseRegularityForensics?.architecture_signals || []),
+    ],
+    regularity_forensics: discourseRegularityForensics,
+  };
   const argumentativeSufficiency = assessArgumentativeSufficiency(text, textStructure);
   const monotony = findMonotony(sentences);
 
@@ -202,6 +212,7 @@ export function diagnose(text) {
     paragraph_patterns: paragraphPatterns,
     rhetorical_scaffolding: rhetoricalScaffolding,
     discourse_architecture: discourseArchitecture,
+    discourse_regularity_forensics: discourseRegularityForensics,
     argumentative_sufficiency: argumentativeSufficiency,
     cohesion: transitionStacking,
     evidence_alignment: [],
