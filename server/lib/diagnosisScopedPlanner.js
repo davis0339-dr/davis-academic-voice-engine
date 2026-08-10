@@ -148,10 +148,14 @@ function deepAuthorialProtocol() {
     "VARY RHETORICAL TRAJECTORY BY FUNCTION, NOT RANDOMNESS: descriptive/context paragraphs may accumulate facts before interpretation; literature paragraphs may juxtapose studies and delay synthesis; conditional findings may foreground the condition; gap paragraphs may accumulate unresolved tensions before narrowing the gap; purpose/method paragraphs should state specifications directly. Do not force every paragraph through topic sentence -> evidence -> interpretation -> polished implication.",
     "ALLOW UNEVEN EMPHASIS: not every paragraph needs a closing synthesis sentence, not every evidence cluster needs an immediate takeaway, and not every sentence must be a self-contained mini-abstract. Some paragraphs may end on evidence, a limitation, a condition, a measurement distinction or an unresolved tension that the next paragraph carries forward.",
     "SUPPRESS EDITORIAL CHOREOGRAPHY: avoid repeated constructions such as 'The salient question...', 'This study/prospectus advances...', 'Prior evidence therefore...', 'In other words...', 'Taken together...', or equivalent tidy summary frames when they are not required by the actual argument. No phrase is banned absolutely; repeated editorial preference across paragraphs is the defect.",
+    "MODERN MACHINE-LANGUAGE SELF-CHECK: polished academic language can still be machine-shaped. Do not repeatedly stage reasoning through 'not X but Y', 'not merely', 'more than', 'does not imply', 'the difficulty is', 'the more instructive result', 'the unresolved issue', 'becomes more evident', 'adds further complexity', or equivalent editorial pivots. Keep any such construction only when it is the clearest way to express a real distinction. Recurrence across the passage is a defect even when each sentence is individually grammatical and sophisticated.",
+    "DO NOT ANNOUNCE THE PARAGRAPH WHEN THE CONTENT CAN DO THE WORK: abstract noun-led openings about conditionality, complexity, variation, assessment, implications, context, difficulty or significance should not repeatedly tell the reader what the next paragraph will do. Where possible, begin with the relevant evidence, actor, condition, mechanism, measurement issue or contextual fact and let the interpretation emerge from the reasoning.",
+    "PREFER PROPOSITIONS TO DISCOURSE MANAGEMENT: if a sentence mainly tells the reader that a point is important, complex, conditional, instructive, useful, unresolved or more specific, ask whether it adds a substantive proposition. If not, remove it or absorb the necessary qualification into the neighbouring evidence. Do not manufacture bluntness; preserve legitimate epistemic caution.",
+    "PREFER ACTORS AND DIRECT VERBS WHEN TECHNICALLY APPROPRIATE: firms borrow, lenders price and monitor, boards oversee, studies report, effects vary, conditions change. Do not replace valid construct names or technical abstractions simply to force directness, but avoid unnecessary noun-heavy packaging when a precise verb carries the same meaning.",
     "SECTION REGISTER MATTERS: problem statements, purpose statements, research questions, hypotheses, operational definitions and methods should remain direct and institutionally recognisable. Do not naturalise formal artefacts by rhetorical embellishment. Literature/background prose can carry more varied discourse movement because its job is argumentative rather than formularised.",
     "DEEP DOES NOT MEAN LEXICALLY GRANDER: do not inflate nominalisations, stack abstract nouns, or make every sentence denser. A stronger reconstruction may use simpler verbs, shorter evidential statements, delayed interpretation, or a longer qualified sentence where the reasoning actually requires it.",
     "CAN CHANGE IS NOT SHOULD CHANGE: Deep/Authorial supplies broad permission, not a quota. A technically clean sentence or paragraph may still be kept when its authorial texture is genuine and no discourse-regularity or argumentative diagnosis warrants intervention.",
-    "FINAL SELF-CHECK BEFORE RETURNING: for paragraphs actually authorised for reconstruction, ask whether the candidate is essentially the same paragraph sequence with cleaner synonyms and recast clauses. If yes, the authorised Deep Authorial operation is under-executed. Rebuild that authorised material from the proposition/evidence ledger while retaining all protected research content.",
+    "FINAL SELF-CHECK BEFORE RETURNING: for paragraphs actually authorised for reconstruction, ask whether the candidate is essentially the same paragraph sequence with cleaner synonyms and recast clauses. Also ask whether the candidate has accumulated polished editorial pivots, abstract signposts or tidy synthesis sentences that were not required by the argument. If either is true, the authorised Deep Authorial operation is under-executed or over-regularised. Rebuild that authorised material from the proposition/evidence ledger while retaining all protected research content.",
     "EXTERNAL CLASSIFIERS ARE DIAGNOSTIC ONLY: do not target a detector score, insert errors, conceal machine provenance, or use tricks. The objective is defensible, heterogeneous, author-like academic discourse produced by better reasoning architecture and fidelity, not score gaming.",
   ];
 }
@@ -191,14 +195,18 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   // New forensic behaviour is versioned independently instead of forcing callers
   // to interpret a compatibility-string bump as a different policy contract.
   plan.scopePolicyVersion = "diagnosis-guided-authority-v3";
-  plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v4" : null;
-  plan.scopeImplementationVersion = "diagnosis-guided-authority-v5";
+  plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v4.1" : null;
+  plan.scopeImplementationVersion = "diagnosis-guided-authority-v5.1";
   plan.forensicScopeVersion = diagnostics?.discourse_regularity_forensics?.version || null;
+  plan.machineLanguageForensicsVersion = diagnostics?.machine_language_forensics?.version || null;
 
+  const machineLanguage = diagnostics?.machine_language_forensics;
   plan.scopePrinciples = [
     "Diagnosis selects the rhetorical/argument operation; the researcher-selected mode supplies the intervention authority, while intensity remains the hard structural ceiling.",
     "Naturalisation changes how authorised work is expressed; it does not manufacture paragraph/discourse authority.",
     "Cross-paragraph regularity forensics examines recurring rhetorical sequencing, evidence placement, tidy closures, paragraph signatures, signposting and rhetorical asymmetry in narrative prose; formal academic artefacts are excluded from that score.",
+    "Modern machine-language forensics examines recurrence of polished editorial pivots, abstract issue-framing, binary qualification, compressed synthesis, discourse-management wording and nominalisation pressure. It is a style diagnostic, not an authorship classifier, and no single phrase is banned in isolation.",
+    "High grammar, clarity and sophistication do not override machine-language or discourse-regularity evidence. An academically polished candidate may still require reconstruction when its language repeatedly manages the reader through predictable editorial frames rather than allowing the substantive reasoning to carry the prose.",
     "Minor remains local and restrained; Moderate permits sentence/flow restructuring and selective diagnosed development; Deep permits diagnosed structural redevelopment.",
     "Moderate + Aggressive may substantially restructure the diagnosed sentence/flow leverage points identified by discourse forensics, while still blocking silent paragraph resequencing or wholesale discourse reconstruction.",
     "Deep + Aggressive/Authorial authorises paragraph-level reconstruction where paragraph/discourse diagnosis or machine-pattern regularity supports it, even if individual sentences are grammatically clean.",
@@ -219,8 +227,11 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
       diagnostics?.discourse_regularity_forensics?.available
         ? `Cross-paragraph discourse regularity: ${diagnostics.discourse_regularity_forensics.label} (${diagnostics.discourse_regularity_forensics.score}). Formal academic artefacts excluded: ${diagnostics.discourse_regularity_forensics.formal_artifact_block_count || 0}.`
         : null,
+      machineLanguage?.available
+        ? `Modern machine-language density: ${machineLanguage.label} (${machineLanguage.score}); ${machineLanguage.metrics?.hit_sentence_count || 0} of ${machineLanguage.metrics?.sentence_count || 0} substantive sentences contain at least one monitored lexical-rhetorical framing pattern. This is density evidence, not an authorship claim.`
+        : null,
       authorialAuthority
-        ? "Deep Authorial authority is active for diagnosed material: reconstruct from protected propositions, evidence relationships and rhetorical purpose rather than performing sentence-aligned paraphrase. Preserve the research; source sentence architecture is not automatically the fidelity target."
+        ? "Deep Authorial authority is active for diagnosed material: reconstruct from protected propositions, evidence relationships and rhetorical purpose rather than performing sentence-aligned paraphrase. Preserve the research; source sentence architecture is not automatically the fidelity target. Prevent polished machine-language accumulation during generation rather than relying only on post-output cleanup."
         : requestedIntensity === "deep"
           ? "Deep structural authority is available where diagnosis supports it; permission does not itself create a need to reconstruct clean material."
           : null,
