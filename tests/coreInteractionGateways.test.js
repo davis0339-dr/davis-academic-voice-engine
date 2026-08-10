@@ -48,9 +48,9 @@ test("Researcher Studio evidence ingestion is static, single-surface and never r
   assert.match(html, /id="tab-researchstudio"/);
   assert.match(html, /id="researchEvidenceWorkspaceCard"/);
   assert.match(html, /id="evidenceInputGateway"/);
-  assert.match(html, /Evidence Gateway v4\.0\.0/);
+  assert.match(html, /Evidence Gateway v4\.0\.1/);
   assert.match(html, /researchStudioUI\.js\?v=4\.0\.0/);
-  assert.match(html, /researchStudioEvidenceGateway\.js\?v=4\.0\.0/);
+  assert.match(html, /researchStudioEvidenceGateway\.js\?v=4\.0\.1/);
   assert.match(html, /researchEvidenceUploadRouter\.js\?v=4\.0\.1/);
   assert.equal((html.match(/id="evidenceInputGateway"/g) || []).length, 1);
   assert.doesNotMatch(html, /researchStudioEvidenceCoreUI\.js/);
@@ -66,6 +66,9 @@ test("Researcher Studio evidence ingestion is static, single-surface and never r
   assert.doesNotMatch(router, /repairResearchStudioUi/);
   assert.doesNotMatch(router, /researchStudioUI\.js\?v=.*repair/);
 
+  assert.match(gateway, /const GATEWAY_VERSION = "4\.0\.1"/);
   assert.match(gateway, /window\.__DavisEvidenceUploadRouter/);
-  assert.match(gateway, /await router\.routeFiles\(chosen\)/);
+  assert.match(gateway, /const ok = await router\.routeFiles\(chosen\)/);
+  assert.doesNotMatch(gateway, /moveGatewayIntoEvidenceWorkspace/);
+  assert.doesNotMatch(gateway, /self-healing/i);
 });
