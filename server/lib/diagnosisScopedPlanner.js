@@ -16,6 +16,19 @@ function summarise(items = []) {
   }, {});
 }
 
+function forensicReason(mode) {
+  if (mode === "moderate") {
+    return [
+      "Cross-sentence/cross-paragraph regularity forensics selected this sentence as a leverage point in repeated rhetorical choreography. Moderate + Aggressive permits sentence/flow reconstruction here, but does not authorise wholesale paragraph resequencing.",
+      "Change information packaging rather than merely substituting synonyms. Preserve the proposition, evidence attachment, citation, qualification and technical meaning.",
+    ];
+  }
+  return [
+    "Cross-paragraph regularity forensics selected this unit as part of repeated rhetorical choreography. Deep + Aggressive/Authorial permits proposition-led repackaging at this diagnosed leverage point.",
+    "CAN_CHANGE is not SHOULD_CHANGE: preserve the unit if its existing expression is genuinely author-specific and no local reconstruction is needed after the paragraph-level operation.",
+  ];
+}
+
 function forensicExecutionScope(plan, diagnostics, { requestedIntensity, requestedNaturalisation }) {
   const forensic = diagnostics?.discourse_regularity_forensics;
   const aggressiveExpression = ["aggressive", "authorial"].includes(requestedNaturalisation);
@@ -29,52 +42,76 @@ function forensicExecutionScope(plan, diagnostics, { requestedIntensity, request
   if (!sourceIndices.length) {
     plan.forensicExecution = {
       available: true,
+      version: forensic.version,
       regularity_score: forensic.score,
       regularity_label: forensic.label,
       targeted_sentence_count: 0,
+      newly_escalated_sentence_count: 0,
       mode: "diagnostic_only",
       reason: "No sentence received a priority forensic index; no expressive intervention was manufactured from mode selection alone.",
     };
     return plan;
   }
 
-  // Keep the selection bounded. The forensic engine identifies likely leverage
-  // points (openings, evidence-entry points, closures and repeated signposts), not
-  // a quota to rewrite the entire narrative.
+  // The forensic engine identifies leverage points (openings, evidence-entry points,
+  // closures and repeated signposts), not a quota to rewrite the narrative.
   const ratioCap = requestedIntensity === "deep" ? 0.65 : 0.45;
   const maxTargets = Math.max(1, Math.floor((plan.items?.length || 1) * ratioCap));
   const targetIndices = new Set(sourceIndices.slice(0, maxTargets));
-  let changed = 0;
+  let targeted = 0;
+  let escalated = 0;
+  const executedTargetIndices = [];
 
   plan.items = (plan.items || []).map((item) => {
     if (!targetIndices.has(item.sentenceIndex)) return item;
     if (FORMAL_KEEP_CODES.has(item.decisionCode)) return item;
 
-    if (requestedIntensity === "moderate" && MODERATE_FORENSIC_LEVELS.has(item.level)) {
-      changed += 1;
+    targeted += 1;
+    executedTargetIndices.push(item.sentenceIndex);
+
+    if (requestedIntensity === "moderate") {
+      if (MODERATE_FORENSIC_LEVELS.has(item.level)) {
+        escalated += 1;
+        return {
+          ...item,
+          level: "SENTENCE_RESTRUCTURE",
+          decisionCode: "FORENSIC_SENTENCE_FLOW_RESTRUCTURE",
+          reasons: [...(item.reasons || []), ...forensicReason("moderate")],
+        };
+      }
+      if (item.level === "SENTENCE_RESTRUCTURE") {
+        return {
+          ...item,
+          decisionCode: "FORENSIC_SENTENCE_FLOW_RESTRUCTURE",
+          reasons: [...(item.reasons || []), ...forensicReason("moderate")],
+        };
+      }
       return {
         ...item,
-        level: "SENTENCE_RESTRUCTURE",
-        decisionCode: "FORENSIC_SENTENCE_FLOW_RESTRUCTURE",
-        reasons: [
-          ...(item.reasons || []),
-          "Cross-sentence/cross-paragraph regularity forensics selected this sentence as a leverage point in repeated rhetorical choreography. Moderate + Aggressive permits sentence/flow reconstruction here, but does not authorise wholesale paragraph resequencing.",
-          "Change information packaging rather than merely substituting synonyms. Preserve the proposition, evidence attachment, citation, qualification and technical meaning.",
-        ],
+        reasons: [...(item.reasons || []), ...forensicReason("moderate")],
       };
     }
 
-    if (requestedIntensity === "deep" && DEEP_FORENSIC_LEVELS.has(item.level)) {
-      changed += 1;
+    if (requestedIntensity === "deep") {
+      if (DEEP_FORENSIC_LEVELS.has(item.level)) {
+        escalated += 1;
+        return {
+          ...item,
+          level: "DISCOURSE_REPACKAGE",
+          decisionCode: "FORENSIC_DISCOURSE_SCOPE",
+          reasons: [...(item.reasons || []), ...forensicReason("deep")],
+        };
+      }
+      if (item.level === "DISCOURSE_REPACKAGE") {
+        return {
+          ...item,
+          decisionCode: "FORENSIC_DISCOURSE_SCOPE",
+          reasons: [...(item.reasons || []), ...forensicReason("deep")],
+        };
+      }
       return {
         ...item,
-        level: "DISCOURSE_REPACKAGE",
-        decisionCode: "FORENSIC_DISCOURSE_SCOPE",
-        reasons: [
-          ...(item.reasons || []),
-          "Cross-paragraph regularity forensics selected this unit as part of repeated rhetorical choreography. Deep + Aggressive/Authorial permits proposition-led repackaging at this diagnosed leverage point.",
-          "CAN_CHANGE is not SHOULD_CHANGE: preserve the unit if its existing expression is genuinely author-specific and no local reconstruction is needed after the paragraph-level operation.",
-        ],
+        reasons: [...(item.reasons || []), ...forensicReason("deep")],
       };
     }
 
@@ -90,8 +127,9 @@ function forensicExecutionScope(plan, diagnostics, { requestedIntensity, request
     rhetorical_asymmetry_score: forensic.rhetorical_asymmetry_score,
     source_priority_sentence_count: sourceIndices.length,
     target_cap: maxTargets,
-    targeted_sentence_count: changed,
-    targeted_sentence_indices: [...targetIndices],
+    targeted_sentence_count: targeted,
+    newly_escalated_sentence_count: escalated,
+    targeted_sentence_indices: executedTargetIndices,
     formal_artifacts_excluded: forensic.formal_artifact_block_count || 0,
     mode: requestedIntensity === "deep" ? "targeted_discourse_repackage" : "targeted_sentence_flow_restructure",
     principle: "Diagnosis determines SHOULD_CHANGE; intensity determines CAN_CHANGE; naturalisation determines HOW the authorised change is expressed.",
@@ -124,12 +162,9 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   const requestedIntensity = String(options.rewriteIntensity || "auto").toLowerCase();
   const authorialAuthority = requestedIntensity === "deep" && ["aggressive", "authorial"].includes(requestedNaturalisation);
 
-  // The base planner must diagnose scope independently of naturalisation style.
-  // Passing an aggressive flag into the legacy v4 intent inference could silently
-  // manufacture DISCOURSE_RECONSTRUCTION even when the document diagnosis did not
-  // support it. Therefore scope diagnosis is always run in faithful mode (or off).
-  // Requested aggressive/authorial treatment is restored afterwards as execution
-  // authority within the user's explicit intensity ceiling.
+  // Scope diagnosis is deliberately independent of aggressive/authorial style.
+  // Naturalisation must not manufacture a structural problem that diagnosis did
+  // not find. Requested style is restored afterwards as execution authority.
   const diagnosticIntensity = requestedIntensity;
   const plannerNaturalisation = requestedNaturalisation === "off" ? "off" : "faithful";
 
@@ -137,7 +172,6 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     ...options,
     rewriteIntensity: diagnosticIntensity,
     naturalisation: plannerNaturalisation,
-    // Expansion is evidence/argument driven. It is never a quota to lengthen text.
     lengthPreference: requestedLength === "concise" ? "concise" : requestedLength === "expand" ? "expand" : "maintain",
   });
 
@@ -152,10 +186,17 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   plan.diagnosticNaturalisation = plannerNaturalisation;
   plan.lengthPreference = requestedLength;
   plan.authorialAuthorityActive = authorialAuthority;
-  plan.scopePolicyVersion = "diagnosis-guided-authority-v5";
-  plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v6" : null;
+
+  // Keep the established public identifiers stable for downstream compatibility.
+  // New forensic behaviour is versioned independently instead of forcing callers
+  // to interpret a compatibility-string bump as a different policy contract.
+  plan.scopePolicyVersion = "diagnosis-guided-authority-v3";
+  plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v4" : null;
+  plan.scopeImplementationVersion = "diagnosis-guided-authority-v5";
+  plan.forensicScopeVersion = diagnostics?.discourse_regularity_forensics?.version || null;
+
   plan.scopePrinciples = [
-    "Diagnosis selects the rhetorical/argument operation; the researcher-selected intensity supplies the intervention ceiling.",
+    "Diagnosis selects the rhetorical/argument operation; the researcher-selected mode supplies the intervention authority, while intensity remains the hard structural ceiling.",
     "Naturalisation changes how authorised work is expressed; it does not manufacture paragraph/discourse authority.",
     "Cross-paragraph regularity forensics examines recurring rhetorical sequencing, evidence placement, tidy closures, paragraph signatures, signposting and rhetorical asymmetry in narrative prose; formal academic artefacts are excluded from that score.",
     "Minor remains local and restrained; Moderate permits sentence/flow restructuring and selective diagnosed development; Deep permits diagnosed structural redevelopment.",
