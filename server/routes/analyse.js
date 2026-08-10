@@ -50,16 +50,20 @@ analyseRouter.post("/analyse", (req, res) => {
       effectiveIntent: result.plan?.intent?.effective,
     });
 
+    const discourseRegularityForensics = sourceAssessment.diagnostics?.discourse_regularity_forensics || null;
+
     res.json({
       ...result,
       authorial_texture: sourceAssessment.authorial_texture,
+      discourse_regularity_forensics: discourseRegularityForensics,
       intervention_authority: authority,
       rewrite_mode_policy: modePolicy,
       source_assessment: {
         authorial_texture: sourceAssessment.authorial_texture,
+        discourse_regularity_forensics: discourseRegularityForensics,
         cadence_deviation: sourceAssessment.cadence_deviation,
         measured_language_deviation: sourceAssessment.measured_language_deviation,
-        note: "Pre-generation texture assessment constrains breadth. It describes preservation priority and style fit; it does not establish authorship.",
+        note: "Pre-generation assessment separates surface quality, authorial texture and cross-paragraph discourse regularity. It constrains rewrite breadth without claiming to establish authorship.",
       },
     });
   } catch (err) {
