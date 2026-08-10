@@ -111,16 +111,18 @@ jobs:
           grep -q '/detectorQuickBridge.js' public/optionalFeatures.js
           grep -q '/rewriteLineage.js' public/optionalFeatures.js
           grep -q '/longDocumentVNextUI.js' public/optionalFeatures.js
-          grep -q '/researchStudioUI.js?v=3.1.0' studio-smoke.html
-          grep -q '/researchStudioEvidenceGateway.js?v=3.0.0' studio-smoke.html
+          grep -q '/researchStudioUI.js?v=3.1.1' studio-smoke.html
+          grep -q '/researchStudioEvidenceGateway.js?v=3.2.0' studio-smoke.html
           grep -q '/researchEvidenceBankUI.js?v=3.2.0' studio-smoke.html
-          grep -q '/researchEvidenceUploadRouter.js?v=3.1.1' studio-smoke.html
+          grep -q '/researchEvidenceUploadRouter.js?v=3.2.0' studio-smoke.html
           grep -q 'evidenceGatewayFiles' studio-smoke.html
           grep -q 'evidenceGatewayPasteText' studio-smoke.html
-          grep -q 'Evidence Gateway v3.1.1' studio-smoke.html
+          grep -q 'Evidence Gateway v3.2.0' studio-smoke.html
           grep -q '/researchStudioEvidenceCoreUI.js' studio-smoke.html
           grep -q '/researchStudioCandidateBridge.js' studio-smoke.html
           grep -q 'transferToResearchStudio' public/researchStudioEvidenceGateway.js
+          grep -q 'ensureResearchEvidenceTarget' public/researchEvidenceUploadRouter.js
+          grep -q 'repairResearchStudioUi' public/researchEvidenceUploadRouter.js
           grep -q 'waitForElement("literatureBankFile")' public/researchEvidenceUploadRouter.js
           grep -q 'interceptDirectWorkspaceSpreadsheetChange' public/researchEvidenceUploadRouter.js
           grep -q 'BANK_VERSION = "3.2.0"' public/researchEvidenceBankUI.js
