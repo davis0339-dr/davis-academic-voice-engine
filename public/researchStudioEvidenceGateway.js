@@ -20,12 +20,26 @@
       .slice(0, 90) || "pasted-supporting-source";
   }
 
-  function transferToResearchStudio(files) {
-    const target = $("researchEvidenceFiles");
+  async function transferToResearchStudio(files) {
     const chosen = Array.from(files || []);
     if (!chosen.length) return false;
+
+    // The router owns direct/spreadsheet dispatch and can repair a partial
+    // Researcher Studio bootstrap. Prefer it over a brittle DOM-only handoff.
+    const router = window.__DavisEvidenceUploadRouter;
+    if (router?.routeFiles) {
+      try {
+        await router.routeFiles(chosen);
+        return true;
+      } catch (err) {
+        setGatewayStatus(`The evidence router could not transfer the selected source(s): ${err.message}`, true);
+        return false;
+      }
+    }
+
+    const target = $("researchEvidenceFiles");
     if (!target) {
-      setGatewayStatus("Files selected. Research Studio is still initialising; they will be transferred automatically.");
+      setGatewayStatus("Researcher Studio evidence controls are not ready yet. The self-healing evidence router has not loaded, so no background transfer is running. Reload this page once and retry.", true);
       return false;
     }
     try {
@@ -41,19 +55,19 @@
     }
   }
 
-  function forwardGatewayFiles() {
+  async function forwardGatewayFiles() {
     const input = $("evidenceGatewayFiles");
     if (!input?.files?.length) return;
-    if (transferToResearchStudio(input.files)) input.value = "";
+    if (await transferToResearchStudio(input.files)) input.value = "";
   }
 
-  function addPastedGatewaySource() {
+  async function addPastedGatewaySource() {
     const text = $("evidenceGatewayPasteText")?.value.trim() || "";
     const title = $("evidenceGatewayPasteTitle")?.value.trim() || "pasted-supporting-source";
     if (!text) return setGatewayStatus("Paste supporting text before adding the source.", true);
     try {
       const file = new File([text], `${safeName(title)}.txt`, { type: "text/plain" });
-      if (!transferToResearchStudio([file])) return;
+      if (!(await transferToResearchStudio([file]))) return;
       $("evidenceGatewayPasteText").value = "";
       setGatewayStatus(`Pasted source “${title}” added to Evidence Workspace.`);
     } catch (err) {
@@ -97,9 +111,16 @@
     const input = $("evidenceGatewayFiles");
     if (input) {
       input.accept = SUPPORTED_ACCEPT;
-      input.addEventListener("change", forwardGatewayFiles);
+      // File/change routing is captured centrally by researchEvidenceUploadRouter.
+      // Keep this fallback listener for pages where that router is unavailable.
+      input.addEventListener("change", () => {
+        if (window.__DavisEvidenceUploadRouter?.routeFiles) return;
+        forwardGatewayFiles().catch((err) => setGatewayStatus(`Evidence transfer failed: ${err.message}`, true));
+      });
     }
-    $("addGatewayPastedSourceBtn")?.addEventListener("click", addPastedGatewaySource);
+    $("addGatewayPastedSourceBtn")?.addEventListener("click", () => {
+      addPastedGatewaySource().catch((err) => setGatewayStatus(`Could not add the pasted source: ${err.message}`, true));
+    });
     $("pasteGatewayClipboardBtn")?.addEventListener("click", pasteClipboard);
 
     const drop = $("evidenceGatewayDropZone");
@@ -111,7 +132,10 @@
       event.preventDefault();
       drop.classList.remove("drag-active");
     }));
-    drop?.addEventListener("drop", (event) => transferToResearchStudio(event.dataTransfer?.files));
+    drop?.addEventListener("drop", (event) => {
+      if (window.__DavisEvidenceUploadRouter?.routeFiles) return;
+      transferToResearchStudio(event.dataTransfer?.files).catch((err) => setGatewayStatus(`Evidence transfer failed: ${err.message}`, true));
+    });
     drop?.addEventListener("click", () => input?.click());
     drop?.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -124,7 +148,6 @@
     const timer = setInterval(() => {
       attempts += 1;
       const moved = moveGatewayIntoEvidenceWorkspace();
-      if (moved && $("evidenceGatewayFiles")?.files?.length) forwardGatewayFiles();
       if (moved || attempts >= 200) clearInterval(timer);
     }, 50);
 
