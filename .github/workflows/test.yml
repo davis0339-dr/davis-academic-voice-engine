@@ -64,11 +64,14 @@ jobs:
           node --check server/lib/underExecutionRecovery.js
           node --check server/lib/interventionAuthority.js
           node --check server/lib/executionCompliance.js
+          node --check server/lib/outputAcceptance.js
+          node --check server/lib/residualRework.js
           node --check server/lib/pipeline.js
           node --check server/routes/rewrite.js
           node --check server/lib/researcherAgency.js
           node --check server/routes/researchStudio.js
           node --check server/routes/evidenceEnhance.js
+          node --check scripts/run-output-acceptance-benchmark.js
           node --check server/index.js
       - name: Production-style server startup smoke test
         shell: bash
@@ -131,6 +134,11 @@ jobs:
         run: |
           set -o pipefail
           npm test 2>&1 | tee test-output.txt
+      - name: Run completed-output acceptance benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/run-output-acceptance-benchmark.js 2>&1 | tee output-acceptance-benchmark.txt
       - name: Run thesis language simulation
         shell: bash
         run: |
@@ -143,6 +151,8 @@ jobs:
           name: test-output-${{ github.run_id }}
           path: |
             test-output.txt
+            output-acceptance-benchmark.txt
+            output-acceptance-benchmark.json
             language-simulation.txt
             language-simulation.json
             server-smoke.log
