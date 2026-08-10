@@ -4,6 +4,7 @@ import { diagnose } from "../server/lib/diagnostics.js";
 import { buildDiagnosisScopedPlan } from "../server/lib/diagnosisScopedPlanner.js";
 import { extractProtectedSpans } from "../server/lib/protect.js";
 import { auditPreservation } from "../server/lib/preservation.js";
+import { parseStructuredResponseText } from "../server/lib/modelResponse.js";
 
 const source = [
   "Corporate debt is a central source of financing for U.S. businesses, but creditors price it using more than accounting ratios.",
@@ -38,4 +39,17 @@ test("numeric ranges are protected as factual relationships", () => {
   const audit = auditPreservation(source, corrupted, spans);
   assert.equal(audit.numbers_ok, false);
   assert.ok(audit.warnings.some((warning) => /range|numeric/i.test(`${warning.type} ${warning.detail}`)));
+});
+
+test("parsed model output normalises numeric en-dash ranges before prose sanitisation can corrupt them", () => {
+  const raw = JSON.stringify({
+    revised_text: "The period is 2015–2024 and approximately 10–15 participants will be interviewed.",
+    edit_summary: { kept: 0, micro_edits: 0, sentence_restructures: 1, split_or_merge: 0, paragraph_reorders: 0, flags_for_author: [] },
+    diagnostics_notes: "range regression",
+  });
+  const parsed = parseStructuredResponseText(raw);
+  assert.equal(parsed.ok, true);
+  assert.match(parsed.parsed.revised_text, /2015-2024/);
+  assert.match(parsed.parsed.revised_text, /10-15/);
+  assert.doesNotMatch(parsed.parsed.revised_text, /2015, 2024|10, 15/);
 });
