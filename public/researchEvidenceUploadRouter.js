@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const ROUTER_VERSION = "4.0.0";
+  const ROUTER_VERSION = "4.0.1";
   const SPREADSHEET_RE = /\.(?:xlsx|csv)$/i;
   const BANK_MAX_BYTES = 25 * 1024 * 1024;
   const DIRECT_SOURCE_MAX_BYTES = 5 * 1024 * 1024;
@@ -216,6 +216,28 @@
     return false;
   }
 
+  async function runLocalBrowserSmoke() {
+    const host = String(location.hostname || "").toLowerCase();
+    const enabled = new URLSearchParams(location.search).get("evidenceSmoke") === "1";
+    if (!enabled || !["127.0.0.1", "localhost"].includes(host)) return;
+
+    document.documentElement.dataset.evidenceSmoke = "running";
+    const smokeFile = new File([
+      "Browser smoke evidence. Governance mechanisms can affect creditor risk assessment when they alter monitoring quality and information reliability."
+    ], "browser-smoke-evidence.txt", { type: "text/plain" });
+
+    const ok = await routeDirectSources([smokeFile]);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const sourceListText = String($("researchSourceList")?.textContent || "");
+    const passed = ok && /browser-smoke-evidence\.txt/i.test(sourceListText);
+    document.documentElement.dataset.evidenceSmoke = passed ? "pass" : "fail";
+    const marker = document.createElement("div");
+    marker.id = "evidenceBrowserSmokeResult";
+    marker.hidden = true;
+    marker.textContent = passed ? "PASS browser-smoke-evidence.txt" : `FAIL ${String($("evidenceGatewayStatus")?.textContent || "unknown")}`;
+    document.body.appendChild(marker);
+  }
+
   document.addEventListener("change", interceptGatewayChange, true);
   document.addEventListener("change", interceptDirectWorkspaceSpreadsheetChange, true);
   document.addEventListener("drop", interceptGatewayDrop, true);
@@ -229,5 +251,13 @@
     limits: { spreadsheetBytes: BANK_MAX_BYTES, directSourceBytes: DIRECT_SOURCE_MAX_BYTES },
   };
 
-  queueMicrotask(() => preflight().catch((err) => gatewayStatus(`Evidence preflight failed: ${err.message}`, true)));
+  queueMicrotask(async () => {
+    try {
+      await preflight();
+      await runLocalBrowserSmoke();
+    } catch (err) {
+      gatewayStatus(`Evidence preflight failed: ${err.message}`, true);
+      if (new URLSearchParams(location.search).get("evidenceSmoke") === "1") document.documentElement.dataset.evidenceSmoke = "fail";
+    }
+  });
 })();
