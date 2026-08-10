@@ -56,6 +56,8 @@ jobs:
           node --check public/researchStudioEvidenceCoreUI.js
           node --check public/researchStudioCapabilitiesUI.js
           node --check public/researchStudioCandidateBridge.js
+          node --check public/researchEvidenceBankUI.js
+          node --check public/researchEvidenceUploadRouter.js
           node --check public/longDocumentEvidenceHandoffUI.js
           node --check public/longDocumentVNextUI.js
           node --check server/lib/iterativeRewriteGuard.js
@@ -106,14 +108,17 @@ jobs:
           grep -q '/detectorQuickBridge.js' public/optionalFeatures.js
           grep -q '/rewriteLineage.js' public/optionalFeatures.js
           grep -q '/longDocumentVNextUI.js' public/optionalFeatures.js
-          grep -q '/researchStudioUI.js' studio-smoke.html
+          grep -q '/researchStudioUI.js?v=3.1.0' studio-smoke.html
           grep -q '/researchStudioEvidenceGateway.js?v=3.0.0' studio-smoke.html
+          grep -q '/researchEvidenceBankUI.js?v=3.1.0' studio-smoke.html
+          grep -q '/researchEvidenceUploadRouter.js?v=3.1.0' studio-smoke.html
           grep -q 'evidenceGatewayFiles' studio-smoke.html
           grep -q 'evidenceGatewayPasteText' studio-smoke.html
-          grep -q 'Evidence Gateway v3.0.0' studio-smoke.html
+          grep -q 'Evidence Gateway v3.1.0' studio-smoke.html
           grep -q '/researchStudioEvidenceCoreUI.js' studio-smoke.html
           grep -q '/researchStudioCandidateBridge.js' studio-smoke.html
           grep -q 'transferToResearchStudio' public/researchStudioEvidenceGateway.js
+          grep -q 'waitForElement("literatureBankFile")' public/researchEvidenceUploadRouter.js
           grep -q 'browseResearchEvidenceBtn' public/researchStudioEvidenceCoreUI.js
           grep -q 'evidencePasteText' public/researchStudioEvidenceCoreUI.js
           grep -q 'evidence-enhance-candidate' server/routes/evidenceEnhance.js
