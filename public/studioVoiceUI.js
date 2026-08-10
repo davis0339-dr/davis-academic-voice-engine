@@ -107,7 +107,7 @@
     recognition.onstart = () => {
       if ($("startVoiceReasoningBtn")) $("startVoiceReasoningBtn").disabled = true;
       if ($("stopVoiceReasoningBtn")) $("stopVoiceReasoningBtn").disabled = false;
-      voiceStatus(`Listening in ${voiceLanguage}. Speak naturally; the transcript remains editable.`);
+      voiceStatus(`Listening in ${voiceLanguage}. Explain it as you understand it; rough wording is useful and the transcript remains editable.`);
     };
     recognition.onresult = (event) => {
       let interim = "";
@@ -167,7 +167,7 @@
     switcher.innerHTML = `
       <button id="reasoningModeTypedBtn" class="active" type="button" aria-pressed="true">Typed Reasoning</button>
       <button id="reasoningModeVoiceBtn" type="button" aria-pressed="false">Voice Reasoning</button>
-      <span class="muted">Independent input modes · both feed the same researcher-approved argument map</span>`;
+      <span class="muted">Voice is optional · typing is equally valid · both feed the same researcher-approved argument map</span>`;
     thoughts.insertAdjacentElement("beforebegin", switcher);
 
     const box = document.createElement("div");
@@ -175,8 +175,8 @@
     box.className = "voice-reasoning-box";
     box.hidden = true;
     box.innerHTML = `
-      <div class="voice-reasoning-head"><strong>Voice Reasoning</strong><span>independent mode</span></div>
-      <p class="muted">Explain the idea aloud before reconstruction. Davis does not store raw audio. Browser speech recognition may use your browser/vendor speech service. Nothing starts until you explicitly accept below and press Start speaking.</p>
+      <div class="voice-reasoning-head"><strong>Voice Reasoning</strong><span>optional input mode</span></div>
+      <p class="muted">Explain the idea aloud in your own understanding before reconstruction. Do not worry about polished academic wording, and avoid reading a generated answer if possible: the value here is the reasoning you actually hold, including uncertainty or roughness. Davis does not store raw audio. Browser speech recognition may use your browser/vendor speech service. Nothing starts until you explicitly accept below and press Start speaking.</p>
 
       <div class="voice-consent-panel" role="group" aria-label="Microphone transcription consent">
         <div class="voice-consent-copy">
@@ -206,7 +206,7 @@
         <button id="addVoiceTranscriptBtn" type="button">Append to Typed Reasoning</button>
         <button id="clearVoiceTranscriptBtn" type="button">Clear transcript</button>
       </div>
-      <textarea id="voiceReasoningTranscript" rows="7" placeholder="Your editable voice transcript will appear here. You can also type or paste into this box without enabling the microphone."></textarea>
+      <textarea id="voiceReasoningTranscript" rows="7" placeholder="Your editable voice transcript will appear here. You can also type or paste here without enabling the microphone. Use your own explanation rather than polished generated prose where possible."></textarea>
       <span id="voiceReasoningStatus" class="file-status">Microphone is off. Consent has not been decided.</span>`;
     thoughts.insertAdjacentElement("afterend", box);
 
