@@ -16,6 +16,7 @@ test("runtime guard and workspace loaders are valid browser JavaScript", () => {
     "../public/workspaceHandoff.js",
     "../public/studioBootstrap.js",
     "../public/studioVoiceUI.js",
+    "../public/researchCoauthoringUI.js",
   ]) {
     const result = spawnSync(process.execPath, ["--check", new URL(rel, import.meta.url).pathname], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -58,8 +59,9 @@ test("research and evidence modules live on the separate static Studio page", ()
   assert.match(studio, /id="tab-researchstudio"/);
   assert.match(studio, /id="researchEvidenceWorkspaceCard"/);
   assert.match(studio, /id="evidenceInputGateway"/);
+  assert.match(studio, /color-scheme:dark/);
   assert.match(studio, /\/researchStudioUI\.js\?v=4\.0\.0/);
-  assert.match(studio, /\/researchCoauthoringUI\.js\?v=4\.0\.0/);
+  assert.match(studio, /\/researchCoauthoringUI\.js\?v=4\.1\.0/);
   assert.match(studio, /\/researchStudioEvidenceGateway\.js\?v=4\.0\.1/);
   assert.match(studio, /\/researchEvidenceUploadRouter\.js\?v=4\.0\.1/);
   assert.match(studio, /\/detectorEvidenceUI\.js/);
