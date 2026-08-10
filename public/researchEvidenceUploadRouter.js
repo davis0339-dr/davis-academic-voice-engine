@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const ROUTER_VERSION = "3.2.0";
+  const ROUTER_VERSION = "3.2.1";
   const SPREADSHEET_RE = /\.(?:xlsx|csv)$/i;
   const BANK_MAX_BYTES = 25 * 1024 * 1024;
   const DIRECT_SOURCE_MAX_BYTES = 5 * 1024 * 1024;
@@ -258,7 +258,7 @@
 
   function clearFalseInitialisingState() {
     const text = String($("evidenceGatewayStatus")?.textContent || "");
-    if (!/still initialising|transferred automatically|did not initialise within 12 seconds/i.test(text)) return;
+    if (!/still initialising|transferred automatically|did not initialise/i.test(text)) return;
     if (researchStudioTargetReady() || $("literatureBankFile")) {
       gatewayStatus("Evidence routes are ready. Choose the file again only if the earlier selection was made before this self-healing router loaded.");
       return;
