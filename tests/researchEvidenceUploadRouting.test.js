@@ -31,15 +31,20 @@ test("spreadsheet routing also intercepts the internal Research Studio file choo
   assert.match(router, /document\.addEventListener\("change", interceptDirectWorkspaceSpreadsheetChange, true\)/);
 });
 
-test("Evidence gateway repairs a partial Studio instead of promising a long invisible transfer", () => {
+test("Evidence gateway preflights Researcher Studio readiness and repairs partial bootstrap before declaring failure", () => {
   const router = read("public/researchEvidenceUploadRouter.js");
-  assert.match(router, /ROUTER_VERSION\s*=\s*"3\.2\.1"/);
-  assert.match(router, /TARGET_WAIT_MS\s*=\s*2500/);
-  assert.match(router, /REPAIR_WAIT_MS\s*=\s*6000/);
+  assert.match(router, /ROUTER_VERSION\s*=\s*"3\.3\.0"/);
+  assert.match(router, /TARGET_WAIT_MS\s*=\s*1200/);
+  assert.match(router, /REPAIR_MAX_MS\s*=\s*30000/);
+  assert.match(router, /REPAIR_RETRIES\s*=\s*2/);
+  assert.match(router, /async function preflightResearchStudio/);
+  assert.match(router, /queueMicrotask\(\(\) =>/);
   assert.match(router, /repairResearchStudioUi/);
-  assert.match(router, /No background transfer is running/i);
+  assert.match(router, /replaying the same source automatically/i);
   assert.match(router, /processing did not complete within 90 seconds/i);
+  assert.doesNotMatch(router, /REPAIR_WAIT_MS\s*=\s*6000/);
   assert.doesNotMatch(router, /did not initialise within 12 seconds/i);
+  assert.doesNotMatch(router, /could not be restored automatically/i);
 });
 
 test("Literature Evidence Bank retains every worksheet instead of silently choosing only the largest sheet", () => {
