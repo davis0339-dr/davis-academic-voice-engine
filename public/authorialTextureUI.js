@@ -53,10 +53,38 @@
       </details>`;
   }
 
+  function forensicReasoning(forensics) {
+    if (!forensics?.available) return "";
+    const metricHtml = Object.entries(forensics.metrics || {})
+      .map(([key, value]) => {
+        const numeric = Number(value);
+        const rendered = Number.isFinite(numeric) && numeric >= 0 && numeric <= 1 ? pct(numeric) : esc(value);
+        return `<span>${esc(label(key))}: <strong>${rendered}</strong></span>`;
+      }).join("");
+    const signalHtml = (forensics.signals || []).length
+      ? forensics.signals.map((signal) => `
+          <div class="atv5-forensic-signal">
+            <strong>${esc(label(signal.forensic_id || signal.issue || signal.id))} · ${esc(label(signal.severity))}</strong>
+            <p>${esc(signal.interpretation || "")}</p>
+            <p><em>Action:</em> ${esc(signal.action || "")}</p>
+          </div>`).join("")
+      : '<span class="atv5-muted">No cross-paragraph forensic signal crossed the intervention threshold.</span>';
+
+    return `
+      <details class="atv5-forensics"><summary>Cross-paragraph detective layer: what pattern was found?</summary>
+        <p>This layer examines recurring rhetorical sequencing across narrative prose rather than judging grammar or polish. Purpose statements, research questions, hypotheses and other formal academic artefacts are excluded from the score.</p>
+        <div class="atv5-components">${metricHtml}</div>
+        <p>Rhetorical asymmetry: <strong>${pct(forensics.rhetorical_asymmetry_score)}</strong>. Narrative paragraphs assessed: <strong>${esc(forensics.narrative_paragraph_count)}</strong>. Formal artefact blocks excluded: <strong>${esc(forensics.formal_artifact_block_count || 0)}</strong>.</p>
+        <div class="atv5-forensic-list">${signalHtml}</div>
+        <p>${esc(forensics.note || "")}</p>
+      </details>`;
+  }
+
   function render() {
     const target = document.getElementById("tab-changes");
     if (!target || !latest) return;
     const texture = latest.authorial_texture || latest.source_assessment?.authorial_texture;
+    const forensics = latest.discourse_regularity_forensics || latest.source_assessment?.discourse_regularity_forensics;
     const authority = latest.intervention_authority;
     const policy = latest.rewrite_mode_policy;
     const compliance = latest.execution_compliance;
@@ -90,6 +118,8 @@
         <div><span>Surface quality</span><strong>${surface ? `${esc(label(surface.label))} · ${pct(surface.score)}` : "n/a"}</strong></div>
         <div><span>Authorial texture</span><strong>${esc(label(textureLabel))} · ${pct(textureScore)}</strong></div>
         <div><span>Machine-pattern regularity</span><strong>${regularity ? `${esc(label(regularity.label))} · ${pct(regularity.score)}` : "n/a"}</strong></div>
+        <div><span>Cross-paragraph choreography</span><strong>${forensics?.available ? `${esc(label(forensics.label))} · ${pct(forensics.score)}` : "n/a"}</strong></div>
+        <div><span>Rhetorical asymmetry</span><strong>${forensics?.available ? pct(forensics.rhetorical_asymmetry_score) : "n/a"}</strong></div>
         <div><span>Semantic preservation</span><strong>${esc(label(semantic?.priority || "n/a"))}</strong></div>
         <div><span>Expressive preservation</span><strong>${esc(label(expressivePriority))}</strong></div>
         <div><span>Author-selected intensity</span><strong>${esc(label(policy?.requested_intensity))}</strong></div>
@@ -98,10 +128,11 @@
         <div><span>Depth permission</span><strong>${esc(label(authority?.depth_permission || policy?.depth_permission))}</strong></div>
         <div><span>Maximum changed sentences</span><strong>${pct(ceiling)}</strong></div>
       </div>
-      <div class="atv5-construct"><strong>Construct rule:</strong> high surface quality never by itself creates high expressive preservation. Authorial texture is judged from rhetorical/discourse variation and is reduced by machine-pattern regularity. Semantic fidelity remains separately protected.</div>
+      <div class="atv5-construct"><strong>Construct rule:</strong> high surface quality never by itself creates high expressive preservation. Authorial texture is judged from rhetorical/discourse variation and is reduced by machine-pattern regularity. Cross-paragraph choreography is assessed separately so a fluent document can still be flagged for repeated claim/evidence/closure sequencing, predictable evidence placement, tidy closures or low rhetorical asymmetry. Semantic fidelity remains separately protected.</div>
       ${policy ? `<div class="atv5-choice"><strong>Author choice rule:</strong> ${esc(choiceMessage)}</div>` : ""}
       ${policy ? `<div class="atv5-policy"><strong>Mode resolution:</strong> ${esc(label(policy.requested_intensity))} → ${esc(label(policy.effective_intensity))}; ${esc(label(policy.requested_naturalisation))} → ${esc(label(policy.effective_naturalisation))}. ${esc(policy.rationale || "")}</div>` : ""}
       ${compliance ? `<div class="atv5-execution ${status === "passed" ? "good" : "warn"}"><strong>Intervention fidelity:</strong> ${esc(label(status))}. Actual changed sentences: ${pct(changed)}; authorised ceiling: ${pct(ceiling)}. Changed-sentence breadth is evidence, not a target.</div>` : ""}
+      ${forensicReasoning(forensics)}
       ${textureReasoning(texture)}`;
   }
 
@@ -122,6 +153,7 @@
     .atv5-title{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px}.atv5-title span{font-size:.8em;opacity:.65}
     .atv5-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.atv5-grid>div{padding:8px 10px;background:rgba(4,10,18,.4);border-radius:7px}.atv5-grid span{display:block;font-size:.76em;opacity:.68}
     .atv5-construct,.atv5-choice,.atv5-policy,.atv5-execution{margin-top:10px;padding:8px 10px;border-left:3px solid #557296;background:rgba(4,10,18,.28)}.atv5-construct{border-left-color:#8db4e2}.atv5-choice{border-left-color:#62e0b0}.atv5-execution.good{border-left-color:#2b845f}.atv5-execution.warn{border-left-color:#b56b4a}
-    .atv5-panel details{margin-top:10px}.atv5-panel summary{cursor:pointer;color:#a9bedf}.atv5-components{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.atv5-components span,.atv5-signal{padding:4px 7px;border:1px solid #465b74;border-radius:5px;font-size:.8em}.atv5-subhead{margin-top:10px;font-weight:700}.atv5-signals{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.atv5-muted{opacity:.65}.atv5-panel p{font-size:.82em;opacity:.78}`;
+    .atv5-panel details{margin-top:10px}.atv5-panel summary{cursor:pointer;color:#a9bedf}.atv5-components{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.atv5-components span,.atv5-signal{padding:4px 7px;border:1px solid #465b74;border-radius:5px;font-size:.8em}.atv5-subhead{margin-top:10px;font-weight:700}.atv5-signals{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.atv5-muted{opacity:.65}.atv5-panel p{font-size:.82em;opacity:.78}
+    .atv5-forensic-list{display:grid;gap:7px;margin-top:9px}.atv5-forensic-signal{padding:8px 10px;border:1px solid #465b74;border-radius:7px;background:rgba(4,10,18,.22)}.atv5-forensic-signal p{margin:4px 0 0}`;
   document.head.appendChild(style);
 })();
