@@ -7,6 +7,7 @@
     questions: [],
     assessments: [],
     manuscriptFileName: "",
+    activeQuestionVoice: null,
   };
 
   function esc(value) {
@@ -40,6 +41,21 @@
     if (!el) return;
     el.textContent = message;
     el.className = `file-status ${error ? "error" : ""}`.trim();
+  }
+
+  function questionVoiceStatus(questionId, message, error = false) {
+    const el = document.querySelector(`[data-question-voice-status="${CSS.escape(questionId || "")}"]`);
+    if (!el) return;
+    el.textContent = message;
+    el.className = `question-voice-status ${error ? "error" : ""}`.trim();
+  }
+
+  function speechRecognitionCtor() {
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  }
+
+  function currentVoiceLanguage() {
+    return document.querySelector("[data-voice-language].selected")?.dataset.voiceLanguage || "en-NG";
   }
 
   async function postJson(path, body) {
@@ -82,9 +98,133 @@
     }
   }
 
+  function stopQuestionVoice(questionId = "") {
+    const active = state.activeQuestionVoice;
+    if (!active) return;
+    if (questionId && active.questionId !== questionId) return;
+    try { active.recognition.stop(); } catch {}
+  }
+
+  function openQuestionVoicePanel(questionId) {
+    const panel = document.querySelector(`[data-question-voice-panel="${CSS.escape(questionId || "")}"]`);
+    const button = document.querySelector(`[data-toggle-question-voice="${CSS.escape(questionId || "")}"]`);
+    if (!panel || !button) return;
+    const willOpen = panel.hidden;
+    panel.hidden = !willOpen;
+    button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    button.classList.toggle("active", willOpen);
+    if (willOpen) {
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const supported = Boolean(speechRecognitionCtor());
+      questionVoiceStatus(
+        questionId,
+        supported
+          ? "Voice panel ready. Press Start microphone only when you are ready to speak; the transcript will appear directly in this answer box."
+          : "This browser does not expose speech recognition. You can still type the answer or use an existing Studio voice transcript.",
+        !supported,
+      );
+    }
+  }
+
+  function startQuestionVoice(questionId) {
+    if (!window.isSecureContext && location.hostname !== "localhost") {
+      questionVoiceStatus(questionId, "Microphone capture requires HTTPS. The browser has not started voice capture.", true);
+      return;
+    }
+    const SpeechRecognition = speechRecognitionCtor();
+    if (!SpeechRecognition) {
+      questionVoiceStatus(questionId, "Speech recognition is not available in this browser. Type the answer or use an existing Studio transcript instead.", true);
+      return;
+    }
+
+    const answer = document.querySelector(`[data-coauthor-answer="${CSS.escape(questionId || "")}"]`);
+    if (!answer) return;
+
+    if (state.activeQuestionVoice) stopQuestionVoice();
+
+    let finalTranscript = answer.value.trim();
+    const recognition = new SpeechRecognition();
+    const language = currentVoiceLanguage();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = language;
+    state.activeQuestionVoice = { recognition, questionId };
+
+    recognition.onstart = () => {
+      const start = document.querySelector(`[data-start-question-voice="${CSS.escape(questionId)}"]`);
+      const stop = document.querySelector(`[data-stop-question-voice="${CSS.escape(questionId)}"]`);
+      if (start) start.disabled = true;
+      if (stop) stop.disabled = false;
+      answer.dataset.inputMode = answer.value.trim() ? "mixed" : "voice";
+      questionVoiceStatus(questionId, `Listening in ${language}. Speak naturally; the live transcript is being written into this answer box.`);
+    };
+
+    recognition.onresult = (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const text = event.results[i][0]?.transcript || "";
+        if (event.results[i].isFinal) finalTranscript = `${finalTranscript} ${text}`.trim();
+        else interim += text;
+      }
+      answer.value = `${finalTranscript}${interim ? ` ${interim}` : ""}`.trim();
+      answer.dataset.inputMode = finalTranscript ? "voice" : answer.dataset.inputMode || "voice";
+      answer.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+
+    recognition.onerror = (event) => {
+      const code = event.error || "speech recognition error";
+      const message = code === "not-allowed"
+        ? "The browser denied microphone permission. Allow microphone access for this site, then press Start microphone again."
+        : `Voice capture stopped: ${code}.`;
+      questionVoiceStatus(questionId, message, true);
+    };
+
+    recognition.onend = () => {
+      const start = document.querySelector(`[data-start-question-voice="${CSS.escape(questionId)}"]`);
+      const stop = document.querySelector(`[data-stop-question-voice="${CSS.escape(questionId)}"]`);
+      if (start) start.disabled = false;
+      if (stop) stop.disabled = true;
+      if (state.activeQuestionVoice?.questionId === questionId) state.activeQuestionVoice = null;
+      const current = document.querySelector(`[data-question-voice-status="${CSS.escape(questionId)}"]`);
+      if (!current?.classList.contains("error")) questionVoiceStatus(questionId, "Voice capture stopped. Review or edit the transcript in the answer box before assessment.");
+    };
+
+    try {
+      recognition.start();
+    } catch (err) {
+      state.activeQuestionVoice = null;
+      questionVoiceStatus(questionId, `Could not start microphone capture: ${err.message}`, true);
+    }
+  }
+
+  function useStudioVoiceTranscript(questionId) {
+    const transcript = $("voiceReasoningTranscript")?.value.trim() || "";
+    const answer = document.querySelector(`[data-coauthor-answer="${CSS.escape(questionId || "")}"]`);
+    if (!answer) return;
+    if (!transcript) {
+      questionVoiceStatus(questionId, "There is no Studio Voice transcript to copy yet. Use Start microphone here, type directly, or record in Voice Reasoning first.", true);
+      return;
+    }
+    answer.value = transcript;
+    answer.dataset.inputMode = "voice";
+    answer.dispatchEvent(new Event("input", { bubbles: true }));
+    questionVoiceStatus(questionId, "Existing Studio Voice transcript copied into this answer. You can edit it before assessment.");
+  }
+
+  function clearQuestionAnswer(questionId) {
+    stopQuestionVoice(questionId);
+    const answer = document.querySelector(`[data-coauthor-answer="${CSS.escape(questionId || "")}"]`);
+    if (!answer) return;
+    answer.value = "";
+    answer.dataset.inputMode = "typed";
+    answer.dispatchEvent(new Event("input", { bubbles: true }));
+    questionVoiceStatus(questionId, "Answer cleared. Type a new response or start voice capture.");
+  }
+
   function renderQuestions() {
     const target = $("coauthorQuestionList");
     if (!target) return;
+    stopQuestionVoice();
     if (!state.questions.length) {
       target.innerHTML = '<p class="muted">Load a manuscript and ask Davis to identify the highest-value questions for your own reasoning.</p>';
       return;
@@ -102,8 +242,18 @@
         <label>Your explanation
           <textarea data-coauthor-answer="${esc(q.id)}" rows="4" placeholder="Answer in your own words and understanding. Rough language is useful. You do not need to sound academic here."></textarea>
         </label>
-        <div class="action-row">
-          <button type="button" data-use-voice-answer="${esc(q.id)}">Use current Voice transcript for this answer</button>
+        <div class="question-input-actions">
+          <button class="question-voice-launch" type="button" data-toggle-question-voice="${esc(q.id)}" aria-expanded="false">🎙 Answer this question by voice</button>
+          <button type="button" data-clear-question-answer="${esc(q.id)}">Clear answer</button>
+        </div>
+        <div class="question-voice-panel" data-question-voice-panel="${esc(q.id)}" hidden>
+          <div class="question-voice-explainer"><strong>Voice answer for Question ${index + 1}</strong><span>Your browser may use its speech-recognition service. Davis does not store raw audio. Nothing starts until you press Start microphone.</span></div>
+          <div class="question-voice-actions">
+            <button class="primary" type="button" data-start-question-voice="${esc(q.id)}">Start microphone</button>
+            <button type="button" data-stop-question-voice="${esc(q.id)}" disabled>Stop</button>
+            <button type="button" data-use-studio-voice="${esc(q.id)}">Use existing Studio voice transcript</button>
+          </div>
+          <span class="question-voice-status" data-question-voice-status="${esc(q.id)}">Voice panel ready.</span>
         </div>
         <div data-response-assessment="${esc(q.id)}"></div>
       </article>
@@ -116,19 +266,20 @@
       });
     });
 
-    target.querySelectorAll("[data-use-voice-answer]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const transcript = $("voiceReasoningTranscript")?.value.trim() || "";
-        const answer = target.querySelector(`[data-coauthor-answer="${CSS.escape(button.dataset.useVoiceAnswer || "")}"]`);
-        if (!answer) return;
-        if (!transcript) {
-          status("There is no Voice transcript yet. Voice is optional: you can type the answer directly, or open Voice Reasoning and record a transcript first.", true);
-          return;
-        }
-        answer.value = transcript;
-        answer.dataset.inputMode = "voice";
-        status("Voice transcript copied into this answer. You may edit it before processing; typing remains fully supported.");
-      });
+    target.querySelectorAll("[data-toggle-question-voice]").forEach((button) => {
+      button.addEventListener("click", () => openQuestionVoicePanel(button.dataset.toggleQuestionVoice || ""));
+    });
+    target.querySelectorAll("[data-start-question-voice]").forEach((button) => {
+      button.addEventListener("click", () => startQuestionVoice(button.dataset.startQuestionVoice || ""));
+    });
+    target.querySelectorAll("[data-stop-question-voice]").forEach((button) => {
+      button.addEventListener("click", () => stopQuestionVoice(button.dataset.stopQuestionVoice || ""));
+    });
+    target.querySelectorAll("[data-use-studio-voice]").forEach((button) => {
+      button.addEventListener("click", () => useStudioVoiceTranscript(button.dataset.useStudioVoice || ""));
+    });
+    target.querySelectorAll("[data-clear-question-answer]").forEach((button) => {
+      button.addEventListener("click", () => clearQuestionAnswer(button.dataset.clearQuestionAnswer || ""));
     });
   }
 
@@ -146,7 +297,7 @@
       renderQuestions();
       renderAssessmentSummary();
       status(state.questions.length
-        ? `${state.questions.length} manuscript-led question(s) ready. Answer by typing or voice; use your own understanding rather than a generated response.`
+        ? `${state.questions.length} manuscript-led question(s) ready. Each question now supports direct typed or microphone input with local feedback.`
         : "No high-value coauthoring question was generated from this passage. You can still explain what you think in the Reasoning Studio below.");
     } catch (err) {
       status(`Could not generate manuscript questions: ${err.message}`, true);
@@ -233,9 +384,6 @@
       state.assessments = data.assessments || [];
       renderAssessments(data.overall_note || "");
 
-      // Crucial agency rule: only the researcher's raw answers are fed forward.
-      // The model's assessment is advisory and is never substituted for the
-      // researcher's own wording as the source of the argument map.
       writeResponsesIntoResearcherReasoning(responses);
       if ($("sourceText")) $("sourceText").value = manuscript;
       if ($("includeEditorContext")) $("includeEditorContext").checked = true;
@@ -324,7 +472,30 @@
 
   const style = document.createElement("style");
   style.textContent = `
-    .manuscript-first-coauthoring{border-color:#557aa0}.coauthor-flow-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap}.coauthor-flow-head h4{margin:.1rem 0}.coauthor-flow-badge{display:inline-flex;padding:.3rem .55rem;border:1px solid #557aa0;border-radius:999px;font-size:.78rem}.coauthor-framework-note,.coauthor-own-words-callout,.own-words-guidance{margin:.75rem 0;padding:.75rem;border-left:4px solid #557aa0;background:rgba(85,122,160,.08)}.coauthor-manuscript-actions{margin:.65rem 0}.coauthor-question-list{display:grid;gap:.75rem;margin:1rem 0}.coauthor-question-card{padding:.85rem;border:1px solid #dfe4ea;border-radius:10px}.coauthor-question-head{display:flex;justify-content:space-between;gap:.6rem;align-items:center;flex-wrap:wrap}.coauthor-sensitivity{font-size:.76rem;padding:.18rem .45rem;border:1px solid #aab3bd;border-radius:999px}.coauthor-sensitivity.high{font-weight:700}.coauthor-anchor{font-size:.9rem}.coauthor-question-text{font-size:1.02rem}.response-assessment{margin-top:.7rem;padding:.7rem;border-radius:8px;border-left:4px solid #6b8e7a;background:rgba(107,142,122,.08)}.response-assessment.needs-verification{border-left-color:#a67833;background:rgba(166,120,51,.08)}.coauthor-assessment-summary{padding:.75rem;border:1px solid #dfe4ea;border-radius:8px;margin:.7rem 0}@media(max-width:760px){.coauthor-manuscript-actions{display:grid;grid-template-columns:1fr}.coauthor-manuscript-actions>*{width:100%}}
+    .manuscript-first-coauthoring{border-color:#3f5872!important}
+    .coauthor-flow-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap}
+    .coauthor-flow-head h4{margin:.1rem 0}
+    .coauthor-flow-badge{display:inline-flex;padding:.3rem .55rem;border:1px solid #557aa0;border-radius:999px;font-size:.78rem;background:rgba(85,122,160,.10);color:#c9d8e8}
+    .coauthor-framework-note,.coauthor-own-words-callout,.own-words-guidance{margin:.75rem 0;padding:.8rem;border-left:4px solid #557aa0;background:rgba(85,122,160,.10);color:var(--text)}
+    .coauthor-manuscript-actions{margin:.65rem 0}
+    .coauthor-question-list{display:grid;gap:.9rem;margin:1rem 0}
+    .coauthor-question-card{padding:1rem;border:1px solid #344354;border-radius:12px;background:#151b22;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+    .coauthor-question-head{display:flex;justify-content:space-between;gap:.6rem;align-items:center;flex-wrap:wrap}
+    .coauthor-sensitivity{font-size:.76rem;padding:.2rem .48rem;border:1px solid #62758a;border-radius:999px;background:#111820;color:#b9c8d8}
+    .coauthor-sensitivity.high{font-weight:700;border-color:#a67833;color:#f0c47a}
+    .coauthor-anchor{font-size:.9rem}
+    .coauthor-question-text{font-size:1.02rem;line-height:1.55}
+    .question-input-actions,.question-voice-actions{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;margin:.65rem 0}
+    .question-voice-launch{background:#17352d!important;border-color:#4aa982!important;color:#effff8!important;font-weight:700}
+    .question-voice-launch:hover,.question-voice-launch.active{background:#1e493d!important;border-color:#62e0b0!important}
+    .question-voice-panel{padding:.8rem;border:1px solid #3d5b70;border-radius:10px;background:#10171e;margin:.5rem 0 .8rem}
+    .question-voice-panel[hidden]{display:none!important}
+    .question-voice-explainer{display:grid;gap:.2rem}.question-voice-explainer span{font-size:.84rem;color:#9fb0c2;line-height:1.4}
+    .question-voice-status{display:block;margin-top:.45rem;font-size:.8rem;color:#8fbda9}.question-voice-status.error{color:#f08b8b}
+    .response-assessment{margin-top:.7rem;padding:.7rem;border-radius:8px;border-left:4px solid #6b8e7a;background:rgba(107,142,122,.08)}
+    .response-assessment.needs-verification{border-left-color:#a67833;background:rgba(166,120,51,.08)}
+    .coauthor-assessment-summary{padding:.75rem;border:1px solid #344354;border-radius:8px;margin:.7rem 0;background:#151b22}
+    @media(max-width:760px){.coauthor-manuscript-actions,.question-input-actions,.question-voice-actions{display:grid;grid-template-columns:1fr}.coauthor-manuscript-actions>*,.question-input-actions>*,.question-voice-actions>*{width:100%}}
   `;
   document.head.appendChild(style);
 
