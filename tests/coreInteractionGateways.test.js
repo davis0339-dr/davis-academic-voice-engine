@@ -40,32 +40,31 @@ test("Deep Authorial cannot coexist silently with Moderate intensity in the brow
   assert.match(js, /silently downgraded to Faithful behind the scenes/);
 });
 
-test("Researcher Studio direct evidence routing preflights readiness and repairs partial initialisation without a short false-failure timer", () => {
+test("Researcher Studio evidence ingestion is static, single-surface and never repairs by deleting the live panel", () => {
   const html = read("public/studio.html");
   const router = read("public/researchEvidenceUploadRouter.js");
   const gateway = read("public/researchStudioEvidenceGateway.js");
 
-  assert.match(html, /Evidence Gateway v3\.2\.1/);
-  assert.match(html, /researchStudioUI\.js\?v=3\.1\.1/);
-  assert.match(html, /researchStudioEvidenceGateway\.js\?v=3\.2\.0/);
-  assert.match(html, /researchEvidenceUploadRouter\.js\?v=3\.2\.1/);
+  assert.match(html, /id="tab-researchstudio"/);
+  assert.match(html, /id="researchEvidenceWorkspaceCard"/);
+  assert.match(html, /id="evidenceInputGateway"/);
+  assert.match(html, /Evidence Gateway v4\.0\.0/);
+  assert.match(html, /researchStudioUI\.js\?v=4\.0\.0/);
+  assert.match(html, /researchStudioEvidenceGateway\.js\?v=4\.0\.0/);
+  assert.match(html, /researchEvidenceUploadRouter\.js\?v=4\.0\.0/);
+  assert.equal((html.match(/id="evidenceInputGateway"/g) || []).length, 1);
+  assert.doesNotMatch(html, /researchStudioEvidenceCoreUI\.js/);
 
-  assert.match(router, /const ROUTER_VERSION = "3\.3\.0"/);
-  assert.match(router, /const REPAIR_MAX_MS = 30000/);
+  assert.match(router, /const ROUTER_VERSION = "4\.0\.0"/);
   assert.match(router, /function researchStudioTargetReady\(/);
-  assert.match(router, /function removePartialResearchStudio\(/);
-  assert.match(router, /function loadRepairScript\(/);
-  assert.match(router, /async function repairResearchStudioUi\(/);
   assert.match(router, /async function ensureResearchEvidenceTarget\(/);
-  assert.match(router, /async function preflightResearchStudio\(/);
-  assert.match(router, /queueMicrotask\(\(\) =>/);
   assert.match(router, /targetConsumedFiles/);
-  assert.match(router, /replaying the same source automatically/);
-  assert.doesNotMatch(router, /REPAIR_WAIT_MS\s*=\s*6000/);
-  assert.doesNotMatch(router, /did not initialise within 12 seconds/);
-  assert.doesNotMatch(router, /could not be restored automatically/);
+  assert.match(router, /The interface was not rebuilt behind the scenes/i);
+  assert.doesNotMatch(router, /removePartialResearchStudio/);
+  assert.doesNotMatch(router, /loadRepairScript/);
+  assert.doesNotMatch(router, /repairResearchStudioUi/);
+  assert.doesNotMatch(router, /researchStudioUI\.js\?v=.*repair/);
 
   assert.match(gateway, /window\.__DavisEvidenceUploadRouter/);
   assert.match(gateway, /await router\.routeFiles\(chosen\)/);
-  assert.doesNotMatch(gateway, /they will be transferred automatically/);
 });
