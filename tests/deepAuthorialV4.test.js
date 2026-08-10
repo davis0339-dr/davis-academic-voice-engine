@@ -12,7 +12,7 @@ const source = [
   "Approximately 10-15 corporate finance executives and lending professionals will be interviewed in the qualitative strand.",
 ].join("\n\n");
 
-test("Deep Authorial v4 plans proposition-led reconstruction rather than sentence-aligned paraphrase", () => {
+test("Deep Authorial v4.1 plans proposition-led reconstruction and suppresses polished machine-language accumulation", () => {
   const plan = buildDiagnosisScopedPlan(diagnose(source), {
     rewriteIntensity: "deep",
     naturalisation: "authorial",
@@ -21,11 +21,16 @@ test("Deep Authorial v4 plans proposition-led reconstruction rather than sentenc
 
   assert.equal(plan.authorialAuthorityActive, true);
   assert.equal(plan.scopePolicyVersion, "diagnosis-guided-authority-v3");
-  assert.equal(plan.authorialProtocolVersion, "proposition-led-authorial-reconstruction-v4");
+  assert.equal(plan.authorialProtocolVersion, "proposition-led-authorial-reconstruction-v4.1");
   assert.ok(plan.documentGuidance.some((rule) => /not a sentence-by-sentence paraphrase pass/i.test(rule)));
   assert.ok(plan.documentGuidance.some((rule) => /one-source-sentence -> one-revised-sentence/i.test(rule)));
   assert.ok(plan.documentGuidance.some((rule) => /vary rhetorical trajectory by function/i.test(rule)));
   assert.ok(plan.documentGuidance.some((rule) => /numeric relationships are atomic/i.test(rule)));
+  assert.ok(plan.documentGuidance.some((rule) => /modern machine-language self-check/i.test(rule)));
+  assert.ok(plan.documentGuidance.some((rule) => /do not announce the paragraph/i.test(rule)));
+  assert.ok(plan.documentGuidance.some((rule) => /prefer propositions to discourse management/i.test(rule)));
+  assert.ok(plan.documentGuidance.some((rule) => /prefer actors and direct verbs/i.test(rule)));
+  assert.ok(plan.documentGuidance.some((rule) => /high grammar, clarity and sophistication do not override machine-language/i.test(rule)));
 });
 
 test("numeric ranges are protected as factual relationships", () => {
