@@ -67,7 +67,7 @@ test("Studio loads one evidence surface and cache-busts the functional scripts t
   assert.ok(routerIndex > bankIndex, "upload router must load after Literature Evidence Bank UI");
   assert.match(html, /Evidence Gateway v4\.0\.1/);
   assert.match(html, /researchStudioUI\.js\?v=4\.0\.0/);
-  assert.match(html, /researchCoauthoringUI\.js\?v=4\.0\.0/);
+  assert.match(html, /researchCoauthoringUI\.js\?v=4\.1\.0/);
   assert.match(html, /researchStudioEvidenceGateway\.js\?v=4\.0\.1/);
   assert.match(html, /fileImport\.js\?v=4\.0\.0/);
   assert.doesNotMatch(html, /researchStudioEvidenceCoreUI\.js/);
