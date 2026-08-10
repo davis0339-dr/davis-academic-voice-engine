@@ -159,7 +159,10 @@ jobs:
             echo 'No headless Chrome/Chromium binary is available on the runner.'
             exit 1
           fi
-          "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=7000 --dump-dom 'http://127.0.0.1:3012/studio?evidenceSmoke=1' > studio-browser-smoke.html
+          URL='http://127.0.0.1:3012/studio?evidenceSmoke=1'
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=7000 --dump-dom "$URL" > studio-browser-smoke.html
+          "$CHROME" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --virtual-time-budget=7000 --window-size=1600,2400 --force-device-scale-factor=1 --screenshot=studio-browser-smoke.png "$URL"
+          test -s studio-browser-smoke.png
           grep -q 'data-evidence-smoke="pass"' studio-browser-smoke.html
           grep -q 'browser-smoke-evidence.txt' studio-browser-smoke.html
           grep -q 'id="manuscriptFirstCoauthoring"' studio-browser-smoke.html
@@ -196,6 +199,7 @@ jobs:
             server-smoke.log
             browser-smoke-server.log
             studio-browser-smoke.html
+            studio-browser-smoke.png
             health-smoke.json
             index-smoke.html
             editor-smoke.html
