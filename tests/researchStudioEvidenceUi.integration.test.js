@@ -7,8 +7,8 @@ const gateway = fs.readFileSync(new URL("../public/researchStudioEvidenceGateway
 const router = fs.readFileSync(new URL("../public/researchEvidenceUploadRouter.js", import.meta.url), "utf8");
 
 test("Research Studio loads the single static evidence gateway and stable router", () => {
-  assert.match(studio, /Evidence Gateway v4\.0\.0/);
-  assert.match(studio, /researchStudioEvidenceGateway\.js\?v=4\.0\.0/);
+  assert.match(studio, /Evidence Gateway v4\.0\.1/);
+  assert.match(studio, /researchStudioEvidenceGateway\.js\?v=4\.0\.1/);
   assert.match(studio, /researchEvidenceUploadRouter\.js\?v=4\.0\.1/);
   assert.doesNotMatch(studio, /researchStudioEvidenceCoreUI\.js/);
   assert.equal((studio.match(/id="evidenceInputGateway"/g) || []).length, 1);
@@ -22,7 +22,8 @@ test("Evidence Workspace exposes device selection, drag-drop and direct paste in
   assert.match(studio, /Add pasted source to Evidence Workspace/);
   assert.match(studio, /id="researchEvidenceWorkspaceCard"/);
   assert.match(gateway, /pasteGatewayClipboardBtn/);
-  assert.match(gateway, /transferPastedSource/);
+  assert.match(gateway, /addPastedGatewaySource/);
+  assert.match(gateway, /return ok === true/);
   assert.match(router, /routeDirectSources/);
 });
 
