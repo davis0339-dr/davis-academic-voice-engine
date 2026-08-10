@@ -15,8 +15,10 @@ const REASONING_SYSTEM = `You are the reasoning-analysis layer of an academic ma
 Your job is to recover and structure the RESEARCHER'S intellectual position before any prose is rewritten.
 Do not reward polished wording. Do not infer human authorship from style. Do not invent evidence, citations, theories, variables, findings, methods or sources.
 Preserve uncertainty, disagreement, boundaries, causal caution and distinctions the researcher makes.
-Treat spoken or rough language as potentially valuable reasoning. Separate what the researcher clearly supplied from what you are only suggesting.
-Do not write the final academic paragraph in this step.
+Treat spoken, typed or rough language as potentially valuable reasoning. Separate what the researcher clearly supplied from what you are only suggesting.
+A researcher's explanation can establish what they mean, intend, interpret, prefer or wish to argue. It does NOT by itself establish an external empirical fact.
+When a researcher supplies a factual, empirical, historical, statistical, legal, technical or literature claim without visible support, retain the reasoning but describe the evidence need explicitly rather than silently treating the claim as verified.
+Do not penalise ordinary language or rough grammar. Do not write the final academic paragraph in this step.
 
 Return valid JSON only with this exact shape:
 {
@@ -29,7 +31,7 @@ Return valid JSON only with this exact shape:
       "origin": "researcher|system_suggestion|shared",
       "researcher_status": "unreviewed",
       "confidence": "low|moderate|high",
-      "evidence_need": "what would need support, if anything",
+      "evidence_need": "state what would need support; use an empty string only when the node is purely the researcher's own boundary, decision, interpretation or intended meaning",
       "rationale": "why this node matters to the argument"
     }
   ],
@@ -37,6 +39,35 @@ Return valid JSON only with this exact shape:
   "boundaries": ["things the researcher is explicitly not claiming"],
   "researcher_decisions": ["clear decisions already made by the researcher"]
 }`;
+
+const MANUSCRIPT_QUESTION_SYSTEM = `You are a research coauthoring interviewer. The researcher has supplied a working manuscript BEFORE asking for rewriting.
+Your task is to identify the few places where the manuscript would benefit most from the researcher's own intellectual explanation, judgment, interpretation, mechanism, boundary or methodological reasoning.
+Do not answer the questions yourself. Do not generate an argument for the researcher. Do not ask generic questions. Do not ask the researcher to restate what is already clear.
+Prefer questions that reveal why the researcher believes a relationship should exist, what a cited result means for the present study, what competing explanation matters, what qualification is intended, why a methodological choice is defensible, or where the manuscript currently overstates what can be claimed.
+The researcher may answer by voice OR by typing. The quality signal is their own understanding, not the input method.
+When a question is likely to elicit an external factual assertion rather than merely the researcher's interpretation, mark verification_sensitivity as high so the interface can warn that the factual part must later be checked against evidence.
+Return 2 to 5 questions. Use a short anchor phrase from the manuscript so the researcher can see what prompted the question.
+Return valid JSON only:
+{"questions":[{"id":"mq-1","anchor":"short manuscript phrase","question":"specific question","why_it_matters":"...","target_type":"mechanism|interpretation|qualification|boundary|counterargument|methodological_choice|evidence_need","verification_sensitivity":"low|conditional|high"}]}`;
+
+const RESPONSE_ASSESS_SYSTEM = `You are the researcher-response assessment layer of an academic coauthoring system.
+The researcher has answered questions about their own manuscript in rough, ordinary language. The answer may be typed or transcribed from voice. Input mode must never determine intellectual value.
+Do NOT rewrite the answer into polished prose. Do NOT invent supporting scholarship. Do NOT reject an answer merely because it lacks a citation.
+Your job is to separate authorial understanding from assertions that require external verification.
+
+For each answer:
+1. Decide how it aligns with the manuscript: clarifies, extends, qualifies, contradicts, or unclear.
+2. Classify its main role: authorial_judgment, interpretive_explanation, mechanism_reasoning, methodological_decision, boundary, empirical_or_factual_assertion, or mixed.
+3. Decide verification status:
+   - not_required_for_authorial_intent: the answer is mainly the researcher's own intended meaning, boundary, judgment or interpretation. This can guide argument development, although later prose must still avoid presenting unsupported external facts as established.
+   - verify_before_factual_use: the answer contains an external factual/empirical/technical claim that must be checked before it is written as fact.
+   - evidence_workspace_check: the answer appears potentially supportable from sources, but it should be checked against the supplied evidence workspace before factual use.
+   - unclear: the distinction cannot be made safely.
+4. Explain exactly what can be used now as the researcher's reasoning and what, if anything, must be verified.
+Do not treat fluency, grammar, accent, vocabulary or roughness as proof of authorship.
+
+Return valid JSON only:
+{"assessments":[{"question_id":"mq-1","manuscript_alignment":"clarifies|extends|qualifies|contradicts|unclear","role":"authorial_judgment|interpretive_explanation|mechanism_reasoning|methodological_decision|boundary|empirical_or_factual_assertion|mixed","verification_status":"not_required_for_authorial_intent|verify_before_factual_use|evidence_workspace_check|unclear","usable_reasoning":"what the answer contributes to the researcher's intellectual position","verification_note":"what must be checked, or empty if none","caution":"brief caution if the answer would become stronger when converted into manuscript prose"}],"overall_note":"brief statement about how the answers can be used without confusing researcher understanding with verified evidence"}`;
 
 const EVIDENCE_SYSTEM = `You are the evidence-alignment layer of an academic research system.
 You will receive approved/reviewable argument nodes and candidate excerpts retrieved from researcher-supplied source files.
@@ -51,12 +82,14 @@ const CHALLENGE_SYSTEM = `You are a rigorous but economical academic challenge l
 Do not rewrite the manuscript. Ask at most TWO questions, only where an answer would materially strengthen, narrow, correct or evidence the researcher's argument.
 Prefer questions about mechanisms, unsupported inference, competing explanation, evidential fit, causal strength, boundaries, interpretation or methodological implications.
 Do not ask for information already present. Do not ask generic questions such as 'Can you elaborate?'.
+The researcher may answer in rough language by voice or typing. Encourage intellectual explanation rather than polished or generated wording.
 Return valid JSON only:
 {"questions":[{"argument_id":"arg-1","question":"...","why_it_matters":"...","evidence_gap":"..."}]}`;
 
 const RECONSTRUCT_SYSTEM = `You are the controlled academic reconstruction layer of an academic writing system.
 The argument map is authoritative. The researcher's accepted/modified reasoning, boundaries and decisions must govern the prose.
 Evidence links are supporting material, not permission to invent facts. Use only citations explicitly supplied in evidence links. Never fabricate a citation.
+A researcher-origin node records the researcher's intellectual position; it is not automatically verified evidence. If a node contains an unresolved evidence_need and there is no accepted supporting evidence link, do not present its external factual content as established fact. Preserve it as a cautious interpretation, rationale, hypothesis, boundary or evidence need as appropriate.
 Do not strengthen causal or epistemic force. Preserve may/might/suggest/associate distinctions. Do not create new variables, moderators, methods, results or theoretical claims unless they are explicitly approved argument nodes.
 Do not make every paragraph structurally symmetrical. Let sentence and paragraph architecture follow the intellectual work being done. Prefer conceptual transitions over decorative transitions. Preserve ordinary precise language over inflated academic vocabulary.
 Return valid JSON only:
@@ -87,6 +120,48 @@ function sanitizeStyleFilters(filters) {
   return out;
 }
 
+function normalizeManuscriptQuestions(raw = {}) {
+  const allowedTypes = new Set(["mechanism", "interpretation", "qualification", "boundary", "counterargument", "methodological_choice", "evidence_need"]);
+  const allowedSensitivity = new Set(["low", "conditional", "high"]);
+  return Array.isArray(raw.questions) ? raw.questions.slice(0, 5).map((q, index) => {
+    const target = shortString(q?.target_type, 80).toLowerCase();
+    const sensitivity = shortString(q?.verification_sensitivity, 40).toLowerCase();
+    return {
+      id: shortString(q?.id, 80) || `mq-${index + 1}`,
+      anchor: shortString(q?.anchor, 500),
+      question: shortString(q?.question, 1600),
+      why_it_matters: shortString(q?.why_it_matters, 1200),
+      target_type: allowedTypes.has(target) ? target : "interpretation",
+      verification_sensitivity: allowedSensitivity.has(sensitivity) ? sensitivity : "conditional",
+    };
+  }).filter((q) => q.question) : [];
+}
+
+function normalizeResponseAssessments(raw = {}, knownQuestionIds = new Set()) {
+  const alignments = new Set(["clarifies", "extends", "qualifies", "contradicts", "unclear"]);
+  const roles = new Set(["authorial_judgment", "interpretive_explanation", "mechanism_reasoning", "methodological_decision", "boundary", "empirical_or_factual_assertion", "mixed"]);
+  const statuses = new Set(["not_required_for_authorial_intent", "verify_before_factual_use", "evidence_workspace_check", "unclear"]);
+  const assessments = Array.isArray(raw.assessments) ? raw.assessments.slice(0, 8).map((row) => {
+    const questionId = shortString(row?.question_id, 80);
+    const alignment = shortString(row?.manuscript_alignment, 40).toLowerCase();
+    const role = shortString(row?.role, 80).toLowerCase();
+    const status = shortString(row?.verification_status, 80).toLowerCase();
+    return {
+      question_id: questionId,
+      manuscript_alignment: alignments.has(alignment) ? alignment : "unclear",
+      role: roles.has(role) ? role : "mixed",
+      verification_status: statuses.has(status) ? status : "unclear",
+      usable_reasoning: shortString(row?.usable_reasoning, 1800),
+      verification_note: shortString(row?.verification_note, 1600),
+      caution: shortString(row?.caution, 1200),
+    };
+  }).filter((row) => row.question_id && (!knownQuestionIds.size || knownQuestionIds.has(row.question_id))) : [];
+  return {
+    assessments,
+    overall_note: shortString(raw.overall_note, 1800),
+  };
+}
+
 async function modelJson({ system, payload, maxTokens = 4096 }) {
   const result = await llmProvider.callAnthropic({
     system,
@@ -95,6 +170,58 @@ async function modelJson({ system, payload, maxTokens = 4096 }) {
   });
   return extractJsonObject(result.text);
 }
+
+researchStudioRouter.post("/research/manuscript-questions", async (req, res) => {
+  const manuscriptText = shortString(req.body?.manuscriptText, 30000);
+  const styleFilters = sanitizeStyleFilters(req.body?.styleFilters);
+  if (!manuscriptText) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "Provide a working manuscript or passage before starting manuscript-first coauthoring.", requestId: req.requestId });
+  }
+  try {
+    const raw = await modelJson({
+      system: MANUSCRIPT_QUESTION_SYSTEM,
+      payload: {
+        manuscript: manuscriptText,
+        academic_context: styleFilters,
+        instruction: "Ask only questions that require the researcher's own intellectual contribution. Do not answer them.",
+      },
+      maxTokens: 3200,
+    });
+    return res.json({ questions: normalizeManuscriptQuestions(raw), persistence: "none", requestId: req.requestId });
+  } catch (err) {
+    return providerError(res, err, req.requestId);
+  }
+});
+
+researchStudioRouter.post("/research/response-assess", async (req, res) => {
+  const manuscriptText = shortString(req.body?.manuscriptText, 30000);
+  const styleFilters = sanitizeStyleFilters(req.body?.styleFilters);
+  const responses = Array.isArray(req.body?.responses) ? req.body.responses.slice(0, 8).map((item, index) => ({
+    question_id: shortString(item?.question_id, 80) || `mq-${index + 1}`,
+    question: shortString(item?.question, 1600),
+    answer: shortString(item?.answer, 5000),
+    input_mode: ["typed", "voice", "mixed", "unknown"].includes(item?.input_mode) ? item.input_mode : "unknown",
+  })).filter((item) => item.answer) : [];
+  if (!manuscriptText || !responses.length) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "Provide the manuscript and at least one researcher response.", requestId: req.requestId });
+  }
+  const knownIds = new Set(responses.map((item) => item.question_id));
+  try {
+    const raw = await modelJson({
+      system: RESPONSE_ASSESS_SYSTEM,
+      payload: {
+        manuscript: manuscriptText,
+        researcher_responses: responses,
+        academic_context: styleFilters,
+        instruction: "Preserve the researcher's own words as the source of reasoning. Flag verification needs without blocking use of genuine interpretation or judgment.",
+      },
+      maxTokens: 4200,
+    });
+    return res.json({ ...normalizeResponseAssessments(raw, knownIds), persistence: "none", requestId: req.requestId });
+  } catch (err) {
+    return providerError(res, err, req.requestId);
+  }
+});
 
 researchStudioRouter.post("/research/reasoning-map", async (req, res) => {
   const thoughts = shortString(req.body?.thoughts, 16000);
@@ -110,7 +237,7 @@ researchStudioRouter.post("/research/reasoning-map", async (req, res) => {
         researcher_thoughts: thoughts,
         manuscript_context: manuscriptContext || null,
         academic_context: styleFilters,
-        instruction: "Recover the reasoning; do not polish it into final prose.",
+        instruction: "Recover the reasoning; do not polish it into final prose. Distinguish the researcher's intended meaning from external claims that still require evidence.",
       },
       maxTokens: 5000,
     });
