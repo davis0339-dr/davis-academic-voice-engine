@@ -57,9 +57,10 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   plan.naturalisation = requestedNaturalisation;
   plan.lengthPreference = requestedLength;
   plan.authorialAuthorityActive = authorialAuthority;
-  plan.scopePolicyVersion = authorialAuthority
-    ? "proposition-led-authorial-reconstruction-v4"
-    : "diagnosis-guided-authority-v4";
+  // Keep the existing planner policy identifier stable for downstream compatibility.
+  // Deep Authorial's newer proposition-led protocol is versioned separately.
+  plan.scopePolicyVersion = "diagnosis-guided-authority-v3";
+  plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v4" : null;
   plan.scopePrinciples = [
     "Diagnosis selects the rhetorical/argument operation; the researcher-selected mode supplies the intervention authority.",
     "Minor remains local and restrained; Moderate remains selective; Deep permits structural redevelopment.",
