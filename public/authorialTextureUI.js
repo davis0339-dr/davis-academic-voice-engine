@@ -84,7 +84,7 @@
     const target = document.getElementById("tab-changes");
     if (!target || !latest) return;
     const texture = latest.authorial_texture || latest.source_assessment?.authorial_texture;
-    const forensics = latest.discourse_regularity_forensics || latest.source_assessment?.discourse_regularity_forensics;
+    const forensics = latest.discourse_regularity_forensics || latest.source_assessment?.discourse_regularity_forensics || texture?.discourse_regularity_forensics;
     const authority = latest.intervention_authority;
     const policy = latest.rewrite_mode_policy;
     const compliance = latest.execution_compliance;
