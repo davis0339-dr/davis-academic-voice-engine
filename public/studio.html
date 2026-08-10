@@ -10,23 +10,64 @@
   .workspace-nav a{display:inline-flex;align-items:center;padding:.42rem .7rem;border:1px solid #465b74;border-radius:999px;text-decoration:none;color:inherit;font-size:.86rem}
   .workspace-nav a.active{border-color:#62e0b0;background:rgba(98,224,176,.08)}
   .workspace-nav a:hover{background:rgba(255,255,255,.05)}
+
+  .studio-shell{color-scheme:dark;max-width:1500px;margin:0 auto;padding:1rem 1.25rem 2.5rem}
+  .studio-shell .studio-evidence-card,
+  .studio-shell .research-studio-intro,
+  .studio-shell .research-studio-card{background:#141a21!important;color:var(--text)!important;border:1px solid #334152!important;border-radius:14px!important;box-shadow:0 10px 34px rgba(0,0,0,.16)}
+  .studio-shell .research-studio-intro{padding:1rem 1.1rem!important}
+  .studio-shell .research-studio-card{padding:1rem!important}
+  .studio-shell details.studio-evidence-card{padding:1rem;margin:.85rem 0}
+  .studio-shell .muted{color:#95a3b5!important}
+  .studio-shell textarea,
+  .studio-shell input[type="text"],
+  .studio-shell select{background:#0d1319!important;color:#edf2f7!important;border:1px solid #3a4a5c!important;border-radius:8px!important;padding:.65rem!important;outline:none}
+  .studio-shell textarea:focus,
+  .studio-shell input[type="text"]:focus,
+  .studio-shell select:focus{border-color:#6b9cff!important;box-shadow:0 0 0 3px rgba(91,141,239,.17)!important}
+  .studio-shell button,
+  .studio-shell .file-button{background:#18212b;border:1px solid #44566a;color:#edf2f7;box-shadow:0 1px 0 rgba(255,255,255,.04);font-weight:600;transition:border-color .15s ease,background .15s ease,transform .08s ease}
+  .studio-shell button:hover:not(:disabled),
+  .studio-shell .file-button:hover{background:#202d39;border-color:#6f8baa}
+  .studio-shell button:active:not(:disabled){transform:translateY(1px)}
+  .studio-shell button:focus-visible,
+  .studio-shell .file-button:focus-visible{outline:3px solid rgba(91,141,239,.35);outline-offset:2px}
+  .studio-shell button.primary{background:#4f7fe0;border-color:#6c99ef;color:#fff}
+  .studio-shell button.primary:hover:not(:disabled){background:#5a89e7;border-color:#8ab0f7}
+  .studio-shell .research-summary-callout,
+  .studio-shell .evidence-link,
+  .studio-shell .integrity-overall{background:#10171e!important;color:var(--text)!important}
+  .studio-shell .argument-node,
+  .studio-shell .research-source-card,
+  .studio-shell .challenge-card,
+  .studio-shell .integrity-node{border-color:#344354!important;background:#111820!important}
+  .studio-shell .agency-origin{border-color:#50657b!important;color:#c6d4e3}
+
+  .studio-shell #voiceReasoningBox.voice-reasoning-box{background:#111a22!important;color:var(--text)!important;border:1px solid #3f5d73!important;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+  .studio-shell #voiceReasoningBox .muted{color:#aebccc!important}
+  .studio-shell #voiceReasoningBox textarea{background:#0b1117!important;color:#edf2f7!important;border-color:#42566a!important}
+  .studio-shell .voice-consent-panel,
+  .studio-shell .voice-language-panel{background:#0e151c!important;border-color:#3c4f61!important}
+  .studio-shell .reasoning-mode-switcher button{background:#111820!important;border-color:#41566d!important;color:#dce6f0!important}
+  .studio-shell .reasoning-mode-switcher button.active{background:#17352d!important;border-color:#62e0b0!important;color:#f4fff9!important}
+
   .evidence-input-gateway{border-color:#4e779d!important;margin:.8rem 0 1rem}
   .evidence-gateway-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap}
   .evidence-gateway-head h3{margin:.1rem 0}.evidence-gateway-head p{margin:.35rem 0;color:var(--muted)}
   .evidence-gateway-badge{border:1px solid #4e779d;border-radius:999px;padding:.25rem .55rem;color:#b9c9da;font-size:.78rem;white-space:nowrap}
   .evidence-native-upload{display:grid;gap:.45rem;margin:.9rem 0}
-  .evidence-native-upload input[type="file"]{display:block;width:100%;max-width:760px;padding:.7rem;border:1px solid #56708a;border-radius:9px;background:var(--bg);color:var(--text);font-size:.9rem}
-  .evidence-native-upload input[type="file"]::file-selector-button{margin-right:.75rem;padding:.65rem 1rem;border:1px solid var(--accent);border-radius:7px;background:var(--accent);color:white;font-weight:700;cursor:pointer}
-  .evidence-gateway-drop{display:grid;gap:.3rem;padding:1rem;border:2px dashed #607d99;border-radius:10px;text-align:center;cursor:pointer;margin:.8rem 0;background:rgba(255,255,255,.02)}
+  .evidence-native-upload input[type="file"]{display:block;width:100%;max-width:760px;padding:.7rem;border:1px solid #56708a;border-radius:9px;background:#0d1319;color:var(--text);font-size:.9rem}
+  .evidence-native-upload input[type="file"]::file-selector-button{margin-right:.75rem;padding:.65rem 1rem;border:1px solid #6c99ef;border-radius:7px;background:#4f7fe0;color:white;font-weight:700;cursor:pointer}
+  .evidence-gateway-drop{display:grid;gap:.3rem;padding:1rem;border:2px dashed #607d99;border-radius:10px;text-align:center;cursor:pointer;margin:.8rem 0;background:#10171e}
   .evidence-gateway-drop:hover,.evidence-gateway-drop.drag-active{border-color:var(--accent);background:rgba(91,141,239,.08)}
   .evidence-gateway-drop span{color:var(--muted)}
-  .evidence-gateway-paste{margin-top:.8rem;padding:.75rem;border:1px solid var(--border);border-radius:9px}
+  .evidence-gateway-paste{margin-top:.8rem;padding:.75rem;border:1px solid #344354;border-radius:9px;background:#111820}
   .evidence-gateway-paste label{display:grid;gap:.35rem;margin:.65rem 0}
-  .evidence-gateway-paste input,.evidence-gateway-paste textarea{width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:.6rem}
+  .evidence-gateway-paste input,.evidence-gateway-paste textarea{width:100%;box-sizing:border-box;background:#0d1319;color:var(--text);border:1px solid #3a4a5c;border-radius:7px;padding:.6rem}
   .evidence-gateway-actions{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.6rem 0}
   #evidenceGatewayStatus{display:block;margin-top:.5rem}
   .studio-workflow-note{margin:.6rem 0 0;color:var(--muted)}
-  @media(max-width:760px){.topbar{align-items:flex-start;flex-wrap:wrap}.workspace-nav{width:100%;margin-left:0}.evidence-gateway-actions button{width:100%}}
+  @media(max-width:760px){.topbar{align-items:flex-start;flex-wrap:wrap}.workspace-nav{width:100%;margin-left:0}.studio-shell{padding:.75rem}.evidence-gateway-actions button{width:100%}}
 </style>
 <script>window.AVE_WORKSPACE="research-evidence-studio";</script>
 </head>
@@ -202,7 +243,7 @@
 <script src="/runtimeGuard.js"></script>
 <script src="/researchStudioCandidateBridge.js"></script>
 <script src="/researchStudioUI.js?v=4.0.0"></script>
-<script src="/researchCoauthoringUI.js?v=4.0.0"></script>
+<script src="/researchCoauthoringUI.js?v=4.1.0"></script>
 <script src="/researchStudioEvidenceGateway.js?v=4.0.1"></script>
 <script src="/researchEvidenceBankUI.js?v=3.2.0"></script>
 <script src="/researchEvidenceUploadRouter.js?v=4.0.1"></script>
