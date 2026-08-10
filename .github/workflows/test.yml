@@ -179,8 +179,20 @@ jobs:
           npm test 2>&1 | tee test-output.txt
           TEST_STATUS=${PIPESTATUS[0]}
           if [ "$TEST_STATUS" -ne 0 ]; then
-            tail -n 120 test-output.txt > test-failure-tail.txt
-            python -c 'from pathlib import Path; s=Path("test-failure-tail.txt").read_text(errors="replace")[-8000:]; print("::error title=Node test failure::" + s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))'
+            python <<'PY'
+          from pathlib import Path
+          lines = Path('test-output.txt').read_text(errors='replace').splitlines()
+          blocks = []
+          for i, line in enumerate(lines):
+              if line.startswith('not ok '):
+                  blocks.extend(lines[max(0, i - 2):min(len(lines), i + 28)])
+          if not blocks:
+              blocks = lines[-120:]
+          text = '\n'.join(blocks)[-12000:]
+          Path('test-failure-tail.txt').write_text(text)
+          escaped = text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error title=Exact Node test failure::' + escaped)
+          PY
             exit "$TEST_STATUS"
           fi
       - name: Run completed-output acceptance benchmark
