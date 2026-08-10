@@ -17,6 +17,20 @@ export function extractJsonEnvelope(text) {
   return stripped.slice(first, last + 1);
 }
 
+// pipeline.sanitiseProse deliberately removes em/en dashes used as prose clause
+// punctuation. Numeric ranges are different: the dash expresses the factual
+// relationship itself. Normalise numeric en/em-dash ranges to an ASCII hyphen
+// immediately after JSON parsing so the later prose sanitizer cannot turn
+// 2015–2024 or 10–15 into the false pairs “2015, 2024” / “10, 15”.
+export function protectNumericRangesInParsedResponse(parsed) {
+  if (!parsed || typeof parsed !== "object" || typeof parsed.revised_text !== "string") return parsed;
+  parsed.revised_text = parsed.revised_text.replace(
+    /\b(\d{1,4})\s*[–—]\s*(\d{1,4})\b/g,
+    "$1-$2"
+  );
+  return parsed;
+}
+
 export function parseStructuredResponseText(text) {
   const candidates = [];
   const stripped = stripCodeFence(text);
@@ -27,7 +41,8 @@ export function parseStructuredResponseText(text) {
   let lastError = null;
   for (const candidate of candidates) {
     try {
-      return { ok: true, parsed: JSON.parse(candidate), recovered: candidate !== stripped, error: null };
+      const parsed = protectNumericRangesInParsedResponse(JSON.parse(candidate));
+      return { ok: true, parsed, recovered: candidate !== stripped, error: null };
     } catch (error) {
       lastError = error;
     }
