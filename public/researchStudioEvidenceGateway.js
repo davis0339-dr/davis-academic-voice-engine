@@ -1,6 +1,7 @@
 (() => {
   "use strict";
 
+  const GATEWAY_VERSION = "4.0.1";
   const $ = (id) => document.getElementById(id);
   const SUPPORTED_ACCEPT = ".txt,.md,.markdown,.docx,.pdf,.csv,.xlsx,text/plain,text/markdown,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -24,52 +25,32 @@
     const chosen = Array.from(files || []);
     if (!chosen.length) return false;
 
-    // The router owns direct/spreadsheet dispatch and can repair a partial
-    // Researcher Studio bootstrap. Prefer it over a brittle DOM-only handoff.
     const router = window.__DavisEvidenceUploadRouter;
-    if (router?.routeFiles) {
-      try {
-        await router.routeFiles(chosen);
-        return true;
-      } catch (err) {
-        setGatewayStatus(`The evidence router could not transfer the selected source(s): ${err.message}`, true);
-        return false;
-      }
-    }
-
-    const target = $("researchEvidenceFiles");
-    if (!target) {
-      setGatewayStatus("Researcher Studio evidence controls are not ready yet. The self-healing evidence router has not loaded, so no background transfer is running. Reload this page once and retry.", true);
+    if (!router?.routeFiles) {
+      setGatewayStatus("Evidence routing is unavailable on this build. The selected material was not accepted and no background transfer is running.", true);
       return false;
     }
+
     try {
-      const transfer = new DataTransfer();
-      chosen.forEach((file) => transfer.items.add(file));
-      target.files = transfer.files;
-      target.dispatchEvent(new Event("change", { bubbles: true }));
-      setGatewayStatus(`${chosen.length} source file(s) sent into Evidence Workspace.`);
-      return true;
+      const ok = await router.routeFiles(chosen);
+      return ok === true;
     } catch (err) {
-      setGatewayStatus(`The files were selected, but could not be transferred into Evidence Workspace: ${err.message}`, true);
+      setGatewayStatus(`The evidence router could not process the selected source(s): ${err.message}`, true);
       return false;
     }
-  }
-
-  async function forwardGatewayFiles() {
-    const input = $("evidenceGatewayFiles");
-    if (!input?.files?.length) return;
-    if (await transferToResearchStudio(input.files)) input.value = "";
   }
 
   async function addPastedGatewaySource() {
     const text = $("evidenceGatewayPasteText")?.value.trim() || "";
     const title = $("evidenceGatewayPasteTitle")?.value.trim() || "pasted-supporting-source";
     if (!text) return setGatewayStatus("Paste supporting text before adding the source.", true);
+
     try {
       const file = new File([text], `${safeName(title)}.txt`, { type: "text/plain" });
-      if (!(await transferToResearchStudio([file]))) return;
+      const loaded = await transferToResearchStudio([file]);
+      if (!loaded) return;
       $("evidenceGatewayPasteText").value = "";
-      setGatewayStatus(`Pasted source “${title}” added to Evidence Workspace.`);
+      setGatewayStatus(`Pasted source “${title}” loaded into Evidence Workspace.`);
     } catch (err) {
       setGatewayStatus(`Could not add the pasted source: ${err.message}`, true);
     }
@@ -94,30 +75,10 @@
     }
   }
 
-  function moveGatewayIntoEvidenceWorkspace() {
-    const gateway = $("evidenceInputGateway");
-    const hiddenInput = $("researchEvidenceFiles");
-    if (!gateway || !hiddenInput) return false;
-    const card = hiddenInput.closest(".research-studio-card");
-    const heading = card?.querySelector("h4");
-    if (!card || !heading) return false;
-
-    if (gateway.parentElement !== card) heading.insertAdjacentElement("afterend", gateway);
-    card.querySelector(".file-toolbar")?.setAttribute("hidden", "");
-    return true;
-  }
-
   function bind() {
     const input = $("evidenceGatewayFiles");
-    if (input) {
-      input.accept = SUPPORTED_ACCEPT;
-      // File/change routing is captured centrally by researchEvidenceUploadRouter.
-      // Keep this fallback listener for pages where that router is unavailable.
-      input.addEventListener("change", () => {
-        if (window.__DavisEvidenceUploadRouter?.routeFiles) return;
-        forwardGatewayFiles().catch((err) => setGatewayStatus(`Evidence transfer failed: ${err.message}`, true));
-      });
-    }
+    if (input) input.accept = SUPPORTED_ACCEPT;
+
     $("addGatewayPastedSourceBtn")?.addEventListener("click", () => {
       addPastedGatewaySource().catch((err) => setGatewayStatus(`Could not add the pasted source: ${err.message}`, true));
     });
@@ -132,10 +93,6 @@
       event.preventDefault();
       drop.classList.remove("drag-active");
     }));
-    drop?.addEventListener("drop", (event) => {
-      if (window.__DavisEvidenceUploadRouter?.routeFiles) return;
-      transferToResearchStudio(event.dataTransfer?.files).catch((err) => setGatewayStatus(`Evidence transfer failed: ${err.message}`, true));
-    });
     drop?.addEventListener("click", () => input?.click());
     drop?.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -144,17 +101,8 @@
       }
     });
 
-    let attempts = 0;
-    const timer = setInterval(() => {
-      attempts += 1;
-      const moved = moveGatewayIntoEvidenceWorkspace();
-      if (moved || attempts >= 200) clearInterval(timer);
-    }, 50);
-
-    const observer = new MutationObserver(() => {
-      if (moveGatewayIntoEvidenceWorkspace()) observer.disconnect();
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    const gateway = $("evidenceInputGateway");
+    if (gateway) gateway.dataset.gatewayVersion = GATEWAY_VERSION;
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind, { once: true });
