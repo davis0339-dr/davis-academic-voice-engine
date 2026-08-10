@@ -1,14 +1,17 @@
 (() => {
   "use strict";
 
-  const ROUTER_VERSION = "3.2.1";
+  const ROUTER_VERSION = "3.3.0";
   const SPREADSHEET_RE = /\.(?:xlsx|csv)$/i;
   const BANK_MAX_BYTES = 25 * 1024 * 1024;
   const DIRECT_SOURCE_MAX_BYTES = 5 * 1024 * 1024;
-  const TARGET_WAIT_MS = 2500;
-  const REPAIR_WAIT_MS = 6000;
+  const TARGET_WAIT_MS = 1200;
+  const REPAIR_MAX_MS = 30000;
+  const REPAIR_RETRIES = 2;
   const POLL_MS = 80;
   const $ = (id) => document.getElementById(id);
+  let repairPromise = null;
+  let preflightStarted = false;
 
   function gatewayStatus(message, error = false) {
     const gateway = $("evidenceGatewayStatus");
@@ -72,34 +75,76 @@
     try { button?.remove(); } catch {}
   }
 
-  function loadRepairScript() {
+  function loadRepairScript(attempt = 0) {
     return new Promise((resolve) => {
       const prior = document.querySelector('script[data-davis-research-studio-repair="true"]');
       if (prior) prior.remove();
+
       const script = document.createElement("script");
       script.dataset.davisResearchStudioRepair = "true";
-      script.src = `/researchStudioUI.js?v=3.1.1-repair-${Date.now()}`;
+      script.src = `/researchStudioUI.js?v=3.3.0-repair-${Date.now()}-${attempt}`;
+
       let settled = false;
-      const finish = (ok) => {
+      let observer = null;
+      const started = Date.now();
+      const finish = (result) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
-        resolve(Boolean(ok));
+        clearInterval(poll);
+        observer?.disconnect();
+        resolve(result);
       };
-      script.onload = () => finish(true);
-      script.onerror = () => finish(false);
-      const timer = setTimeout(() => finish(false), REPAIR_WAIT_MS);
+      const checkReady = () => {
+        const target = researchStudioTargetReady();
+        if (target) return finish({ ok: true, target, reason: "ready" });
+        if (Date.now() - started >= REPAIR_MAX_MS) return finish({ ok: false, target: null, reason: "deadline" });
+      };
+      const poll = setInterval(checkReady, POLL_MS);
+      observer = new MutationObserver(checkReady);
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+
+      script.onload = () => {
+        const target = researchStudioTargetReady();
+        if (target) finish({ ok: true, target, reason: "loaded" });
+      };
+      script.onerror = () => finish({ ok: false, target: null, reason: "script_error" });
       document.body.appendChild(script);
+      checkReady();
     });
   }
 
   async function repairResearchStudioUi() {
-    if (researchStudioTargetReady()) return researchStudioTargetReady();
-    gatewayStatus("Researcher Studio evidence controls are incomplete. Repairing this page automatically…");
-    removePartialResearchStudio();
-    const loaded = await loadRepairScript();
-    if (!loaded) return null;
-    return waitForElement("researchEvidenceFiles", REPAIR_WAIT_MS);
+    const ready = researchStudioTargetReady();
+    if (ready) return ready;
+    if (repairPromise) return repairPromise;
+
+    repairPromise = (async () => {
+      gatewayStatus("Researcher Studio evidence controls are incomplete. Restoring the workspace before accepting evidence…");
+
+      for (let attempt = 0; attempt <= REPAIR_RETRIES; attempt += 1) {
+        const alreadyReady = researchStudioTargetReady();
+        if (alreadyReady) return alreadyReady;
+
+        removePartialResearchStudio();
+        const result = await loadRepairScript(attempt);
+        if (result.ok && result.target) return result.target;
+
+        if (result.reason === "script_error" && attempt < REPAIR_RETRIES) {
+          gatewayStatus(`Researcher Studio repair load failed on attempt ${attempt + 1}. Retrying automatically…`);
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+          continue;
+        }
+
+        if (result.reason === "deadline") break;
+      }
+      return researchStudioTargetReady();
+    })();
+
+    try {
+      return await repairPromise;
+    } finally {
+      repairPromise = null;
+    }
   }
 
   async function ensureResearchEvidenceTarget() {
@@ -115,8 +160,22 @@
 
   async function targetConsumedFiles(target) {
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     return !target?.files?.length;
+  }
+
+  async function preflightResearchStudio() {
+    if (preflightStarted) return;
+    preflightStarted = true;
+    const target = await ensureResearchEvidenceTarget();
+    if (target) {
+      const current = String($("evidenceGatewayStatus")?.textContent || "");
+      if (/initialis|incomplete|repair|restore|could not|failed/i.test(current)) {
+        gatewayStatus("Evidence Workspace ready. Add files or pasted sources directly; no background repair is pending.");
+      }
+      return;
+    }
+    gatewayStatus("Researcher Studio did not become ready after a full bootstrap attempt. Reload the Studio once. If this repeats on the same build, report the build number because this is a workspace bootstrap defect, not a file problem.", true);
   }
 
   function mirrorBankStatus(fileName) {
@@ -179,7 +238,7 @@
     gatewayStatus(`Preparing ${chosen.length} direct evidence source(s)…`);
     let target = await ensureResearchEvidenceTarget();
     if (!target) {
-      gatewayStatus("Researcher Studio evidence controls could not be restored automatically. No background transfer is running. Reload this page once; if the problem repeats, the Studio bootstrap has failed and should be treated as a product defect rather than a file problem.", true);
+      gatewayStatus("Evidence Workspace could not reach a ready state after the full repair cycle. Your selected source was not discarded by a short timer, but it could not be handed to an active Researcher Studio consumer. Reload once and retry on the same build; if it repeats, the build has a bootstrap defect.", true);
       return false;
     }
 
@@ -190,13 +249,10 @@
         return true;
       }
 
-      // A target element existed but no Researcher Studio consumer handled its
-      // change event. This is a partial-initialisation state, so repair once and
-      // replay the same File objects instead of asking the user to select again.
-      gatewayStatus("Evidence input was present but its Researcher Studio handler was not active. Repairing the Studio and retrying automatically…");
+      gatewayStatus("The evidence input exists but its consumer did not process the selection. Rebuilding the Researcher Studio and replaying the same source automatically…");
       removePartialResearchStudio();
       target = await repairResearchStudioUi();
-      if (!target) throw new Error("Researcher Studio repair did not restore the evidence input.");
+      if (!target) throw new Error("Researcher Studio repair did not restore an active evidence input.");
       copyFilesIntoInput(target, chosen);
       if (!(await targetConsumedFiles(target))) throw new Error("Researcher Studio evidence handler did not consume the selected files after automatic repair.");
       gatewayStatus(`${chosen.length} direct evidence source(s) restored and handed to the Evidence Workspace for reading.`);
@@ -209,16 +265,18 @@
 
   async function routeFiles(files) {
     const chosen = Array.from(files || []);
-    if (!chosen.length) return;
+    if (!chosen.length) return false;
     const spreadsheets = chosen.filter((file) => SPREADSHEET_RE.test(file.name || ""));
     const direct = chosen.filter((file) => !SPREADSHEET_RE.test(file.name || ""));
+    let ok = true;
 
     if (spreadsheets.length > 1) {
       gatewayStatus(`You selected ${spreadsheets.length} spreadsheets. The Literature Evidence Bank holds one active workbook at a time; routing the first (${spreadsheets[0].name}). Load the others separately after reviewing the first.`);
     }
 
-    if (spreadsheets.length) await routeSpreadsheet(spreadsheets[0]);
-    if (direct.length) await routeDirectSources(direct);
+    if (spreadsheets.length) ok = (await routeSpreadsheet(spreadsheets[0])) && ok;
+    if (direct.length) ok = (await routeDirectSources(direct)) && ok;
+    return ok;
   }
 
   function interceptGatewayChange(event) {
@@ -258,19 +316,20 @@
 
   function clearFalseInitialisingState() {
     const text = String($("evidenceGatewayStatus")?.textContent || "");
-    if (!/still initialising|transferred automatically|did not initialise/i.test(text)) return;
-    if (researchStudioTargetReady() || $("literatureBankFile")) {
-      gatewayStatus("Evidence routes are ready. Choose the file again only if the earlier selection was made before this self-healing router loaded.");
+    if (researchStudioTargetReady()) {
+      if (/initialis|transferred automatically|did not initialise|could not be restored|bootstrap|repair|restore/i.test(text)) {
+        gatewayStatus("Evidence Workspace ready. Add files or pasted sources directly; no background repair is pending.");
+      }
       return;
     }
-    gatewayStatus("Researcher Studio evidence controls are not ready yet. The router will attempt an automatic repair when a direct source is selected; no upload is currently processing in the background.");
+    if (/still initialising|transferred automatically|did not initialise|could not be restored/i.test(text)) {
+      gatewayStatus("Evidence Workspace is not ready yet. The router is repairing Researcher Studio now; no file transfer is being claimed as complete.");
+    }
   }
 
   document.addEventListener("change", interceptGatewayChange, true);
   document.addEventListener("change", interceptDirectWorkspaceSpreadsheetChange, true);
   document.addEventListener("drop", interceptGatewayDrop, true);
-  window.addEventListener("load", () => setTimeout(clearFalseInitialisingState, 800), { once: true });
-  setTimeout(clearFalseInitialisingState, 5000);
 
   window.__DavisEvidenceUploadRouter = {
     version: ROUTER_VERSION,
@@ -278,6 +337,18 @@
     routeSpreadsheet,
     routeDirectSources,
     ensureResearchEvidenceTarget,
+    repairResearchStudioUi,
     limits: { spreadsheetBytes: BANK_MAX_BYTES, directSourceBytes: DIRECT_SOURCE_MAX_BYTES },
   };
+
+  queueMicrotask(() => {
+    preflightResearchStudio().catch((err) => gatewayStatus(`Researcher Studio preflight failed: ${err.message}`, true));
+  });
+  window.addEventListener("load", () => {
+    setTimeout(clearFalseInitialisingState, 600);
+    setTimeout(() => {
+      if (!researchStudioTargetReady()) preflightResearchStudio().catch(() => {});
+    }, 1200);
+  }, { once: true });
+  setInterval(clearFalseInitialisingState, 1500);
 })();
