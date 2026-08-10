@@ -8,7 +8,7 @@
 
   const esc = (value) => String(value ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    .replace(/\"/g, "&quot;").replace(/'/g, "&#039;");
   const title = (value) => String(value || "n/a").replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
   const pct = (value) => Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : "n/a";
   const countWords = (value) => (String(value || "").trim().match(/\S+/g) || []).length;
@@ -38,10 +38,6 @@
     if (latestRewrite?.argumentative_sufficiency) return latestRewrite.argumentative_sufficiency;
     if (latestRewrite?.diagnostics?.argumentative_sufficiency) return latestRewrite.diagnostics.argumentative_sufficiency;
 
-    // Direct Analyse & Revise responses currently expose the planner's sufficiency
-    // decision inside intervention_intent.evidence even when the full signal object
-    // is not returned. Use that real planner evidence rather than falsely showing
-    // “Not Assessed”.
     const evidence = latestRewrite?.intervention_intent?.evidence || latestAnalysis?.plan?.intent?.evidence || null;
     if (!evidence || !evidence.argumentativeDevelopmentNeed) return null;
     return {
@@ -108,12 +104,22 @@
     const need = sufficiency?.development_need || "not available";
     const signalCount = sufficiency?.signal_count ?? signals.length;
 
+    const surface = texture?.surface_quality;
+    const authorial = texture?.authorial_texture;
+    const regularity = texture?.machine_pattern_regularity;
+    const semantic = texture?.semantic_preservation;
+    const expressive = texture?.expressive_preservation;
+    const authorialScore = authorial?.score ?? texture?.score;
+    const authorialLabel = authorial?.label ?? texture?.label;
+
     panel.innerHTML = `
       <div class="argdev-title"><div><strong>Argumentative sufficiency & selective development</strong><span>${esc(sufficiency?.version || "planner development layer")}</span></div><strong class="argdev-need ${esc(need)}">${esc(title(need))}</strong></div>
       <div class="argdev-grid">
-        <div><span>Existing texture</span><strong>${texture ? esc(title(texture.label)) : "analysis pending"}</strong></div>
-        <div><span>Texture score</span><strong>${texture && Number.isFinite(Number(texture.score)) ? `${Math.round(Number(texture.score) * 100)}%` : "n/a"}</strong></div>
-        <div><span>Preservation priority</span><strong>${esc(title(texture?.preservation_priority || "n/a"))}</strong></div>
+        <div><span>Surface quality</span><strong>${surface ? `${esc(title(surface.label))} · ${pct(surface.score)}` : "n/a"}</strong></div>
+        <div><span>Authorial texture</span><strong>${texture ? `${esc(title(authorialLabel))} · ${pct(authorialScore)}` : "analysis pending"}</strong></div>
+        <div><span>Machine-pattern regularity</span><strong>${regularity ? `${esc(title(regularity.label))} · ${pct(regularity.score)}` : "n/a"}</strong></div>
+        <div><span>Semantic preservation</span><strong>${esc(title(semantic?.priority || "n/a"))}</strong></div>
+        <div><span>Expressive preservation</span><strong>${esc(title(expressive?.priority || texture?.preservation_priority || "n/a"))}</strong></div>
         <div><span>Argument development need</span><strong>${esc(title(need))}</strong></div>
         <div><span>Development score</span><strong>${esc(sufficiency?.development_score ?? "n/a")}</strong></div>
         <div><span>Development signals</span><strong>${esc(signalCount)}</strong></div>
@@ -121,7 +127,7 @@
         <div><span>Development permission</span><strong>${esc(title(authority?.discourse_development_permission || "pending"))}</strong></div>
         <div><span>Depth permission</span><strong>${esc(title(authority?.depth_permission || "pending"))}</strong></div>
       </div>
-      <div class="argdev-rule"><strong>Core rule:</strong> strong authorial texture does not automatically mean the argument is sufficiently developed. Preserve good wording while developing only diagnosed evidence, conditions, measures, setting, time context or gap. Word-count growth is never the target.</div>
+      <div class="argdev-rule"><strong>Core rule:</strong> writing quality, authorial texture and argumentative sufficiency are separate constructs. High-quality prose may still be machine-regular and may still require expressive reconstruction. Semantic fidelity remains protected; development occurs only where the argument diagnosis supports it.</div>
       ${lenAudit ? `<div class="length-audit ${lenAudit.respected ? "ok" : "warn"}"><strong>Length preference audit:</strong> ${esc(title(lenAudit.preference))} · source ${esc(lenAudit.sourceWords)} words → revised ${esc(lenAudit.revisedWords)} words (${lenAudit.delta >= 0 ? "+" : ""}${esc(lenAudit.delta)}, ${lenAudit.deltaPct >= 0 ? "+" : ""}${esc(lenAudit.deltaPct.toFixed(1))}%). <span>${esc(lenAudit.note)}</span></div>` : ""}
       ${signalChips ? `<div class="argdev-signals"><strong>Development signals</strong><div>${signalChips}</div></div>` : signalCount ? `<div class="argdev-signals"><strong>Development signals</strong><span class="muted"> ${esc(signalCount)} planner signal(s) triggered; run Analyse Only to inspect the paragraph-level types before revision.</span></div>` : '<div class="argdev-signals"><strong>Development signals</strong><span class="muted"> None triggered.</span></div>'}
       ${sufficiency?.interpretation ? `<details><summary>Why this matters</summary><p>${esc(sufficiency.interpretation)}</p><p class="muted">${esc(sufficiency.guardrail || "")}</p></details>` : ""}
