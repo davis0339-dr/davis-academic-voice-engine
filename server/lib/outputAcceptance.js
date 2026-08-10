@@ -2,9 +2,9 @@
 //
 // This module audits the prose AFTER generation. It is intentionally separate
 // from planner compliance: a fluent, grammatical, coherent candidate can still
-// fail when it remains rhetorically over-regular, source-skeleton dependent, or
-// more machine-shaped than its source. It does not infer authorship and does not
-// optimise any third-party detector score.
+// fail when it remains rhetorically over-regular, source-skeleton dependent,
+// machine-language dense, or more machine-shaped than its source. It does not
+// infer authorship and does not optimise any third-party detector score.
 
 import { diagnose } from "./diagnostics.js";
 import { assessAuthorialTexture } from "./authorialTexture.js";
@@ -15,6 +15,7 @@ import { resolveProfile } from "./styleProfileStore.js";
 import { auditPreservation } from "./preservation.js";
 import { extractProtectedSpans } from "./protect.js";
 import { splitSentences } from "./sentences.js";
+import { analyseMachineLanguageForensics } from "./machineLanguageForensics.js";
 
 const FORMAL_SECTION_RE = /^(?:purpose statement|research questions?(?: and hypotheses)?|hypotheses|hypothesis development|research question\s*\d*|operational definitions?|definitions of terms|assumptions|limitations|delimitations|references|appendix|table\s+\d+|figure\s+\d+)\s*:?[\s]*$/i;
 const NARRATIVE_SECTION_RE = /^(?:introduction|background(?: of the problem| to the study)?|statement of the problem|problem statement|literature review|conceptual review|theoretical review|empirical review|discussion|conclusion|research gap)\s*:?[\s]*$/i;
@@ -247,7 +248,19 @@ function textureAssessment(text, styleFilters = {}) {
   const profile = resolveProfile(styleFilters);
   const fingerprint = measureLanguageFingerprint(text);
   const languageDeviation = assessLanguageDeviation(fingerprint, profile.measured_language_family || null);
-  return assessAuthorialTexture({ text, diagnostics, cadenceDeviation, languageDeviation });
+  return {
+    assessment: assessAuthorialTexture({ text, diagnostics, cadenceDeviation, languageDeviation }),
+    diagnostics,
+  };
+}
+
+function calibratedTargetParagraphs(regularity) {
+  return (regularity?.paragraph_profiles || [])
+    .filter((row) => Number(row?.localRisk || row?.local_risk || 0) >= 0.42)
+    .sort((a, b) => Number(b?.localRisk || b?.local_risk || 0) - Number(a?.localRisk || a?.local_risk || 0))
+    .slice(0, 8)
+    .map((row) => Number.isInteger(row?.paragraphIndex) ? row.paragraphIndex : row?.paragraph_index)
+    .filter(Number.isInteger);
 }
 
 function machineComposite(text, styleFilters = {}) {
@@ -261,23 +274,38 @@ function machineComposite(text, styleFilters = {}) {
       label: "not_applicable_formal_only",
       texture: null,
       choreography: paragraphForensics([]),
+      discourse_regularity: { score: 0, label: "not_applicable_formal_only", paragraph_profiles: [] },
+      machine_language: { score: 0, label: "not_applicable_formal_only", target_paragraph_indices: [] },
       sentence_opening_risk: { risk: 0, diversity: 1, repeated_ratio: 0 },
       sentence_length_regularity: { risk: 0, cv: 0 },
       narrative_paragraph_count: 0,
     };
   }
-  const texture = textureAssessment(narrativeText, styleFilters);
+  const textureBundle = textureAssessment(narrativeText, styleFilters);
+  const texture = textureBundle.assessment;
   const choreography = paragraphForensics(paragraphs);
+  const discourseRegularity = textureBundle.diagnostics?.discourse_regularity_forensics || { score: 0, paragraph_profiles: [] };
+  const machineLanguage = textureBundle.diagnostics?.machine_language_forensics || analyseMachineLanguageForensics(narrativeText);
   const sentences = splitSentences(narrativeText);
   const openings = sentenceOpeningRisk(sentences);
   const lengths = lengthRegularityRisk(sentences);
   const textureRegularity = Number(texture?.machine_pattern_regularity?.score || 0);
-  const score = clamp01(textureRegularity * 0.42 + choreography.score * 0.40 + openings.risk * 0.10 + lengths.risk * 0.08);
+  const discourseScore = Math.max(Number(choreography.score || 0), Number(discourseRegularity?.score || 0));
+  const machineLanguageScore = Number(machineLanguage?.score || 0);
+  const score = clamp01(
+    textureRegularity * 0.28 +
+    discourseScore * 0.28 +
+    machineLanguageScore * 0.28 +
+    openings.risk * 0.08 +
+    lengths.risk * 0.08
+  );
   return {
     score: Number(score.toFixed(3)),
     label: score >= 0.66 ? "high" : score >= 0.43 ? "moderate" : "low",
     texture,
     choreography,
+    discourse_regularity: discourseRegularity,
+    machine_language: machineLanguage,
     sentence_opening_risk: openings,
     sentence_length_regularity: lengths,
     narrative_paragraph_count: paragraphs.length,
@@ -310,7 +338,13 @@ export function auditOutputAcceptance({
   const sourceTexture = Number(sourceMachine.texture?.authorial_texture?.score || 0);
   const candidateTexture = Number(candidateMachine.texture?.authorial_texture?.score || 0);
   const surfaceQuality = Number(candidateMachine.texture?.surface_quality?.score ?? 1);
+  const sourceMachineLanguage = Number(sourceMachine.machine_language?.score || 0);
+  const candidateMachineLanguage = Number(candidateMachine.machine_language?.score || 0);
+  const sourceDiscourseRegularity = Number(sourceMachine.discourse_regularity?.score || 0);
+  const candidateDiscourseRegularity = Number(candidateMachine.discourse_regularity?.score || 0);
   const machineDelta = Number((candidateMachine.score - sourceMachine.score).toFixed(3));
+  const machineLanguageDelta = Number((candidateMachineLanguage - sourceMachineLanguage).toFixed(3));
+  const discourseRegularityDelta = Number((candidateDiscourseRegularity - sourceDiscourseRegularity).toFixed(3));
   const textureDelta = Number((candidateTexture - sourceTexture).toFixed(3));
   const substantive = substantiveRatio(planSummary);
   const intensity = String(rewriteIntensity || "auto").toLowerCase();
@@ -326,15 +360,37 @@ export function auditOutputAcceptance({
   // Universal regression guard: no mode is permitted to make narrative prose
   // materially more machine-regular merely because the output looks polished.
   if (candidateMachine.score > sourceMachine.score + 0.04) reasons.push("machine_pattern_regression");
-  if (candidateMachine.score >= 0.72 && sourceMachine.score >= 0.43) reasons.push("high_machine_pattern_residual");
+  if (candidateMachine.score >= 0.68 && sourceMachine.score >= 0.40) reasons.push("high_machine_pattern_residual");
+
+  // Modern machine-language density is an independent acceptance dimension.
+  // This catches polished LLM-favoured academic language that may be obvious to a
+  // human reader even when sentence length, grammar and paragraph structure look strong.
+  if (candidateMachineLanguage > sourceMachineLanguage + 0.05) reasons.push("machine_language_regression");
+  if (candidateMachineLanguage >= 0.38) reasons.push("machine_language_residual");
+  if (candidateMachineLanguage >= 0.58) reasons.push("high_machine_language_residual");
+
+  // The calibrated cross-paragraph forensic engine is also authoritative at the
+  // release gate; a simpler local choreography score may not dilute it.
+  if (candidateDiscourseRegularity >= 0.62) reasons.push("high_discourse_regularity_residual");
+  if (candidateDiscourseRegularity > sourceDiscourseRegularity + 0.05) reasons.push("discourse_regularity_regression");
 
   // Assertive modes require positive movement when the source itself carries
-  // moderate/high machine-pattern regularity. This is a quality requirement, not
-  // a rewrite-distance quota.
+  // moderate/high machine-pattern or machine-language regularity. This is a
+  // quality requirement, not a rewrite-distance quota.
   const sourceNeedsPatternWork = sourceMachine.score >= 0.43;
   const requiredImprovement = deepMode && assertiveMode ? 0.07 : assertiveMode ? 0.04 : 0;
   if (sourceNeedsPatternWork && assertiveMode && candidateMachine.score > sourceMachine.score - requiredImprovement) {
     reasons.push("machine_pattern_reduction_insufficient");
+  }
+  const sourceNeedsLanguageWork = sourceMachineLanguage >= 0.34;
+  const requiredLanguageImprovement = deepMode && assertiveMode ? 0.10 : assertiveMode ? 0.06 : 0;
+  if (sourceNeedsLanguageWork && assertiveMode && candidateMachineLanguage > sourceMachineLanguage - requiredLanguageImprovement) {
+    reasons.push("machine_language_reduction_insufficient");
+  }
+  const sourceNeedsDiscourseWork = sourceDiscourseRegularity >= 0.42;
+  const requiredDiscourseImprovement = deepMode && assertiveMode ? 0.08 : assertiveMode ? 0.05 : 0;
+  if (sourceNeedsDiscourseWork && assertiveMode && candidateDiscourseRegularity > sourceDiscourseRegularity - requiredDiscourseImprovement) {
+    reasons.push("discourse_regularity_reduction_insufficient");
   }
 
   // A sophisticated near-source rewrite must not be cleared merely because the
@@ -357,24 +413,33 @@ export function auditOutputAcceptance({
 
   const uniqueReasons = [...new Set(reasons)];
   const machineImprovement = clamp01((sourceMachine.score - candidateMachine.score + 0.20) / 0.40);
+  const languageImprovement = clamp01((sourceMachineLanguage - candidateMachineLanguage + 0.18) / 0.36);
+  const discourseImprovement = clamp01((sourceDiscourseRegularity - candidateDiscourseRegularity + 0.18) / 0.36);
   const textureRetention = sourceMachine.narrative_paragraph_count === 0 ? 1 : clamp01(0.65 + textureDelta);
   const dependenceShouldCount = assertiveMode && moderateOrDeeper && substantive >= 0.10;
   const dependenceFitness = dependenceShouldCount ? clamp01(1 - dependence.score) : clamp01(1 - dependence.score * 0.35);
   const score = Math.round(100 * (
-    (preservationOk ? 1 : 0) * 0.30 +
-    surfaceQuality * 0.15 +
-    machineImprovement * 0.30 +
-    textureRetention * 0.15 +
-    dependenceFitness * 0.10
+    (preservationOk ? 1 : 0) * 0.28 +
+    surfaceQuality * 0.12 +
+    machineImprovement * 0.18 +
+    languageImprovement * 0.16 +
+    discourseImprovement * 0.12 +
+    textureRetention * 0.08 +
+    dependenceFitness * 0.06
   ));
 
   let status = "pass";
   if (hardFailures.length) status = "fail";
   else if (uniqueReasons.length) status = "review_required";
 
-  const targetParagraphIndices = [...new Set(candidateMachine.choreography.target_paragraph_indices || [])].slice(0, 6);
+  const targetParagraphIndices = [...new Set([
+    ...(candidateMachine.choreography.target_paragraph_indices || []),
+    ...(candidateMachine.machine_language?.target_paragraph_indices || []),
+    ...calibratedTargetParagraphs(candidateMachine.discourse_regularity),
+  ])].slice(0, 8);
+
   return {
-    version: "output-acceptance-v1.2",
+    version: "output-acceptance-v1.3",
     status,
     passed: status === "pass",
     score,
@@ -384,6 +449,12 @@ export function auditOutputAcceptance({
       source_machine_pattern: sourceMachine.score,
       candidate_machine_pattern: candidateMachine.score,
       machine_pattern_delta: machineDelta,
+      source_machine_language: Number(sourceMachineLanguage.toFixed(3)),
+      candidate_machine_language: Number(candidateMachineLanguage.toFixed(3)),
+      machine_language_delta: machineLanguageDelta,
+      source_discourse_regularity: Number(sourceDiscourseRegularity.toFixed(3)),
+      candidate_discourse_regularity: Number(candidateDiscourseRegularity.toFixed(3)),
+      discourse_regularity_delta: discourseRegularityDelta,
       source_authorial_texture: Number(sourceTexture.toFixed(3)),
       candidate_authorial_texture: Number(candidateTexture.toFixed(3)),
       authorial_texture_delta: textureDelta,
@@ -402,9 +473,9 @@ export function auditOutputAcceptance({
       external_detector_check_recommended: status === "pass",
       instruction: status === "pass"
         ? "Internal completed-output acceptance passed. External detector checks, if used, are now evaluation evidence rather than the first line of QA."
-        : "Do not spend an external detector check on this candidate yet. Repair the listed residuals and re-audit internally first.",
+        : "Do not spend an external detector check on this candidate yet. Repair machine-language, discourse-regularity, preservation or source-dependence residuals and re-audit internally first.",
     },
-    note: "This is a closed-loop manuscript-quality audit, not an AI-authorship classifier. High clarity, grammar or coherence cannot by themselves produce a pass when machine-pattern residuals or source-skeleton dependence remain high.",
+    note: "This is a closed-loop manuscript-quality audit, not an AI-authorship classifier. High clarity, grammar, coherence or sophistication cannot by themselves produce a pass when modern machine-language density, cross-paragraph regularity, machine-pattern residuals or source-skeleton dependence remain high.",
   };
 }
 
@@ -414,7 +485,14 @@ export function acceptanceImproved(before, after) {
   if (after.status === "fail" && before.status !== "fail") return false;
   const beforeMachine = Number(before.dimensions?.candidate_machine_pattern || 0);
   const afterMachine = Number(after.dimensions?.candidate_machine_pattern || 0);
+  const beforeLanguage = Number(before.dimensions?.candidate_machine_language || 0);
+  const afterLanguage = Number(after.dimensions?.candidate_machine_language || 0);
+  const beforeDiscourse = Number(before.dimensions?.candidate_discourse_regularity || 0);
+  const afterDiscourse = Number(after.dimensions?.candidate_discourse_regularity || 0);
   const beforeScore = Number(before.score || 0);
   const afterScore = Number(after.score || 0);
-  return afterScore >= beforeScore + 3 && afterMachine <= beforeMachine - 0.02;
+  const materialPatternGain = afterMachine <= beforeMachine - 0.02;
+  const materialLanguageGain = afterLanguage <= beforeLanguage - 0.04;
+  const materialDiscourseGain = afterDiscourse <= beforeDiscourse - 0.04;
+  return afterScore >= beforeScore + 3 && (materialPatternGain || materialLanguageGain || materialDiscourseGain);
 }
