@@ -79,47 +79,87 @@ test("Long Document uses Deep Aggressive when a deep diagnosis also exists", () 
 test("fallback whole-document blueprint maps the intellectual arc before chunk revision", () => {
   const text = [
     "Study Title",
+    "",
     "Introduction",
-    "Corporate debt is an important source of financing for listed manufacturers.",
+    "The study introduces a financing problem and identifies the board mechanisms under examination.",
+    "",
     "Background of the Problem",
-    "Governance evidence is mixed across debt markets and institutional settings.",
+    "The background develops why the financing problem matters and narrows toward the applied gap.",
+    "",
     "Problem Statement",
-    "Decision-makers lack integrated contemporary evidence on which board mechanisms are associated with lower debt cost.",
+    "The problem statement identifies the unresolved decision problem for finance leaders.",
+    "",
     "Purpose Statement",
-    "The purpose of this study is to examine and explain those relationships.",
-  ].join("\n\n");
+    "The purpose specifies the variables, population and intended explanatory sequence.",
+  ].join("\n");
   const map = buildDocumentMap(text);
   const blueprint = buildFallbackBlueprint(text, map);
-  assert.ok(blueprint.sections.length >= 3);
-  assert.ok(blueprint.intellectual_arc.length >= 2);
-  assert.ok(blueprint.global_constraints.some((rule) => /evidence|citation|meaning/i.test(rule)));
+  assert.equal(blueprint.version, "longdoc-blueprint-v2");
+  assert.ok(blueprint.argument_arc.length >= 4);
+  assert.match(blueprint.document_goal, /complete argument/i);
+  assert.ok(blueprint.consistency_constraints.some((rule) => /variables|methods|study stage/i.test(rule)));
+  assert.ok(blueprint.rhetoric_safeguards.some((rule) => /preserve the research and formal artefacts/i.test(rule)));
 });
 
 test("Deep Authorial transformation coverage rejects an 85% exact-retention pattern", () => {
-  const sourceSentences = Array.from({ length: 20 }, (_, i) => `Source sentence ${i + 1} explains governance mechanism ${i + 1} in the firm.`);
-  const source = sourceSentences.join(" ");
-  const revised = sourceSentences.map((sentence, i) => i < 17 ? sentence : `Reconstructed argument ${i + 1} changes the information architecture materially.`).join(" ");
-  const result = auditTransformationCoverage({
-    sourceText: source,
-    revisedText: revised,
-    intensity: "deep",
-    naturalisation: "authorial",
+  const sourceParagraphs = Array.from({ length: 20 }, (_, index) =>
+    `Governance paragraph ${index + 1} explains a distinct financing mechanism and its implications for creditor assessment.`
+  );
+  const revisedParagraphs = sourceParagraphs.map((paragraph, index) =>
+    index < 17 ? paragraph : `Creditor assessment is developed differently in revised substantive paragraph ${index + 1}, while the original research meaning remains fixed.`
+  );
+  const chunks = sourceParagraphs.map((sourceText, index) => ({
+    index,
+    heading: null,
+    sourceText,
+    revisedText: revisedParagraphs[index],
+    wordCount: 90,
+    rewriteMode: "rewrite",
+  }));
+
+  const audit = auditTransformationCoverage({
+    sourceText: sourceParagraphs.join("\n\n"),
+    revisedText: revisedParagraphs.join("\n\n"),
+    chunks,
+    requestedIntensity: "deep",
+    requestedNaturalisation: "authorial",
   });
-  assert.equal(result.blocking, true);
-  assert.ok(result.exact_retention_ratio >= 0.8);
+
+  assert.equal(audit.enforced, true);
+  assert.equal(audit.mode_class, "deep_authorial");
+  assert.equal(audit.passed, false);
+  assert.equal(audit.under_transformed_for_selected_mode, true);
+  assert.ok(audit.target_chunk_indices.length >= 17);
 });
 
 test("whole-document audit rejects a candidate that becomes systematically more choreographed across chunks", () => {
-  const source = [
-    "Governance evidence differs across settings. Some firms face stronger monitoring constraints, while others operate under weaker creditor protections.",
-    "Debt pricing also varies with leverage and financing conditions. The empirical literature therefore does not reduce to one stable relationship.",
-    "Board composition is another source of heterogeneity. Evidence on independence, leadership and diversity remains conditional.",
-  ].join("\n\n");
-  const revised = [
-    "Three principal findings emerge. First, governance matters. Second, leverage matters. Third, conditions matter.",
-    "Three practical implications follow. First, monitoring matters. Second, pricing matters. Third, context matters.",
-    "Three conclusions follow. First, independence matters. Second, leadership matters. Third, diversity matters.",
-  ].join("\n\n");
-  const audit = auditWholeDocumentRegularity({ sourceText: source, revisedText: revised });
-  assert.equal(audit.blocking, true);
+  const sourceChunks = [
+    "Creditors use financial information when they assess borrowers. Reporting quality can also matter. The implications differ across firms and contracts.",
+    "Board independence has been associated with debt outcomes in earlier studies. The relationship is not constant. Leverage and market conditions alter its interpretation.",
+    "CEO authority raises a different question. Some studies examine broad power measures rather than duality itself. The distinction remains relevant to measurement.",
+    "Gender diversity evidence comes from several institutional settings. Results differ. The U.S. setting therefore requires careful qualification.",
+  ];
+  const revisedChunks = [
+    "This problem extends to the way creditors evaluate borrowers. Although accounting information remains useful, governance signals also matter because they influence monitoring, which means the financing relationship must be interpreted through several connected mechanisms. Taken together, these considerations demonstrate an important implication for the analysis.",
+    "A similar problem arises with board independence. Although monitoring may improve, the debt-cost consequence can change when leverage rises or credit conditions deteriorate, which means the same governance mechanism can carry different implications. Taken together, the evidence therefore demonstrates a conditional relationship.",
+    "This distinction is important for CEO authority. Although executive power can affect monitoring, studies often use broader power measures rather than duality itself, which means the empirical construct must be interpreted carefully. Taken together, these findings therefore support a more refined analysis.",
+    "A similar problem arises with gender diversity. Although evidence from other settings is informative, institutional conditions differ across markets, which means the U.S. setting cannot be assumed to reproduce the same relationship. Taken together, these findings therefore establish an important contextual qualification.",
+  ];
+  const sourceText = sourceChunks.join("\n\n");
+  const revisedText = revisedChunks.join("\n\n");
+  const chunks = sourceChunks.map((sourceText, index) => ({
+    index,
+    heading: `Section ${index + 1}`,
+    sourceText,
+    revisedText: revisedChunks[index],
+    rewriteMode: "rewrite",
+  }));
+
+  const audit = auditWholeDocumentRegularity({ sourceText, revisedText, chunks });
+  assert.equal(audit.version, "longdoc-global-audit-v2");
+  assert.equal(audit.passed, false);
+  assert.equal(audit.status, "selective_repair_required");
+  assert.ok(audit.risk_delta > 0);
+  assert.ok(audit.systemic_signal_ids.length > 0 || audit.severe_cross_chunk_homogenisation);
+  assert.ok(audit.target_chunk_indices.length > 0);
 });
