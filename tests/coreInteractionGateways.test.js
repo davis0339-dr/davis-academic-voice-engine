@@ -40,7 +40,7 @@ test("Deep Authorial cannot coexist silently with Moderate intensity in the brow
   assert.match(js, /silently downgraded to Faithful behind the scenes/);
 });
 
-test("Researcher Studio direct evidence routing repairs partial initialisation instead of timing out and losing the file selection", () => {
+test("Researcher Studio direct evidence routing preflights readiness and repairs partial initialisation without a short false-failure timer", () => {
   const html = read("public/studio.html");
   const router = read("public/researchEvidenceUploadRouter.js");
   const gateway = read("public/researchStudioEvidenceGateway.js");
@@ -50,15 +50,20 @@ test("Researcher Studio direct evidence routing repairs partial initialisation i
   assert.match(html, /researchStudioEvidenceGateway\.js\?v=3\.2\.0/);
   assert.match(html, /researchEvidenceUploadRouter\.js\?v=3\.2\.1/);
 
-  assert.match(router, /const ROUTER_VERSION = "3\.2\.1"/);
+  assert.match(router, /const ROUTER_VERSION = "3\.3\.0"/);
+  assert.match(router, /const REPAIR_MAX_MS = 30000/);
   assert.match(router, /function researchStudioTargetReady\(/);
   assert.match(router, /function removePartialResearchStudio\(/);
   assert.match(router, /function loadRepairScript\(/);
   assert.match(router, /async function repairResearchStudioUi\(/);
   assert.match(router, /async function ensureResearchEvidenceTarget\(/);
+  assert.match(router, /async function preflightResearchStudio\(/);
+  assert.match(router, /queueMicrotask\(\(\) =>/);
   assert.match(router, /targetConsumedFiles/);
-  assert.match(router, /replay the same File objects/);
+  assert.match(router, /replaying the same source automatically/);
+  assert.doesNotMatch(router, /REPAIR_WAIT_MS\s*=\s*6000/);
   assert.doesNotMatch(router, /did not initialise within 12 seconds/);
+  assert.doesNotMatch(router, /could not be restored automatically/);
 
   assert.match(gateway, /window\.__DavisEvidenceUploadRouter/);
   assert.match(gateway, /await router\.routeFiles\(chosen\)/);
