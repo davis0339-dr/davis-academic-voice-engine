@@ -48,7 +48,7 @@
 
   <details class="studio-evidence-card" open>
     <summary><strong>Editor / Long Document context handoff</strong></summary>
-    <p class="muted">When opened from the editor, the current source and revision are copied here through browser-local handoff. When opened from Long Document evidence improvement, the original manuscript remains the fidelity reference and the reworked candidate becomes the evidence-development target.</p>
+    <p class="muted">When opened from the editor, the current source and revision are copied here through browser-local handoff. When opened from Long Document evidence improvement, the original manuscript remains the fidelity reference and the reworked candidate becomes the evidence-development target. This forward evidence-and-judgment workflow remains available alongside the separate manuscript-first coauthoring path inside Researcher Studio.</p>
     <div class="studio-context">
       <label class="studio-context-card">Source/manuscript fidelity context
         <textarea id="sourceText" placeholder="Optional manuscript context from the Editor or Long Document…"></textarea>
@@ -77,7 +77,7 @@
         <h3>Evidence Workspace — add supporting materials</h3>
         <p>Documents are sent to the direct Evidence Workspace. CSV/XLSX evidence banks are routed to the browser-local Literature Evidence Bank so larger research workbooks do not hit the small-document reader limit.</p>
       </div>
-      <span class="evidence-gateway-badge">Evidence Gateway v3.2.0</span>
+      <span class="evidence-gateway-badge">Evidence Gateway v3.2.1</span>
     </div>
 
     <label class="evidence-native-upload"><strong>Choose evidence files from this device</strong>
@@ -128,14 +128,15 @@
 <script src="/runtimeGuard.js"></script>
 <script src="/researchStudioCandidateBridge.js"></script>
 <script src="/researchStudioUI.js?v=3.1.1"></script>
+<script src="/researchCoauthoringUI.js?v=1.0.0"></script>
 <script src="/researchStudioEvidenceGateway.js?v=3.2.0"></script>
 <script src="/researchStudioEvidenceCoreUI.js?v=2.2.0"></script>
 <script src="/researchStudioCapabilitiesUI.js"></script>
 <script src="/researchEvidenceBankUI.js?v=3.2.0"></script>
-<script src="/researchEvidenceUploadRouter.js?v=3.2.0"></script>
+<script src="/researchEvidenceUploadRouter.js?v=3.2.1"></script>
 <script src="/longDocumentEvidenceHandoffUI.js"></script>
 <script src="/detectorEvidenceUI.js"></script>
-<script src="/studioVoiceUI.js"></script>
+<script src="/studioVoiceUI.js?v=1.1.0"></script>
 <script src="/studioBootstrap.js?v=3.1.0"></script>
 </body>
 </html>
