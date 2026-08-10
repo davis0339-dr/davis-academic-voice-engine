@@ -10,7 +10,7 @@
   .workspace-nav a{display:inline-flex;align-items:center;padding:.42rem .7rem;border:1px solid #465b74;border-radius:999px;text-decoration:none;color:inherit;font-size:.86rem}
   .workspace-nav a.active{border-color:#62e0b0;background:rgba(98,224,176,.08)}
   .workspace-nav a:hover{background:rgba(255,255,255,.05)}
-  .evidence-input-gateway{border-color:#4e779d!important}
+  .evidence-input-gateway{border-color:#4e779d!important;margin:.8rem 0 1rem}
   .evidence-gateway-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap}
   .evidence-gateway-head h3{margin:.1rem 0}.evidence-gateway-head p{margin:.35rem 0;color:var(--muted)}
   .evidence-gateway-badge{border:1px solid #4e779d;border-radius:999px;padding:.25rem .55rem;color:#b9c9da;font-size:.78rem;white-space:nowrap}
@@ -25,6 +25,7 @@
   .evidence-gateway-paste input,.evidence-gateway-paste textarea{width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:.6rem}
   .evidence-gateway-actions{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.6rem 0}
   #evidenceGatewayStatus{display:block;margin-top:.5rem}
+  .studio-workflow-note{margin:.6rem 0 0;color:var(--muted)}
   @media(max-width:760px){.topbar{align-items:flex-start;flex-wrap:wrap}.workspace-nav{width:100%;margin-left:0}.evidence-gateway-actions button{width:100%}}
 </style>
 <script>window.AVE_WORKSPACE="research-evidence-studio";</script>
@@ -42,13 +43,13 @@
 <main class="studio-shell">
   <section class="studio-evidence-card">
     <h2>Research &amp; Evidence Studio</h2>
-    <p>This workspace contains the heavier evidence-development and researcher-reasoning tools. It uses the same Davis Voice Engine backend, but it is isolated from the Editor + Detector page so its corpus panels, source workspace and reasoning tools cannot slow manuscript editing.</p>
+    <p>This workspace develops a manuscript from the researcher's reasoning, evidence and explicit decisions. It is separate from Editor + Detector so the heavier research workflow cannot slow ordinary manuscript editing.</p>
     <div id="studioShellStatus" class="status-message" aria-live="polite"></div>
   </section>
 
-  <details class="studio-evidence-card" open>
+  <details class="studio-evidence-card">
     <summary><strong>Editor / Long Document context handoff</strong></summary>
-    <p class="muted">When opened from the editor, the current source and revision are copied here through browser-local handoff. When opened from Long Document evidence improvement, the original manuscript remains the fidelity reference and the reworked candidate becomes the evidence-development target. This forward evidence-and-judgment workflow remains available alongside the separate manuscript-first coauthoring path inside Researcher Studio.</p>
+    <p class="muted">The original manuscript remains the fidelity reference. A revised or reworked candidate can be carried alongside it for evidence development and integrity checking.</p>
     <div class="studio-context">
       <label class="studio-context-card">Source/manuscript fidelity context
         <textarea id="sourceText" placeholder="Optional manuscript context from the Editor or Long Document…"></textarea>
@@ -60,63 +61,136 @@
   </details>
 
   <details class="studio-evidence-card">
-    <summary><strong>Style-family context</strong></summary>
+    <summary><strong>Style-family context (optional)</strong></summary>
+    <p class="muted">Use these controls only when a particular academic family is relevant. Leaving a field on Auto avoids inventing a narrow profile that the corpus does not support.</p>
     <div class="studio-filters">
-      <label>Document type<select id="documentType"></select></label>
-      <label>Region<select id="region"></select></label>
-      <label>Degree<select id="degree"></select></label>
-      <label>Discipline<select id="discipline"></select></label>
-      <label>Research mode<select id="researchMode"></select></label>
-      <label>Section<select id="section"></select></label>
+      <label>Document type<select id="documentType" autocomplete="off"></select></label>
+      <label>Region<select id="region" autocomplete="off"></select></label>
+      <label>Degree<select id="degree" autocomplete="off"></select></label>
+      <label>Discipline<select id="discipline" autocomplete="off"></select></label>
+      <label>Research mode<select id="researchMode" autocomplete="off"></select></label>
+      <label>Section<select id="section" autocomplete="off"></select></label>
     </div>
   </details>
 
-  <section id="evidenceInputGateway" class="studio-evidence-card evidence-input-gateway">
-    <div class="evidence-gateway-head">
-      <div>
-        <h3>Evidence Workspace — add supporting materials</h3>
-        <p>Documents are sent to the direct Evidence Workspace. CSV/XLSX evidence banks are routed to the browser-local Literature Evidence Bank so larger research workbooks do not hit the small-document reader limit.</p>
-      </div>
-      <span class="evidence-gateway-badge">Evidence Gateway v3.2.1</span>
-    </div>
-
-    <label class="evidence-native-upload"><strong>Choose evidence files from this device</strong>
-      <input id="evidenceGatewayFiles" type="file" multiple accept=".txt,.md,.markdown,.docx,.pdf,.csv,.xlsx,text/plain,text/markdown,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-      <span class="muted">TXT/MD/DOCX/text-based PDF: direct workspace (5 MB per file). CSV/XLSX: Literature Evidence Bank (25 MB, up to 10,000 indexed rows per worksheet in this build).</span>
-    </label>
-
-    <div id="evidenceGatewayDropZone" class="evidence-gateway-drop" role="button" tabindex="0" aria-label="Drag and drop evidence files here or press Enter to choose files">
-      <strong>Drag and drop evidence files here</strong>
-      <span>Journal articles, reports and documents go to direct evidence; datasets and Excel literature workbooks go to the Literature Evidence Bank.</span>
-    </div>
-
-    <details class="evidence-gateway-paste" open>
-      <summary><strong>Paste a document, article excerpt, report or supporting source</strong></summary>
-      <div class="evidence-gateway-actions">
-        <button id="pasteGatewayClipboardBtn" type="button">Paste text from clipboard</button>
-        <span class="muted">or click in the box and use Ctrl+V / Cmd+V</span>
-      </div>
-      <label>Source title / label
-        <input id="evidenceGatewayPasteTitle" type="text" maxlength="120" placeholder="e.g. Anderson et al. (2004), supervisor memo, industry report" />
-      </label>
-      <label>Source text
-        <textarea id="evidenceGatewayPasteText" rows="7" placeholder="Paste the article, journal excerpt, report passage, supporting document, dataset notes or other source material here…"></textarea>
-      </label>
-      <button id="addGatewayPastedSourceBtn" type="button">Add pasted source to Evidence Workspace</button>
-    </details>
-    <span id="evidenceGatewayStatus" class="file-status" aria-live="polite">Ready. Direct evidence routing can repair a partial Researcher Studio bootstrap automatically; spreadsheet evidence is routed separately to the Literature Evidence Bank.</span>
-  </section>
-
   <section class="tabs">
     <div class="tab-headers">
-      <button class="tab-header active" data-tab="evidence">Evidence &amp; Methodology</button>
+      <button class="tab-header active" data-tab="researchstudio">Researcher Studio</button>
+      <button class="tab-header" data-tab="evidence">Evidence &amp; Methodology</button>
     </div>
 
-    <div id="tab-evidence" class="tab-panel active">
+    <div id="tab-researchstudio" class="tab-panel active">
+      <section class="research-studio-intro">
+        <h3>Researcher-led manuscript development</h3>
+        <p>Start from the manuscript and your own understanding. The system can question, map, challenge and reconstruct the work, but the researcher's claims, boundaries, interpretations and decisions remain visible and reviewable.</p>
+        <p class="muted">Workflow: manuscript → researcher reasoning → approved argument map → evidence alignment/challenge → controlled reconstruction → integrity check.</p>
+      </section>
+
+      <div class="research-studio-grid">
+        <section class="research-studio-card">
+          <h4>1. Explain what you really mean</h4>
+          <textarea id="researcherThoughts" rows="8" placeholder="Explain what you think, what bothers you about the literature, why a relationship should exist, what you do not want to claim, or what conclusion you are leaning toward. Rough language is useful."></textarea>
+          <label class="research-check"><input id="includeEditorContext" type="checkbox" checked /> Use the current Source/manuscript text as context</label>
+          <div class="action-row">
+            <button id="buildArgumentMapBtn" class="primary" type="button">Build Argument Map</button>
+            <button id="clearResearchStudioBtn" type="button">Clear Studio</button>
+          </div>
+        </section>
+
+        <section class="research-studio-card">
+          <h4>2. Researcher-approved argument map</h4>
+          <p class="muted">Edit statements directly. Accept, modify or reject each intellectual move before reconstruction.</p>
+          <div id="argumentMapSummary"></div>
+          <div id="argumentMapNodes"><p class="muted">Build an argument map first.</p></div>
+        </section>
+      </div>
+
+      <section class="research-studio-card" id="researchEvidenceWorkspaceCard">
+        <h4>3. Evidence Workspace</h4>
+        <p class="studio-workflow-note">Add supporting materials here, then align them to the approved argument or use them to challenge the reasoning. This is the single evidence-ingestion surface for Researcher Studio.</p>
+        <div class="file-toolbar" hidden>
+          <label class="file-button" for="researchEvidenceFiles">Add source materials</label>
+          <input id="researchEvidenceFiles" class="visually-hidden" type="file" multiple accept=".txt,.md,.markdown,.docx,.pdf,.csv,.xlsx,text/plain,text/markdown,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+          <span id="researchEvidenceStatus" class="file-status" aria-hidden="true"></span>
+        </div>
+
+        <section id="evidenceInputGateway" class="evidence-input-gateway">
+          <div class="evidence-gateway-head">
+            <div>
+              <h3>Add supporting materials</h3>
+              <p>TXT/MD/DOCX/text-based PDF sources enter the Evidence Workspace directly. CSV/XLSX workbooks are routed to the Literature Evidence Bank.</p>
+            </div>
+            <span class="evidence-gateway-badge">Evidence Gateway v4.0.0</span>
+          </div>
+
+          <label class="evidence-native-upload"><strong>Choose evidence files from this device</strong>
+            <input id="evidenceGatewayFiles" type="file" multiple accept=".txt,.md,.markdown,.docx,.pdf,.csv,.xlsx,text/plain,text/markdown,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+            <span class="muted">Direct documents: 5 MB per file. CSV/XLSX: Literature Evidence Bank, 25 MB per workbook.</span>
+          </label>
+
+          <div id="evidenceGatewayDropZone" class="evidence-gateway-drop" role="button" tabindex="0" aria-label="Drag and drop evidence files here or press Enter to choose files">
+            <strong>Drag and drop evidence files here</strong>
+            <span>Journal articles, reports and documents go to direct evidence; datasets and Excel literature workbooks go to the Literature Evidence Bank.</span>
+          </div>
+
+          <details class="evidence-gateway-paste" open>
+            <summary><strong>Paste a document, article excerpt, report or supporting source</strong></summary>
+            <div class="evidence-gateway-actions">
+              <button id="pasteGatewayClipboardBtn" type="button">Paste text from clipboard</button>
+              <span class="muted">or click in the box and use Ctrl+V / Cmd+V</span>
+            </div>
+            <label>Source title / label
+              <input id="evidenceGatewayPasteTitle" type="text" maxlength="120" placeholder="e.g. Anderson et al. (2004), supervisor memo, industry report" />
+            </label>
+            <label>Source text
+              <textarea id="evidenceGatewayPasteText" rows="7" placeholder="Paste the article, journal excerpt, report passage, supporting document, dataset notes or other source material here…"></textarea>
+            </label>
+            <button id="addGatewayPastedSourceBtn" type="button">Add pasted source to Evidence Workspace</button>
+          </details>
+          <span id="evidenceGatewayStatus" class="file-status" aria-live="polite">Evidence Workspace ready.</span>
+        </section>
+
+        <div id="researchSourceList" class="research-source-list"><p class="muted">No evidence sources added.</p></div>
+        <div class="action-row">
+          <button id="alignEvidenceBtn" type="button">Align Evidence to Argument</button>
+          <button id="challengeArgumentBtn" type="button">Challenge My Reasoning</button>
+        </div>
+        <div id="evidenceAlignmentResults"></div>
+        <div id="researchChallengeResults"></div>
+      </section>
+
+      <section class="research-studio-card">
+        <h4>4. Controlled academic reconstruction</h4>
+        <label>Additional constraints (optional)
+          <textarea id="researchReconstructConstraints" rows="3" placeholder="e.g. Keep proposal tense; do not introduce a moderator; preserve the negative expected relationship."></textarea>
+        </label>
+        <div class="action-row">
+          <button id="reconstructResearchBtn" class="primary" type="button">Build Academic Version</button>
+          <button id="copyResearchDraftBtn" type="button">Send draft back to Editor</button>
+        </div>
+        <textarea id="researchDraft" rows="10" readonly placeholder="The controlled academic reconstruction will appear here."></textarea>
+        <div id="researchDraftMeta"></div>
+      </section>
+
+      <section class="research-studio-card">
+        <h4>5. Argument Integrity Check</h4>
+        <p class="muted">Use this after another LLM, editor or supervisor changes the prose. The check compares intellectual content against your approved argument map, not against wording.</p>
+        <textarea id="integrityCandidate" rows="7" placeholder="Paste the later polished/reworked version here, or use the current Revised editor text."></textarea>
+        <div class="action-row">
+          <button id="useRevisedForIntegrityBtn" type="button">Use Current Revised Text</button>
+          <button id="runIntegrityBtn" type="button">Check Argument Integrity</button>
+        </div>
+        <div id="integrityResults"></div>
+      </section>
+
+      <div id="researchStudioStatus" class="status-message" aria-live="polite"></div>
+    </div>
+
+    <div id="tab-evidence" class="tab-panel">
       <div id="studioMethodology"><p class="muted">Loading corpus coverage…</p></div>
       <section class="studio-evidence-card">
         <h3>Detector research evidence basis</h3>
-        <p class="muted">This is the development/evidence view that was removed from the live editor. It documents what the detector-research layer genuinely measures now and what still requires deeper NLP/statistical implementation.</p>
+        <p class="muted">This documents what the detector-research layer genuinely measures now and what still requires deeper NLP/statistical implementation.</p>
         <div id="detectorResearchResults"></div>
       </section>
     </div>
@@ -124,19 +198,19 @@
 </main>
 
 <script src="/safeDom.js"></script>
-<script src="/fileImport.js?v=3.1.0"></script>
+<script src="/fileImport.js?v=4.0.0"></script>
 <script src="/runtimeGuard.js"></script>
 <script src="/researchStudioCandidateBridge.js"></script>
-<script src="/researchStudioUI.js?v=3.1.1"></script>
-<script src="/researchCoauthoringUI.js?v=1.0.0"></script>
-<script src="/researchStudioEvidenceGateway.js?v=3.2.0"></script>
-<script src="/researchStudioEvidenceCoreUI.js?v=2.2.0"></script>
-<script src="/researchStudioCapabilitiesUI.js"></script>
+<script src="/researchStudioUI.js?v=4.0.0"></script>
+<script src="/researchCoauthoringUI.js?v=4.0.0"></script>
+<script src="/researchStudioEvidenceGateway.js?v=4.0.0"></script>
+<script src="/researchStudioEvidenceCoreUI.js?v=4.0.0"></script>
+<script src="/researchStudioCapabilitiesUI.js?v=4.0.0"></script>
 <script src="/researchEvidenceBankUI.js?v=3.2.0"></script>
-<script src="/researchEvidenceUploadRouter.js?v=3.2.1"></script>
+<script src="/researchEvidenceUploadRouter.js?v=4.0.0"></script>
 <script src="/longDocumentEvidenceHandoffUI.js"></script>
 <script src="/detectorEvidenceUI.js"></script>
 <script src="/studioVoiceUI.js?v=1.1.0"></script>
-<script src="/studioBootstrap.js?v=3.1.0"></script>
+<script src="/studioBootstrap.js?v=4.0.0"></script>
 </body>
 </html>
