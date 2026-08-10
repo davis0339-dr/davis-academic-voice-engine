@@ -16,15 +16,21 @@ export function assessSourceBeforeRewrite({ text, styleFilters } = {}) {
   const measuredLanguageFamily = profileResolution.measured_language_family || null;
   const fingerprint = measureLanguageFingerprint(text || "");
   const languageDeviation = assessLanguageDeviation(fingerprint, measuredLanguageFamily);
-  const authorialTexture = assessAuthorialTexture({
+  const textureAssessment = assessAuthorialTexture({
     text,
     diagnostics,
     cadenceDeviation,
     languageDeviation,
   });
+  const discourseRegularityForensics = diagnostics?.discourse_regularity_forensics || null;
+  const authorialTexture = {
+    ...textureAssessment,
+    discourse_regularity_forensics: discourseRegularityForensics,
+  };
 
   return {
     authorial_texture: authorialTexture,
+    discourse_regularity_forensics: discourseRegularityForensics,
     diagnostics,
     cadence_deviation: cadenceDeviation,
     language_fingerprint: fingerprint,
