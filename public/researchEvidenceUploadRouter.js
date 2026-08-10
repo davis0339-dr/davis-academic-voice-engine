@@ -1,11 +1,12 @@
 (() => {
   "use strict";
 
-  const ROUTER_VERSION = "3.1.1";
+  const ROUTER_VERSION = "3.2.0";
   const SPREADSHEET_RE = /\.(?:xlsx|csv)$/i;
   const BANK_MAX_BYTES = 25 * 1024 * 1024;
   const DIRECT_SOURCE_MAX_BYTES = 5 * 1024 * 1024;
-  const TARGET_WAIT_MS = 12000;
+  const TARGET_WAIT_MS = 2500;
+  const REPAIR_WAIT_MS = 6000;
   const POLL_MS = 80;
   const $ = (id) => document.getElementById(id);
 
@@ -56,6 +57,68 @@
     });
   }
 
+  function researchStudioTargetReady() {
+    const input = $("researchEvidenceFiles");
+    const panel = $("tab-researchstudio");
+    const sourceList = $("researchSourceList");
+    const argumentButton = $("buildArgumentMapBtn");
+    return input && panel && sourceList && argumentButton ? input : null;
+  }
+
+  function removePartialResearchStudio() {
+    const panel = $("tab-researchstudio");
+    const button = document.querySelector('.tab-header[data-tab="researchstudio"]');
+    try { panel?.remove(); } catch {}
+    try { button?.remove(); } catch {}
+  }
+
+  function loadRepairScript() {
+    return new Promise((resolve) => {
+      const prior = document.querySelector('script[data-davis-research-studio-repair="true"]');
+      if (prior) prior.remove();
+      const script = document.createElement("script");
+      script.dataset.davisResearchStudioRepair = "true";
+      script.src = `/researchStudioUI.js?v=3.1.1-repair-${Date.now()}`;
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(Boolean(ok));
+      };
+      script.onload = () => finish(true);
+      script.onerror = () => finish(false);
+      const timer = setTimeout(() => finish(false), REPAIR_WAIT_MS);
+      document.body.appendChild(script);
+    });
+  }
+
+  async function repairResearchStudioUi() {
+    if (researchStudioTargetReady()) return researchStudioTargetReady();
+    gatewayStatus("Researcher Studio evidence controls are incomplete. Repairing this page automatically…");
+    removePartialResearchStudio();
+    const loaded = await loadRepairScript();
+    if (!loaded) return null;
+    return waitForElement("researchEvidenceFiles", REPAIR_WAIT_MS);
+  }
+
+  async function ensureResearchEvidenceTarget() {
+    const ready = researchStudioTargetReady();
+    if (ready) return ready;
+
+    await waitForElement("researchEvidenceFiles", TARGET_WAIT_MS);
+    const afterWait = researchStudioTargetReady();
+    if (afterWait) return afterWait;
+
+    return repairResearchStudioUi();
+  }
+
+  async function targetConsumedFiles(target) {
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    return !target?.files?.length;
+  }
+
   function mirrorBankStatus(fileName) {
     const bankStatus = $("literatureBankStatus");
     if (!bankStatus) return;
@@ -89,7 +152,7 @@
     gatewayStatus(`Routing ${file.name} (${fileSizeMb(file)} MB) to the Literature Evidence Bank…`);
     const bankInput = await waitForElement("literatureBankFile");
     if (!bankInput) {
-      gatewayStatus("The Literature Evidence Bank did not initialise within 12 seconds. No background upload is still running. Reload the Studio and try again; if this repeats, the Studio initialisation itself has failed.", true);
+      gatewayStatus("The Literature Evidence Bank did not initialise. No background upload is still running. Reload the Studio and try again; if this repeats, the Literature Evidence Bank bootstrap itself has failed.", true);
       return false;
     }
 
@@ -114,15 +177,29 @@
     }
 
     gatewayStatus(`Preparing ${chosen.length} direct evidence source(s)…`);
-    const target = await waitForElement("researchEvidenceFiles");
+    let target = await ensureResearchEvidenceTarget();
     if (!target) {
-      gatewayStatus("The Researcher Studio Evidence Workspace did not initialise within 12 seconds. No background transfer is still running. Reload the Studio and retry.", true);
+      gatewayStatus("Researcher Studio evidence controls could not be restored automatically. No background transfer is running. Reload this page once; if the problem repeats, the Studio bootstrap has failed and should be treated as a product defect rather than a file problem.", true);
       return false;
     }
 
     try {
       copyFilesIntoInput(target, chosen);
-      gatewayStatus(`${chosen.length} direct evidence source(s) handed to the Evidence Workspace for reading.`);
+      if (await targetConsumedFiles(target)) {
+        gatewayStatus(`${chosen.length} direct evidence source(s) handed to the Evidence Workspace for reading.`);
+        return true;
+      }
+
+      // A target element existed but no Researcher Studio consumer handled its
+      // change event. This is a partial-initialisation state, so repair once and
+      // replay the same File objects instead of asking the user to select again.
+      gatewayStatus("Evidence input was present but its Researcher Studio handler was not active. Repairing the Studio and retrying automatically…");
+      removePartialResearchStudio();
+      target = await repairResearchStudioUi();
+      if (!target) throw new Error("Researcher Studio repair did not restore the evidence input.");
+      copyFilesIntoInput(target, chosen);
+      if (!(await targetConsumedFiles(target))) throw new Error("Researcher Studio evidence handler did not consume the selected files after automatic repair.");
+      gatewayStatus(`${chosen.length} direct evidence source(s) restored and handed to the Evidence Workspace for reading.`);
       return true;
     } catch (err) {
       gatewayStatus(`Could not transfer the selected evidence source(s): ${err.message}`, true);
@@ -181,24 +258,26 @@
 
   function clearFalseInitialisingState() {
     const text = String($("evidenceGatewayStatus")?.textContent || "");
-    if (!/still initialising|transferred automatically/i.test(text)) return;
-    if ($("researchEvidenceFiles") || $("literatureBankFile")) {
-      gatewayStatus("Evidence routes are ready. Choose the file again if it was selected before the Studio finished loading.");
+    if (!/still initialising|transferred automatically|did not initialise within 12 seconds/i.test(text)) return;
+    if (researchStudioTargetReady() || $("literatureBankFile")) {
+      gatewayStatus("Evidence routes are ready. Choose the file again only if the earlier selection was made before this self-healing router loaded.");
       return;
     }
-    gatewayStatus("Researcher Studio has not initialised. No upload is processing in the background. Reload the Studio before selecting evidence.", true);
+    gatewayStatus("Researcher Studio evidence controls are not ready yet. The router will attempt an automatic repair when a direct source is selected; no upload is currently processing in the background.");
   }
 
   document.addEventListener("change", interceptGatewayChange, true);
   document.addEventListener("change", interceptDirectWorkspaceSpreadsheetChange, true);
   document.addEventListener("drop", interceptGatewayDrop, true);
-  window.addEventListener("load", () => setTimeout(clearFalseInitialisingState, 1500), { once: true });
-  setTimeout(clearFalseInitialisingState, 15000);
+  window.addEventListener("load", () => setTimeout(clearFalseInitialisingState, 800), { once: true });
+  setTimeout(clearFalseInitialisingState, 5000);
 
   window.__DavisEvidenceUploadRouter = {
     version: ROUTER_VERSION,
     routeFiles,
     routeSpreadsheet,
+    routeDirectSources,
+    ensureResearchEvidenceTarget,
     limits: { spreadsheetBytes: BANK_MAX_BYTES, directSourceBytes: DIRECT_SOURCE_MAX_BYTES },
   };
 })();
