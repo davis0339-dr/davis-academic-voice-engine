@@ -5,6 +5,101 @@
 
 import { buildInterventionPlan as buildV4Plan } from "./planner.js";
 
+const FORMAL_KEEP_CODES = new Set(["KEEP_QUOTE", "KEEP_TECHNICAL"]);
+const MODERATE_FORENSIC_LEVELS = new Set(["KEEP", "MICRO_EDIT"]);
+const DEEP_FORENSIC_LEVELS = new Set(["KEEP", "MICRO_EDIT", "SENTENCE_RESTRUCTURE"]);
+
+function summarise(items = []) {
+  return items.reduce((acc, item) => {
+    acc[item.level] = (acc[item.level] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function forensicExecutionScope(plan, diagnostics, { requestedIntensity, requestedNaturalisation }) {
+  const forensic = diagnostics?.discourse_regularity_forensics;
+  const aggressiveExpression = ["aggressive", "authorial"].includes(requestedNaturalisation);
+  const available = Boolean(forensic?.available && Array.isArray(forensic?.priority_sentence_indices));
+
+  if (!aggressiveExpression || !available || requestedIntensity === "minor" || requestedIntensity === "auto") {
+    return plan;
+  }
+
+  const sourceIndices = forensic.priority_sentence_indices.filter((index) => Number.isInteger(index));
+  if (!sourceIndices.length) {
+    plan.forensicExecution = {
+      available: true,
+      regularity_score: forensic.score,
+      regularity_label: forensic.label,
+      targeted_sentence_count: 0,
+      mode: "diagnostic_only",
+      reason: "No sentence received a priority forensic index; no expressive intervention was manufactured from mode selection alone.",
+    };
+    return plan;
+  }
+
+  // Keep the selection bounded. The forensic engine identifies likely leverage
+  // points (openings, evidence-entry points, closures and repeated signposts), not
+  // a quota to rewrite the entire narrative.
+  const ratioCap = requestedIntensity === "deep" ? 0.65 : 0.45;
+  const maxTargets = Math.max(1, Math.floor((plan.items?.length || 1) * ratioCap));
+  const targetIndices = new Set(sourceIndices.slice(0, maxTargets));
+  let changed = 0;
+
+  plan.items = (plan.items || []).map((item) => {
+    if (!targetIndices.has(item.sentenceIndex)) return item;
+    if (FORMAL_KEEP_CODES.has(item.decisionCode)) return item;
+
+    if (requestedIntensity === "moderate" && MODERATE_FORENSIC_LEVELS.has(item.level)) {
+      changed += 1;
+      return {
+        ...item,
+        level: "SENTENCE_RESTRUCTURE",
+        decisionCode: "FORENSIC_SENTENCE_FLOW_RESTRUCTURE",
+        reasons: [
+          ...(item.reasons || []),
+          "Cross-sentence/cross-paragraph regularity forensics selected this sentence as a leverage point in repeated rhetorical choreography. Moderate + Aggressive permits sentence/flow reconstruction here, but does not authorise wholesale paragraph resequencing.",
+          "Change information packaging rather than merely substituting synonyms. Preserve the proposition, evidence attachment, citation, qualification and technical meaning.",
+        ],
+      };
+    }
+
+    if (requestedIntensity === "deep" && DEEP_FORENSIC_LEVELS.has(item.level)) {
+      changed += 1;
+      return {
+        ...item,
+        level: "DISCOURSE_REPACKAGE",
+        decisionCode: "FORENSIC_DISCOURSE_SCOPE",
+        reasons: [
+          ...(item.reasons || []),
+          "Cross-paragraph regularity forensics selected this unit as part of repeated rhetorical choreography. Deep + Aggressive/Authorial permits proposition-led repackaging at this diagnosed leverage point.",
+          "CAN_CHANGE is not SHOULD_CHANGE: preserve the unit if its existing expression is genuinely author-specific and no local reconstruction is needed after the paragraph-level operation.",
+        ],
+      };
+    }
+
+    return item;
+  });
+
+  plan.summary = summarise(plan.items);
+  plan.forensicExecution = {
+    available: true,
+    version: forensic.version,
+    regularity_score: forensic.score,
+    regularity_label: forensic.label,
+    rhetorical_asymmetry_score: forensic.rhetorical_asymmetry_score,
+    source_priority_sentence_count: sourceIndices.length,
+    target_cap: maxTargets,
+    targeted_sentence_count: changed,
+    targeted_sentence_indices: [...targetIndices],
+    formal_artifacts_excluded: forensic.formal_artifact_block_count || 0,
+    mode: requestedIntensity === "deep" ? "targeted_discourse_repackage" : "targeted_sentence_flow_restructure",
+    principle: "Diagnosis determines SHOULD_CHANGE; intensity determines CAN_CHANGE; naturalisation determines HOW the authorised change is expressed.",
+  };
+
+  return plan;
+}
+
 function deepAuthorialProtocol() {
   return [
     "DEEP AUTHORIAL V4 EXECUTION PROTOCOL: this is not a sentence-by-sentence paraphrase pass. Before drafting each authorised substantive paragraph, recover its protected proposition/evidence ledger: claim(s), evidence/citation attachment, qualification/condition, measurement distinction, mechanism, setting/time context, and rhetorical purpose. Reconstruct from that ledger rather than walking through source sentence shells in order.",
@@ -38,12 +133,17 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   const diagnosticIntensity = requestedIntensity;
   const plannerNaturalisation = requestedNaturalisation === "off" ? "off" : "faithful";
 
-  const plan = buildV4Plan(diagnostics, {
+  let plan = buildV4Plan(diagnostics, {
     ...options,
     rewriteIntensity: diagnosticIntensity,
     naturalisation: plannerNaturalisation,
     // Expansion is evidence/argument driven. It is never a quota to lengthen text.
     lengthPreference: requestedLength === "concise" ? "concise" : requestedLength === "expand" ? "expand" : "maintain",
+  });
+
+  plan = forensicExecutionScope(plan, diagnostics, {
+    requestedIntensity,
+    requestedNaturalisation,
   });
 
   plan.intensity = requestedIntensity;
@@ -52,17 +152,19 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   plan.diagnosticNaturalisation = plannerNaturalisation;
   plan.lengthPreference = requestedLength;
   plan.authorialAuthorityActive = authorialAuthority;
-  plan.scopePolicyVersion = "diagnosis-guided-authority-v4";
-  plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v5" : null;
+  plan.scopePolicyVersion = "diagnosis-guided-authority-v5";
+  plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v6" : null;
   plan.scopePrinciples = [
     "Diagnosis selects the rhetorical/argument operation; the researcher-selected intensity supplies the intervention ceiling.",
     "Naturalisation changes how authorised work is expressed; it does not manufacture paragraph/discourse authority.",
+    "Cross-paragraph regularity forensics examines recurring rhetorical sequencing, evidence placement, tidy closures, paragraph signatures, signposting and rhetorical asymmetry in narrative prose; formal academic artefacts are excluded from that score.",
     "Minor remains local and restrained; Moderate permits sentence/flow restructuring and selective diagnosed development; Deep permits diagnosed structural redevelopment.",
+    "Moderate + Aggressive may substantially restructure the diagnosed sentence/flow leverage points identified by discourse forensics, while still blocking silent paragraph resequencing or wholesale discourse reconstruction.",
     "Deep + Aggressive/Authorial authorises paragraph-level reconstruction where paragraph/discourse diagnosis or machine-pattern regularity supports it, even if individual sentences are grammatically clean.",
     "CAN_CHANGE and SHOULD_CHANGE are separate decisions. Deep authority never creates a requirement to rewrite every clean unit.",
     "A Deep/Authorial request must not be silently collapsed into local synonym polishing where genuine reconstruction has been diagnosed.",
     "Expand develops diagnosed reasoning, evidence, qualification, context, measurement or gap work; it is not a word-growth quota.",
-    "Keep decisions remain legitimate in every mode for headings, quotations, equations, technical labels, evidence, and genuinely author-specific passages that do not warrant intervention.",
+    "Keep decisions remain legitimate in every mode for headings, quotations, equations, technical labels, evidence, formal research artefacts, and genuinely author-specific passages that do not warrant intervention.",
     ...(authorialAuthority ? deepAuthorialProtocol() : []),
   ];
   plan.documentGuidance = [
@@ -73,13 +175,16 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     ...plan.intent,
     rationale: [
       ...(plan.intent?.rationale || []),
+      diagnostics?.discourse_regularity_forensics?.available
+        ? `Cross-paragraph discourse regularity: ${diagnostics.discourse_regularity_forensics.label} (${diagnostics.discourse_regularity_forensics.score}). Formal academic artefacts excluded: ${diagnostics.discourse_regularity_forensics.formal_artifact_block_count || 0}.`
+        : null,
       authorialAuthority
         ? "Deep Authorial authority is active for diagnosed material: reconstruct from protected propositions, evidence relationships and rhetorical purpose rather than performing sentence-aligned paraphrase. Preserve the research; source sentence architecture is not automatically the fidelity target."
         : requestedIntensity === "deep"
           ? "Deep structural authority is available where diagnosis supports it; permission does not itself create a need to reconstruct clean material."
           : null,
       ["aggressive", "authorial"].includes(requestedNaturalisation) && requestedIntensity === "moderate"
-        ? "Aggressive/Authorial expression is permitted at the sentence/flow level, but the Moderate ceiling blocks silent paragraph resequencing or wholesale discourse reconstruction."
+        ? "Aggressive/Authorial expression is permitted at the sentence/flow level. Cross-paragraph forensic leverage points may receive substantive sentence restructuring, but the Moderate ceiling blocks silent paragraph resequencing or wholesale discourse reconstruction."
         : null,
       requestedLength === "expand"
         ? "Expand is permission to develop diagnosed intellectual work from available content/evidence; no global word-growth quota is created."
