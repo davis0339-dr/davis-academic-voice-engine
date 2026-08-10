@@ -60,7 +60,7 @@ test("research and evidence modules live on the separate static Studio page", ()
   assert.match(studio, /id="evidenceInputGateway"/);
   assert.match(studio, /\/researchStudioUI\.js\?v=4\.0\.0/);
   assert.match(studio, /\/researchCoauthoringUI\.js\?v=4\.0\.0/);
-  assert.match(studio, /\/researchStudioEvidenceGateway\.js\?v=4\.0\.0/);
+  assert.match(studio, /\/researchStudioEvidenceGateway\.js\?v=4\.0\.1/);
   assert.match(studio, /\/researchEvidenceUploadRouter\.js\?v=4\.0\.1/);
   assert.match(studio, /\/detectorEvidenceUI\.js/);
   assert.match(studio, /\/studioVoiceUI\.js/);
