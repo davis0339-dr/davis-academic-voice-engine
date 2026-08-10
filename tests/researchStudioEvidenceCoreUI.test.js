@@ -26,8 +26,9 @@ test("static evidence surface supports paste plus document and spreadsheet evide
   assert.match(studioHtml, /id="evidenceGatewayPasteText"/);
   assert.match(studioHtml, /id="addGatewayPastedSourceBtn"/);
   assert.match(studioHtml, /Paste text from clipboard/);
-  assert.match(gateway, /transferPastedSource/);
+  assert.match(gateway, /addPastedGatewaySource/);
   assert.match(gateway, /window\.__DavisEvidenceUploadRouter/);
+  assert.match(gateway, /return ok === true/);
   for (const extension of [".txt", ".md", ".docx", ".pdf", ".csv", ".xlsx"]) {
     assert.ok(studioHtml.includes(extension), `Expected ${extension} support in Research Studio evidence surface`);
   }
