@@ -1,6 +1,10 @@
 // Selective second-pass repair for residual discourse problems introduced or
 // left unresolved by the first rewrite. Only diagnosed paragraph blocks are
 // eligible for replacement; unaffected blocks are never regenerated.
+//
+// v4 adds a completed-output acceptance audit. This means a fluent candidate can
+// still enter selective recovery when it remains machine-regular at paragraph or
+// cross-paragraph level even if the older sentence-level residual score is low.
 
 import { llmProvider } from "./llmProvider.js";
 import { parseStructuredResponseText, buildJsonRepairSystemPrompt } from "./modelResponse.js";
@@ -9,6 +13,7 @@ import { extractProtectedSpans } from "./protect.js";
 import { auditPreservation } from "./preservation.js";
 import { analyseResidualWriting } from "./residualDiagnostics.js";
 import { splitSentences } from "./sentences.js";
+import { auditOutputAcceptance, acceptanceImproved } from "./outputAcceptance.js";
 
 function preservationPassed(p) {
   return Boolean(
@@ -19,6 +24,10 @@ function preservationPassed(p) {
     p?.study_stage_ok !== false &&
     !p?.new_factual_claims_detected
   );
+}
+
+function normalise(text) {
+  return String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 function targetSignalLabels(diagnostics, target) {
@@ -59,15 +68,85 @@ function replaceBlocksSequentially(candidateText, replacements, structure) {
   return out;
 }
 
+function acceptanceTargetBlockIndices(candidateText, candidateStructure, acceptance) {
+  const wantedParagraphIndices = new Set(acceptance?.target_paragraph_indices || []);
+  if (!wantedParagraphIndices.size) return [];
+  const rawParagraphs = String(candidateText || "")
+    .replace(/\r\n?/g, "\n")
+    .split(/\n\s*\n+/)
+    .map((text, index) => ({ index, text: text.trim() }))
+    .filter((row) => row.text);
+  const targetTexts = rawParagraphs
+    .filter((row) => wantedParagraphIndices.has(row.index))
+    .map((row) => normalise(row.text));
+  const found = [];
+  for (const targetText of targetTexts) {
+    const index = candidateStructure.blocks.findIndex((block) => block.type === "paragraph" && normalise(block.text) === targetText);
+    if (index >= 0) found.push(index);
+  }
+  return [...new Set(found)];
+}
+
+function machineForensicLabels(acceptance, blockIndex, candidateStructure) {
+  const block = candidateStructure.blocks[blockIndex];
+  if (!block) return [];
+  const reasons = acceptance?.reasons || [];
+  const choreography = acceptance?.candidate_machine_pattern?.choreography || {};
+  const labels = [];
+  if (reasons.includes("machine_pattern_reduction_insufficient") || reasons.includes("high_machine_pattern_residual")) {
+    labels.push({
+      id: "machine_pattern_residual",
+      interpretation: "The completed candidate still exhibits material machine-pattern regularity after the first rewrite.",
+      action: "Change the paragraph's rhetorical packaging where needed; do not merely substitute synonyms or polish sentences independently.",
+    });
+  }
+  if (Number(choreography.dominant_signature_ratio || 0) >= 0.45) {
+    labels.push({
+      id: "repeated_paragraph_signature",
+      interpretation: "Multiple narrative paragraphs perform their claim/evidence/interpretation work in the same sequence.",
+      action: "Let this paragraph's evidence and reasoning determine its own sequence rather than repeating the dominant document template.",
+    });
+  }
+  if (Number(choreography.closure_ratio || 0) >= 0.35) {
+    labels.push({
+      id: "tidy_closure_recurrence",
+      interpretation: "Narrative paragraphs too often end with an explicit polished synthesis or implication sentence.",
+      action: "Keep a closing synthesis only when the argument requires it; otherwise allow the evidence, qualification, or unresolved tension to carry forward naturally.",
+    });
+  }
+  if (Number(choreography.evidence_position_consistency || 0) >= 0.62) {
+    labels.push({
+      id: "predictable_evidence_position",
+      interpretation: "Evidence repeatedly arrives at similar positions within paragraphs.",
+      action: "Repackage the local reasoning so evidence can lead, interrupt, qualify, or follow a claim according to its argumentative role.",
+    });
+  }
+  if (reasons.includes("source_skeleton_dependence_high")) {
+    labels.push({
+      id: "source_skeleton_dependence",
+      interpretation: "The candidate remains too dependent on the source sentence/discourse skeleton for the authorised treatment.",
+      action: "Rebuild the local proposition packaging without changing the researcher's meaning, evidence, qualifications, or technical decisions.",
+    });
+  }
+  return labels;
+}
+
 function buildResidualSystemPrompt() {
-  return `You are performing a SELECTIVE RESIDUAL REWORK on an already revised academic passage.
+  return `You are performing a SELECTIVE COMPLETED-OUTPUT RECOVERY on an already revised academic passage.
 
 This is not a fresh rewrite. Only the paragraph blocks supplied in TARGETS may change. Every other paragraph is locked and will be reinserted verbatim by the server.
 
-Objective: reduce the specific residual writing-quality risks supplied for each target while preserving the argument, factual relationships, authorial stance, examples, context, citations, numbers, quotations, technical terms and macro-order.
+Objective: reduce the specific residual writing-quality and discourse-regularity risks supplied for each target while preserving the argument, factual relationships, authorial stance, examples, context, citations, numbers, quotations, technical terms and macro-order.
+
+The most important distinction is this: good grammar, clarity, sophistication and coherence are not sufficient. A candidate can be academically excellent and still fail because its paragraph choreography, evidence placement, sentence roles and closures remain too mechanically regular.
 
 Important lessons from prior testing:
 - Different is not automatically better. Do not rewrite merely to maximise distance from the source.
+- Do not perform synonym substitution as a substitute for discourse reconstruction.
+- Do not make every paragraph follow claim -> evidence -> interpretation -> synthesis.
+- Do not append a polished summary/implication sentence simply to make every paragraph feel complete.
+- Let evidence sometimes lead, qualify, interrupt or follow a claim when its actual argumentative role warrants it.
+- Preserve productive asymmetry: one important study may need two explanatory sentences while another may need only a clause; do not give every source equal rhetorical packaging.
 - Do not convert direct verbs and ordinary academic sentences into abstract noun-led formulations merely to sound scholarly.
 - Avoid nominalisation pressure such as repeated openings built around "recognition", "realisation", "development", "implementation", "conceptual evolution" or similar abstract noun phrases when a direct subject and verb are clearer.
 - Reduce discourse-management sentences that mainly announce what was learned, why a distinction matters, or what comes next without adding a substantive proposition.
@@ -76,7 +155,8 @@ Important lessons from prior testing:
 - Preserve useful simple sentences. A short, ordinary, content-bearing sentence is not a defect and must not be "upgraded" merely because it is simple.
 - Preserve first-person or authorial stance where it genuinely belongs to the supplied text. Do not replace a personal but academically defensible statement with an impersonal slogan.
 - Keep source-defined taxonomies and product modes when the categories are substantive. Remove only rhetorical packaging that creates categories for neatness rather than meaning.
-- Do not add facts, citations, studies, Nigerian context, examples or claims that are not already present.
+- Formal academic artefacts such as purpose statements, research questions and hypotheses are not targets merely because they are formulaic.
+- Do not add facts, citations, studies, context, examples or claims that are not already present.
 - HARD_PROTECTED_SPANS supplied for a block must remain verbatim in that block's revised text.
 
 Return JSON only in this exact shape:
@@ -123,21 +203,46 @@ async function callResidualModel(payload) {
   return { result, repairUsed };
 }
 
-export async function selectiveResidualRework({ sourceText, candidateText, maxBlocks = 6 }) {
+export async function selectiveResidualRework({
+  sourceText,
+  candidateText,
+  maxBlocks = 6,
+  styleFilters = {},
+  rewriteIntensity = "auto",
+  naturalisation = "faithful",
+  planSummary = {},
+}) {
   const sourceBaseline = analyseResidualWriting(sourceText);
   const before = analyseResidualWriting(candidateText);
   const sourceScore = Number(sourceBaseline.metrics.total_risk_score || 0);
   const beforeScore = Number(before.metrics.total_risk_score || 0);
   const candidateWorseThanSource = beforeScore > sourceScore + 2;
-  const shouldAttempt = before.target_blocks.length > 0 && (before.should_rework || candidateWorseThanSource);
+  const beforeAcceptance = auditOutputAcceptance({
+    sourceText,
+    candidateText,
+    styleFilters,
+    rewriteIntensity,
+    naturalisation,
+    planSummary,
+  });
+
+  const candidateStructure = parseTextStructure(candidateText);
+  const sourceStructure = parseTextStructure(sourceText);
+  const forensicBlockIndices = acceptanceTargetBlockIndices(candidateText, candidateStructure, beforeAcceptance);
+  const legacyBlockIndices = before.target_blocks.map((target) => target.blockIndex);
+  const targetBlockIndices = [...new Set([...legacyBlockIndices, ...forensicBlockIndices])].slice(0, maxBlocks);
+  const acceptanceNeedsRecovery = beforeAcceptance.status !== "pass" && forensicBlockIndices.length > 0;
+  const shouldAttempt = targetBlockIndices.length > 0 && (before.should_rework || candidateWorseThanSource || acceptanceNeedsRecovery);
 
   if (!shouldAttempt) {
     return {
       attempted: false,
       accepted: false,
-      reason: candidateWorseThanSource
-        ? "The candidate scored worse than the source baseline, but no paragraph met the minimum block-target threshold for safe local rework."
-        : "No residual block met the selective-rework threshold.",
+      reason: beforeAcceptance.status !== "pass"
+        ? "Completed-output acceptance still requires review, but no paragraph met the safe local-target threshold. The candidate is retained and must not be reported as internally cleared."
+        : candidateWorseThanSource
+          ? "The candidate scored worse than the source baseline, but no paragraph met the minimum block-target threshold for safe local rework."
+          : "No residual block met the selective-rework threshold.",
       revised_text: candidateText,
       source_baseline: sourceBaseline,
       source_risk_score: sourceScore,
@@ -145,32 +250,50 @@ export async function selectiveResidualRework({ sourceText, candidateText, maxBl
       candidate_worse_than_source: candidateWorseThanSource,
       before,
       after: before,
+      output_acceptance_before: beforeAcceptance,
+      output_acceptance_after: beforeAcceptance,
       target_blocks: [],
       response_repair_used: false,
     };
   }
 
-  const candidateStructure = parseTextStructure(candidateText);
-  const sourceStructure = parseTextStructure(sourceText);
-  const targets = before.target_blocks.slice(0, maxBlocks).map((target) => {
-    const candidateBlock = candidateStructure.blocks[target.blockIndex];
-    const sourceBlock = sourceReferenceForTarget(sourceStructure, target);
+  const legacyTargetsByBlock = new Map(before.target_blocks.map((target) => [target.blockIndex, target]));
+  const targets = targetBlockIndices.map((blockIndex) => {
+    const candidateBlock = candidateStructure.blocks[blockIndex];
+    const legacyTarget = legacyTargetsByBlock.get(blockIndex) || {
+      blockIndex,
+      paragraphOrdinal: candidateBlock?.paragraphOrdinal,
+      sentenceIndices: [],
+      text: candidateBlock?.text || "",
+    };
+    const sourceBlock = sourceReferenceForTarget(sourceStructure, legacyTarget);
     const protectedSpans = extractProtectedSpans(sourceBlock?.text || candidateBlock?.text || "");
+    const residualSignals = [
+      ...targetSignalLabels(before, legacyTarget),
+      ...machineForensicLabels(beforeAcceptance, blockIndex, candidateStructure),
+    ];
     return {
-      block_index: target.blockIndex,
-      candidate_text: candidateBlock?.text || target.text,
+      block_index: blockIndex,
+      candidate_text: candidateBlock?.text || legacyTarget.text,
       source_reference: sourceBlock?.text || null,
-      residual_signals: targetSignalLabels(before, target),
-      ordinary_content_sentences_to_preserve_when_possible: ordinarySentencesForTarget(candidateText, before, target),
+      residual_signals: residualSignals,
+      ordinary_content_sentences_to_preserve_when_possible: ordinarySentencesForTarget(candidateText, before, legacyTarget),
       hard_protected_spans: protectedSpans,
     };
   });
 
   const { result, repairUsed } = await callResidualModel({
-    instruction: "Revise only the target paragraphs. Preserve meaning and hard protected spans; reduce the supplied residual risks without over-formalising the prose. The result should not merely be more different from the source; it should reduce the diagnosed synthetic discourse pressure.",
+    instruction: "Revise only the target paragraphs. Preserve meaning and hard protected spans. Reduce both local residual risks and completed-output machine regularity without over-formalising the prose. Judge success by argument-governed human texture, not by synonym distance or cosmetic polish.",
     source_risk_score: sourceScore,
     candidate_risk_score: beforeScore,
     candidate_worse_than_source: candidateWorseThanSource,
+    output_acceptance: {
+      status: beforeAcceptance.status,
+      score: beforeAcceptance.score,
+      reasons: beforeAcceptance.reasons,
+      dimensions: beforeAcceptance.dimensions,
+      choreography: beforeAcceptance.candidate_machine_pattern?.choreography,
+    },
     targets,
   });
 
@@ -183,7 +306,7 @@ export async function selectiveResidualRework({ sourceText, candidateText, maxBl
     return {
       attempted: true,
       accepted: false,
-      reason: "Residual model did not return exactly one valid replacement for each target block.",
+      reason: "Completed-output recovery did not return exactly one valid replacement for each target block.",
       revised_text: candidateText,
       source_baseline: sourceBaseline,
       source_risk_score: sourceScore,
@@ -191,6 +314,8 @@ export async function selectiveResidualRework({ sourceText, candidateText, maxBl
       candidate_worse_than_source: candidateWorseThanSource,
       before,
       after: before,
+      output_acceptance_before: beforeAcceptance,
+      output_acceptance_after: beforeAcceptance,
       target_blocks: targets.map((target) => target.block_index),
       response_repair_used: repairUsed,
     };
@@ -201,20 +326,30 @@ export async function selectiveResidualRework({ sourceText, candidateText, maxBl
   const after = analyseResidualWriting(reworkedText);
   const afterScore = Number(after.metrics.total_risk_score || 0);
   const riskImproved = afterScore < beforeScore;
-  const noWorseThanSource = afterScore <= sourceScore + 2;
+  const noResidualRegression = afterScore <= Math.max(beforeScore + 1, sourceScore + 2);
   const preservationOk = preservationPassed(preservation);
-  const accepted = preservationOk && riskImproved && noWorseThanSource;
+  const afterAcceptance = auditOutputAcceptance({
+    sourceText,
+    candidateText: reworkedText,
+    styleFilters,
+    rewriteIntensity,
+    naturalisation,
+    planSummary,
+  });
+  const acceptanceBetter = acceptanceImproved(beforeAcceptance, afterAcceptance);
+  const acceptanceCleared = afterAcceptance.status === "pass";
+  const accepted = preservationOk && noResidualRegression && (acceptanceCleared || acceptanceBetter || (riskImproved && beforeAcceptance.status === "pass"));
 
   return {
     attempted: true,
     accepted,
     reason: accepted
-      ? `Selective rework reduced residual risk from ${beforeScore} to ${afterScore}, returned it to the source-baseline band (${sourceScore}), and preserved protected content.`
+      ? `Selective completed-output recovery improved the candidate while preserving protected content. Residual risk ${beforeScore} → ${afterScore}; acceptance ${beforeAcceptance.score} → ${afterAcceptance.score} (${afterAcceptance.status}).`
       : !preservationOk
-        ? "Selective rework was rejected because factual/preservation safeguards failed."
-        : !riskImproved
-          ? "Selective rework was rejected because it did not reduce the residual risk score."
-          : `Selective rework improved the candidate but was still more synthetically patterned than the source baseline (${afterScore} versus ${sourceScore}); the prior candidate was retained for further review.`,
+        ? "Completed-output recovery was rejected because factual/preservation safeguards failed."
+        : !noResidualRegression
+          ? "Completed-output recovery was rejected because local residual risk materially regressed."
+          : `Completed-output recovery did not materially improve the independent acceptance audit (${beforeAcceptance.score} → ${afterAcceptance.score}); the prior candidate was retained.`,
     revised_text: accepted ? reworkedText : candidateText,
     source_baseline: sourceBaseline,
     source_risk_score: sourceScore,
@@ -226,6 +361,9 @@ export async function selectiveResidualRework({ sourceText, candidateText, maxBl
     attempted_after: after,
     preservation: accepted ? preservation : null,
     attempted_preservation: preservation,
+    output_acceptance_before: beforeAcceptance,
+    output_acceptance_after: accepted ? afterAcceptance : beforeAcceptance,
+    attempted_output_acceptance_after: afterAcceptance,
     target_blocks: targets.map((target) => target.block_index),
     response_repair_used: repairUsed,
     diagnostics_notes: result.diagnostics_notes || "",
