@@ -13,6 +13,25 @@ test("Deep aggressive remains explicit deep authority without becoming a univers
   assert.equal(policy.author_choice_respected, true);
 });
 
+test("Moderate aggressive honours expressive preference without enlarging the Moderate structural ceiling", () => {
+  const policy = resolveRewriteModePolicy({
+    rewriteIntensity: "moderate",
+    naturalisation: "aggressive",
+    authorialTexture: {
+      semantic_preservation: { priority: "very_high" },
+      expressive_preservation: { priority: "low" },
+    },
+  });
+  assert.equal(policy.requested_naturalisation, "aggressive");
+  assert.equal(policy.effective_naturalisation, "aggressive");
+  assert.equal(policy.effective_intensity, "moderate");
+  assert.equal(policy.depth_permission, "moderate_diagnostic_ceiling");
+  assert.equal(policy.universal_rewrite_authorised, false);
+  assert.equal(policy.semantic_preservation_priority, "very_high");
+  assert.equal(policy.expressive_preservation_priority, "low");
+  assert.equal(policy.surface_preservation_required, false);
+});
+
 test("Auto faithful leaves depth to diagnosis", () => {
   const policy = resolveRewriteModePolicy({ rewriteIntensity: "auto", naturalisation: "faithful" });
   assert.equal(policy.effective_naturalisation, "faithful");
