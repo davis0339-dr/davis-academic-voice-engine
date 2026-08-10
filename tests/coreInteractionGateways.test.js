@@ -51,15 +51,16 @@ test("Researcher Studio evidence ingestion is static, single-surface and never r
   assert.match(html, /Evidence Gateway v4\.0\.0/);
   assert.match(html, /researchStudioUI\.js\?v=4\.0\.0/);
   assert.match(html, /researchStudioEvidenceGateway\.js\?v=4\.0\.0/);
-  assert.match(html, /researchEvidenceUploadRouter\.js\?v=4\.0\.0/);
+  assert.match(html, /researchEvidenceUploadRouter\.js\?v=4\.0\.1/);
   assert.equal((html.match(/id="evidenceInputGateway"/g) || []).length, 1);
   assert.doesNotMatch(html, /researchStudioEvidenceCoreUI\.js/);
 
-  assert.match(router, /const ROUTER_VERSION = "4\.0\.0"/);
+  assert.match(router, /const ROUTER_VERSION = "4\.0\.1"/);
   assert.match(router, /function researchStudioTargetReady\(/);
   assert.match(router, /async function ensureResearchEvidenceTarget\(/);
   assert.match(router, /targetConsumedFiles/);
   assert.match(router, /The interface was not rebuilt behind the scenes/i);
+  assert.match(router, /runLocalBrowserSmoke/);
   assert.doesNotMatch(router, /removePartialResearchStudio/);
   assert.doesNotMatch(router, /loadRepairScript/);
   assert.doesNotMatch(router, /repairResearchStudioUi/);
