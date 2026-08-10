@@ -52,12 +52,19 @@ test("editor keeps only editor-result and detector modules, with detector resear
   assert.doesNotMatch(optional, /\/detectorEvidenceUI\.js/);
 });
 
-test("research and evidence modules live on the separate studio page", () => {
+test("research and evidence modules live on the separate static Studio page", () => {
   assert.match(index, /href=\"\/studio\"/);
   assert.match(studio, /Research &amp; Evidence Studio/);
-  assert.match(studio, /\/researchStudioUI\.js/);
-  assert.match(studio, /\/researchStudioCapabilitiesUI\.js/);
+  assert.match(studio, /id="tab-researchstudio"/);
+  assert.match(studio, /id="researchEvidenceWorkspaceCard"/);
+  assert.match(studio, /id="evidenceInputGateway"/);
+  assert.match(studio, /\/researchStudioUI\.js\?v=4\.0\.0/);
+  assert.match(studio, /\/researchCoauthoringUI\.js\?v=4\.0\.0/);
+  assert.match(studio, /\/researchStudioEvidenceGateway\.js\?v=4\.0\.0/);
+  assert.match(studio, /\/researchEvidenceUploadRouter\.js\?v=4\.0\.1/);
   assert.match(studio, /\/detectorEvidenceUI\.js/);
   assert.match(studio, /\/studioVoiceUI\.js/);
+  assert.doesNotMatch(studio, /\/researchStudioCapabilitiesUI\.js/);
+  assert.doesNotMatch(studio, /\/researchStudioEvidenceCoreUI\.js/);
   assert.doesNotMatch(studio, /\/app\.js/);
 });
