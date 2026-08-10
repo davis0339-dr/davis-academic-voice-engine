@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { rewrite } from "../lib/pipeline.js";
 import { assessExecutionCompliance, preferByExecutionCompliance } from "../lib/executionCompliance.js";
 import { selectiveResidualRework } from "../lib/residualRework.js";
+import { auditOutputAcceptance } from "../lib/outputAcceptance.js";
 import { resolveRewriteModePolicy } from "../lib/rewriteModePolicy.js";
 import { assessSourceBeforeRewrite } from "../lib/sourceAssessment.js";
 import { deriveInterventionAuthority } from "../lib/interventionAuthority.js";
@@ -94,7 +95,13 @@ function refreshIterativeQuality(sourceText, result, revisedText, rewriteLineage
   };
 }
 
-function finalCandidateStatus(compliance, residual, sourceRetainedForSafety = false) {
+function finalCandidateStatus(
+  compliance,
+  residual,
+  outputAcceptance,
+  outputAcceptanceEnforced = false,
+  sourceRetainedForSafety = false
+) {
   if (sourceRetainedForSafety) return "no_safe_edit_available";
   if (!compliance?.execution_passed && !compliance?.preservation_ok) return "execution_and_preservation_failed";
   if (!compliance?.execution_passed) {
@@ -103,6 +110,7 @@ function finalCandidateStatus(compliance, residual, sourceRetainedForSafety = fa
     return "execution_under";
   }
   if (!compliance?.preservation_ok) return "preservation_failed";
+  if (outputAcceptanceEnforced && outputAcceptance?.status !== "pass") return "internal_quality_review_required";
   if (residual?.attempted && !residual?.accepted && residual?.before?.should_rework) return "accepted_with_residual_risks";
   return "accepted";
 }
@@ -432,6 +440,10 @@ rewriteRouter.post("/rewrite", async (req, res) => {
           residualRework = await selectiveResidualRework({
             sourceText: text,
             candidateText: result.revised_text,
+            styleFilters: styleFilters || {},
+            rewriteIntensity: modePolicy.effective_intensity,
+            naturalisation: modePolicy.effective_naturalisation,
+            planSummary: result.intervention_plan_summary || {},
           });
           if (residualRework.accepted) {
             const refreshedQuality = refreshTransformationQuality(
@@ -461,6 +473,23 @@ rewriteRouter.post("/rewrite", async (req, res) => {
           };
         }
       }
+
+      const completedOutputAcceptance = auditOutputAcceptance({
+        sourceText: text,
+        candidateText: result.revised_text,
+        styleFilters: styleFilters || {},
+        rewriteIntensity: modePolicy.effective_intensity,
+        naturalisation: modePolicy.effective_naturalisation,
+        planSummary: result.intervention_plan_summary || {},
+      });
+      const outputAcceptanceEnforced = Boolean(
+        ["moderate", "deep"].includes(String(modePolicy.effective_intensity || "").toLowerCase()) &&
+        ["aggressive", "authorial"].includes(String(modePolicy.effective_naturalisation || "").toLowerCase())
+      );
+      result.output_acceptance = {
+        ...completedOutputAcceptance,
+        enforced_for_final_release: outputAcceptanceEnforced,
+      };
 
       result.execution_compliance = {
         ...executionCompliance,
@@ -528,6 +557,8 @@ rewriteRouter.post("/rewrite", async (req, res) => {
           : "The broad rewrite was rejected for over-editing. Only exact local grammar/clarity corrections that passed preservation and intervention ceilings were applied; all other source wording was retained.";
       } else if (residualVerdict === "not_run_execution_blocked") {
         verdictNote = "Residual discourse quality was not declared unnecessary: that stage was blocked by a concrete execution failure. Final status separates concrete plan execution, preservation-aware visible-change plausibility, maximum authorised breadth, factual preservation and residual discourse risk.";
+      } else if (outputAcceptanceEnforced && completedOutputAcceptance.status !== "pass") {
+        verdictNote = `Completed-output acceptance did not clear this ${modePolicy.effective_intensity} + ${modePolicy.effective_naturalisation} candidate. Residual machine-pattern regularity, source-skeleton dependence or another completed-output quality condition remains unresolved. Do not treat this as a successful authorial result or spend an external detector check until the internal gate passes.`;
       } else if (result.iterative_rewrite_quality?.blocking) {
         verdictNote = "The candidate still shows cumulative rewrite-chain regularisation relative to the retained root source. It is preserved for auditability, but the result should be reviewed rather than treated as a successful authorial recovery.";
       } else {
@@ -543,7 +574,20 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         rewrite_chain: result.iterative_rewrite_quality?.available
           ? (result.iterative_rewrite_quality.blocking ? "regularisation-risk" : "within-root-register-band")
           : "not-applicable",
-        final_status: finalCandidateStatus(executionCompliance, residualRework, sourceRetainedForSafety),
+        output_acceptance: completedOutputAcceptance.status,
+        output_acceptance_score: completedOutputAcceptance.score,
+        output_acceptance_enforced: outputAcceptanceEnforced,
+        external_detector_check_recommended: Boolean(
+          completedOutputAcceptance.release_gate?.external_detector_check_recommended &&
+          (!outputAcceptanceEnforced || completedOutputAcceptance.status === "pass")
+        ),
+        final_status: finalCandidateStatus(
+          executionCompliance,
+          residualRework,
+          completedOutputAcceptance,
+          outputAcceptanceEnforced,
+          sourceRetainedForSafety
+        ),
         note: verdictNote,
       };
 
