@@ -2,9 +2,10 @@
 // left unresolved by the first rewrite. Only diagnosed paragraph blocks are
 // eligible for replacement; unaffected blocks are never regenerated.
 //
-// v4 adds a completed-output acceptance audit. This means a fluent candidate can
-// still enter selective recovery when it remains machine-regular at paragraph or
-// cross-paragraph level even if the older sentence-level residual score is low.
+// v5 extends completed-output recovery beyond paragraph choreography. Fluent
+// academic prose can still fail when modern LLM-favoured machine language remains
+// dense: editorial pivots, abstract signposting, polished binary qualifications,
+// compressed synthesis frames and noun-heavy discourse management.
 
 import { llmProvider } from "./llmProvider.js";
 import { parseStructuredResponseText, buildJsonRepairSystemPrompt } from "./modelResponse.js";
@@ -92,14 +93,59 @@ function machineForensicLabels(acceptance, blockIndex, candidateStructure) {
   if (!block) return [];
   const reasons = acceptance?.reasons || [];
   const choreography = acceptance?.candidate_machine_pattern?.choreography || {};
+  const discourse = acceptance?.candidate_machine_pattern?.discourse_regularity || {};
+  const machineLanguage = acceptance?.candidate_machine_pattern?.machine_language || {};
   const labels = [];
-  if (reasons.includes("machine_pattern_reduction_insufficient") || reasons.includes("high_machine_pattern_residual")) {
+
+  if (
+    reasons.includes("machine_pattern_reduction_insufficient") ||
+    reasons.includes("high_machine_pattern_residual") ||
+    reasons.includes("machine_pattern_regression")
+  ) {
     labels.push({
       id: "machine_pattern_residual",
       interpretation: "The completed candidate still exhibits material machine-pattern regularity after the first rewrite.",
       action: "Change the paragraph's rhetorical packaging where needed; do not merely substitute synonyms or polish sentences independently.",
     });
   }
+
+  if (
+    reasons.includes("machine_language_residual") ||
+    reasons.includes("high_machine_language_residual") ||
+    reasons.includes("machine_language_reduction_insufficient") ||
+    reasons.includes("machine_language_regression")
+  ) {
+    labels.push({
+      id: "modern_machine_language_density",
+      interpretation: "The paragraph contributes to a document-level concentration of polished LLM-favoured academic language: editorial pivots, abstract issue-framing, binary qualification frames, compressed synthesis or noun-heavy discourse management.",
+      action: "Preserve the substantive judgement but make it more direct. Remove sentences that mainly announce complexity, conditionality, significance or the next move; reduce repeated 'not X but Y' staging; prefer actors, evidence and direct verbs where the technical meaning permits.",
+    });
+  }
+
+  if (
+    reasons.includes("high_discourse_regularity_residual") ||
+    reasons.includes("discourse_regularity_reduction_insufficient") ||
+    reasons.includes("discourse_regularity_regression") ||
+    Number(discourse.score || 0) >= 0.55
+  ) {
+    labels.push({
+      id: "calibrated_discourse_regularity",
+      interpretation: "The richer cross-paragraph audit still finds repeated paragraph-job announcement, bounded completion, serial evidence reporting, immediate interpretation or micro-signpost choreography.",
+      action: "Let this paragraph follow its local scholarly function rather than a completed template. Evidence may lead, a condition may remain unresolved, or interpretation may carry across a paragraph boundary when the argument warrants it.",
+    });
+  }
+
+  if (Number(machineLanguage?.score || 0) >= 0.38) {
+    const relevantSignals = (machineLanguage.signals || []).slice(0, 3);
+    for (const signal of relevantSignals) {
+      labels.push({
+        id: signal.issue || "machine_language_signal",
+        interpretation: signal.interpretation,
+        action: signal.action,
+      });
+    }
+  }
+
   if (Number(choreography.dominant_signature_ratio || 0) >= 0.45) {
     labels.push({
       id: "repeated_paragraph_signature",
@@ -136,13 +182,18 @@ function buildResidualSystemPrompt() {
 
 This is not a fresh rewrite. Only the paragraph blocks supplied in TARGETS may change. Every other paragraph is locked and will be reinserted verbatim by the server.
 
-Objective: reduce the specific residual writing-quality and discourse-regularity risks supplied for each target while preserving the argument, factual relationships, authorial stance, examples, context, citations, numbers, quotations, technical terms and macro-order.
+Objective: reduce the specific residual writing-quality, machine-language and discourse-regularity risks supplied for each target while preserving the argument, factual relationships, authorial stance, examples, context, citations, numbers, quotations, technical terms and macro-order.
 
-The most important distinction is this: good grammar, clarity, sophistication and coherence are not sufficient. A candidate can be academically excellent and still fail because its paragraph choreography, evidence placement, sentence roles and closures remain too mechanically regular.
+The most important distinction is this: good grammar, clarity, sophistication and coherence are not sufficient. A candidate can be academically excellent and still fail because its language is visibly machine-shaped or because its paragraph choreography, evidence placement, sentence roles and closures remain too mechanically regular.
 
 Important lessons from prior testing:
 - Different is not automatically better. Do not rewrite merely to maximise distance from the source.
 - Do not perform synonym substitution as a substitute for discourse reconstruction.
+- Modern machine language is often polished rather than clichéd. Look beyond phrases such as "plays a crucial role". Repair repeated editorial pivots, abstract issue-framing, compressed synthesis, noun-heavy signposting and highly curated qualification patterns.
+- Do not repeatedly stage distinctions as "not X, but Y", "not merely", "more than", "does not imply", or similarly elegant reversals when the distinction can be carried directly by evidence or explanation. Keep such constructions where they are genuinely the clearest form.
+- Do not open successive paragraphs with abstract announcements such as complexity, conditionality, variation, assessment, difficulty, significance or context merely to tell the reader what the paragraph will now do.
+- Delete or absorb sentences whose main function is to announce that something is complex, conditional, instructive, important, useful, unresolved or more specific when the surrounding argument already demonstrates that point.
+- Prefer concrete scholarly actors and direct verbs where possible: firms borrow, creditors price, boards monitor, evidence contradicts, results vary. Do not force directness when a technical construct genuinely requires abstraction.
 - Do not make every paragraph follow claim -> evidence -> interpretation -> synthesis.
 - Do not append a polished summary/implication sentence simply to make every paragraph feel complete.
 - Let evidence sometimes lead, qualify, interrupt or follow a claim when its actual argumentative role warrants it.
@@ -283,7 +334,7 @@ export async function selectiveResidualRework({
   });
 
   const { result, repairUsed } = await callResidualModel({
-    instruction: "Revise only the target paragraphs. Preserve meaning and hard protected spans. Reduce both local residual risks and completed-output machine regularity without over-formalising the prose. Judge success by argument-governed human texture, not by synonym distance or cosmetic polish.",
+    instruction: "Revise only the target paragraphs. Preserve meaning and hard protected spans. Reduce local residual risks, modern machine-language density and completed-output discourse regularity without over-formalising the prose. Judge success by argument-governed authorial texture, not by synonym distance, detector gaming or cosmetic polish.",
     source_risk_score: sourceScore,
     candidate_risk_score: beforeScore,
     candidate_worse_than_source: candidateWorseThanSource,
@@ -293,6 +344,8 @@ export async function selectiveResidualRework({
       reasons: beforeAcceptance.reasons,
       dimensions: beforeAcceptance.dimensions,
       choreography: beforeAcceptance.candidate_machine_pattern?.choreography,
+      discourse_regularity: beforeAcceptance.candidate_machine_pattern?.discourse_regularity,
+      machine_language: beforeAcceptance.candidate_machine_pattern?.machine_language,
     },
     targets,
   });
