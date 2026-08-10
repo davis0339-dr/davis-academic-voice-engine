@@ -45,12 +45,12 @@ test("Researcher Studio direct evidence routing repairs partial initialisation i
   const router = read("public/researchEvidenceUploadRouter.js");
   const gateway = read("public/researchStudioEvidenceGateway.js");
 
-  assert.match(html, /Evidence Gateway v3\.2\.0/);
+  assert.match(html, /Evidence Gateway v3\.2\.1/);
   assert.match(html, /researchStudioUI\.js\?v=3\.1\.1/);
   assert.match(html, /researchStudioEvidenceGateway\.js\?v=3\.2\.0/);
-  assert.match(html, /researchEvidenceUploadRouter\.js\?v=3\.2\.0/);
+  assert.match(html, /researchEvidenceUploadRouter\.js\?v=3\.2\.1/);
 
-  assert.match(router, /const ROUTER_VERSION = "3\.2\.0"/);
+  assert.match(router, /const ROUTER_VERSION = "3\.2\.1"/);
   assert.match(router, /function researchStudioTargetReady\(/);
   assert.match(router, /function removePartialResearchStudio\(/);
   assert.match(router, /function loadRepairScript\(/);
