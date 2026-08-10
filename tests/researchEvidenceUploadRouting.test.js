@@ -34,11 +34,12 @@ test("spreadsheet routing also intercepts the internal Research Studio file choo
 test("Evidence routing uses stable markup and refuses destructive panel reconstruction", () => {
   const router = read("public/researchEvidenceUploadRouter.js");
   const html = read("public/studio.html");
-  assert.match(router, /ROUTER_VERSION\s*=\s*"4\.0\.0"/);
+  assert.match(router, /ROUTER_VERSION\s*=\s*"4\.0\.1"/);
   assert.match(router, /READY_WAIT_MS\s*=\s*5000/);
   assert.match(router, /async function preflight/);
-  assert.match(router, /queueMicrotask\(\(\) => preflight/);
+  assert.match(router, /queueMicrotask\(async \(\) =>/);
   assert.match(router, /The interface was not rebuilt behind the scenes/i);
+  assert.match(router, /runLocalBrowserSmoke/);
   assert.doesNotMatch(router, /repairResearchStudioUi/);
   assert.doesNotMatch(router, /removePartialResearchStudio/);
   assert.doesNotMatch(router, /loadRepairScript/);
@@ -61,7 +62,7 @@ test("Literature Evidence Bank retains every worksheet instead of silently choos
 test("Studio loads one evidence surface and cache-busts the functional scripts together", () => {
   const html = read("public/studio.html");
   const bankIndex = html.indexOf("researchEvidenceBankUI.js?v=3.2.0");
-  const routerIndex = html.indexOf("researchEvidenceUploadRouter.js?v=4.0.0");
+  const routerIndex = html.indexOf("researchEvidenceUploadRouter.js?v=4.0.1");
   assert.ok(bankIndex >= 0, "Literature Evidence Bank script should be present");
   assert.ok(routerIndex > bankIndex, "upload router must load after Literature Evidence Bank UI");
   assert.match(html, /Evidence Gateway v4\.0\.0/);
