@@ -1,0 +1,44 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(__dirname, "..");
+const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
+
+const JAND_GUY_TRIAL_BYTES = 8065442;
+const DIRECT_LIMIT = 5 * 1024 * 1024;
+const BANK_LIMIT = 25 * 1024 * 1024;
+
+test("Jand Guy-sized workbook is routed to the 25 MB Literature Evidence Bank instead of the 5 MB direct-source reader", () => {
+  assert.ok(JAND_GUY_TRIAL_BYTES > DIRECT_LIMIT, "trial workbook should exceed the old direct Evidence Workspace limit");
+  assert.ok(JAND_GUY_TRIAL_BYTES < BANK_LIMIT, "trial workbook should fit the Literature Evidence Bank limit");
+
+  const router = read("public/researchEvidenceUploadRouter.js");
+  assert.match(router, /SPREADSHEET_RE\s*=\s*\/\\\.\(\?:xlsx\|csv\)/i);
+  assert.match(router, /BANK_MAX_BYTES\s*=\s*25\s*\*\s*1024\s*\*\s*1024/);
+  assert.match(router, /DIRECT_SOURCE_MAX_BYTES\s*=\s*5\s*\*\s*1024\s*\*\s*1024/);
+  assert.match(router, /waitForElement\("literatureBankFile"\)/);
+  assert.match(router, /copyFilesIntoInput\(bankInput, \[file\]\)/);
+});
+
+test("Evidence gateway no longer promises an indefinite automatic transfer while Studio is absent", () => {
+  const router = read("public/researchEvidenceUploadRouter.js");
+  assert.match(router, /TARGET_WAIT_MS\s*=\s*12000/);
+  assert.match(router, /No background transfer is still running/i);
+  assert.match(router, /did not initialise within 12 seconds/i);
+  assert.match(router, /processing did not complete within 90 seconds/i);
+});
+
+test("Studio loads the router after the Literature Evidence Bank and cache-busts the core Research Studio scripts", () => {
+  const html = read("public/studio.html");
+  const bankIndex = html.indexOf("researchEvidenceBankUI.js?v=3.1.0");
+  const routerIndex = html.indexOf("researchEvidenceUploadRouter.js?v=3.1.0");
+  assert.ok(bankIndex >= 0, "Literature Evidence Bank script should be present");
+  assert.ok(routerIndex > bankIndex, "upload router must load after Literature Evidence Bank UI");
+  assert.match(html, /researchStudioUI\.js\?v=3\.1\.0/);
+  assert.match(html, /fileImport\.js\?v=3\.1\.0/);
+  assert.match(html, /CSV\/XLSX: Literature Evidence Bank \(25 MB, up to 10,000 indexed rows/i);
+});
