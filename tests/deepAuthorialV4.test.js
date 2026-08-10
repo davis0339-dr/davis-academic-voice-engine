@@ -19,7 +19,8 @@ test("Deep Authorial v4 plans proposition-led reconstruction rather than sentenc
   });
 
   assert.equal(plan.authorialAuthorityActive, true);
-  assert.equal(plan.scopePolicyVersion, "proposition-led-authorial-reconstruction-v4");
+  assert.equal(plan.scopePolicyVersion, "diagnosis-guided-authority-v3");
+  assert.equal(plan.authorialProtocolVersion, "proposition-led-authorial-reconstruction-v4");
   assert.ok(plan.documentGuidance.some((rule) => /not a sentence-by-sentence paraphrase pass/i.test(rule)));
   assert.ok(plan.documentGuidance.some((rule) => /one-source-sentence -> one-revised-sentence/i.test(rule)));
   assert.ok(plan.documentGuidance.some((rule) => /vary rhetorical trajectory by function/i.test(rule)));
