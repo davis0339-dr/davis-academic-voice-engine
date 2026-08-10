@@ -2,17 +2,21 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
+  const BANK_VERSION = "3.2.0";
   const MAX_BANK_BYTES = 25 * 1024 * 1024;
   const MAX_BANK_ROWS = 10000;
   const TRANSFER_LIMIT = 8;
   const state = {
     fileName: "",
+    sheets: [],
+    activeSheetIndex: 0,
     sheetName: "",
     headers: [],
     records: [],
     filtered: [],
     selected: new Set(),
     mapping: {},
+    mappingBySheet: {},
   };
 
   function esc(value) {
@@ -35,13 +39,19 @@
       const lines = match[2].split("\n").filter((line) => line.trim());
       if (!lines.length) continue;
       const headers = lines[0].split("\t").map((cell, i) => cell.trim() || `Column ${i + 1}`);
-      const records = lines.slice(1).map((line, rowIndex) => {
+      const records = lines.slice(1, MAX_BANK_ROWS + 1).map((line, rowIndex) => {
         const cells = line.split("\t");
         const values = {};
         headers.forEach((header, i) => { values[header] = String(cells[i] || "").trim(); });
-        return { id: `${sheetName}-${rowIndex + 2}`, rowNumber: rowIndex + 2, values };
+        return { id: `${sheetName}-${rowIndex + 2}`, sheetName, rowNumber: rowIndex + 2, values };
       });
-      parsed.push({ sheetName, headers, records });
+      parsed.push({
+        sheetName,
+        headers,
+        records,
+        totalRecordCount: Math.max(0, lines.length - 1),
+        truncated: Math.max(0, lines.length - 1) > MAX_BANK_ROWS,
+      });
     }
     return parsed;
   }
@@ -121,7 +131,7 @@
 
   function recordText(record) {
     const ordered = ["title", "authors", "year", "journal", "country", "methodology", "findings", "abstract", "doi", "url"];
-    const lines = [];
+    const lines = [`WORKBOOK: ${state.fileName}`, `SHEET: ${record.sheetName || state.sheetName}`, `ROW: ${record.rowNumber}`];
     for (const field of ordered) {
       const value = mapped(record, field);
       if (value) lines.push(`${field.replace(/_/g, " ").toUpperCase()}: ${value}`);
@@ -149,20 +159,21 @@
       <div class="evidence-bank-head">
         <div>
           <h4>Independent Literature Evidence Bank</h4>
-          <p class="muted">Upload a large CSV/XLSX literature summary independently of the eight-source alignment workspace. The workbook stays in this browser session. Search thousands of abstract/metadata rows, then send only the most relevant records into Evidence Alignment.</p>
+          <p class="muted">Upload a large CSV/XLSX literature summary independently of the eight-source alignment workspace. Every readable worksheet is retained in this browser session; switch sheets without re-uploading. Search thousands of rows, then send only the most relevant records into Evidence Alignment.</p>
         </div>
-        <span class="evidence-bank-badge">Excel/CSV · local index</span>
+        <span class="evidence-bank-badge">Evidence Bank v${BANK_VERSION} · Excel/CSV · local index</span>
       </div>
       <div class="file-toolbar">
         <label class="file-button" for="literatureBankFile">Upload literature bank</label>
         <input id="literatureBankFile" class="visually-hidden" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
-        <span id="literatureBankStatus" class="file-status">No workbook loaded. Up to 25 MB / ${MAX_BANK_ROWS.toLocaleString()} rows in this build.</span>
+        <span id="literatureBankStatus" class="file-status">No workbook loaded. Up to 25 MB / ${MAX_BANK_ROWS.toLocaleString()} rows per worksheet in this build.</span>
       </div>
+      <div id="literatureBankSheetControls"></div>
       <div id="literatureBankMapping"></div>
       <div id="literatureBankTools" hidden>
         <div class="evidence-bank-search-row">
-          <input id="literatureBankSearch" type="search" placeholder="Search title, abstract, authors, methods, findings, country, DOI…" />
-          <button id="literatureBankSearchBtn" type="button">Search bank</button>
+          <input id="literatureBankSearch" type="search" placeholder="Search the active sheet: title, abstract, authors, methods, findings, country, DOI…" />
+          <button id="literatureBankSearchBtn" type="button">Search active sheet</button>
           <button id="literatureBankUseReasoningBtn" type="button">Find evidence for current reasoning</button>
           <button id="literatureBankClearSearchBtn" type="button">Reset</button>
         </div>
@@ -185,6 +196,48 @@
     return true;
   }
 
+  function activateSheet(index, { preserveSearch = false } = {}) {
+    const next = state.sheets[index];
+    if (!next) return;
+    if (state.sheetName) state.mappingBySheet[state.sheetName] = { ...state.mapping };
+    state.activeSheetIndex = index;
+    state.sheetName = next.sheetName;
+    state.headers = next.headers;
+    state.records = next.records;
+    state.filtered = state.records.slice(0, 50);
+    state.selected.clear();
+    state.mapping = state.mappingBySheet[next.sheetName]
+      ? { ...state.mappingBySheet[next.sheetName] }
+      : autoMap(state.headers);
+    state.mappingBySheet[next.sheetName] = { ...state.mapping };
+    if (!preserveSearch && $("literatureBankSearch")) $("literatureBankSearch").value = "";
+    renderSheetControls();
+    renderMapping();
+    renderResults();
+    updateSelectionStatus();
+  }
+
+  function renderSheetControls() {
+    const target = $("literatureBankSheetControls");
+    if (!target) return;
+    if (!state.sheets.length) {
+      target.innerHTML = "";
+      return;
+    }
+    const active = state.sheets[state.activeSheetIndex];
+    const totalRows = state.sheets.reduce((sum, sheet) => sum + sheet.totalRecordCount, 0);
+    target.innerHTML = `
+      <div class="evidence-bank-sheet-controls">
+        <label><strong>Worksheet</strong>
+          <select id="literatureBankSheetSelect">
+            ${state.sheets.map((sheet, index) => `<option value="${index}" ${index === state.activeSheetIndex ? "selected" : ""}>${esc(sheet.sheetName)} — ${sheet.totalRecordCount.toLocaleString()} row(s)${sheet.truncated ? `; first ${MAX_BANK_ROWS.toLocaleString()} indexed` : ""}</option>`).join("")}
+          </select>
+        </label>
+        <div class="evidence-bank-sheet-summary"><strong>${state.sheets.length} worksheet(s) retained</strong><span>${totalRows.toLocaleString()} data row(s) detected across workbook</span><span>Active: ${esc(active?.sheetName || "")}</span></div>
+      </div>`;
+    $("literatureBankSheetSelect")?.addEventListener("change", (event) => activateSheet(Number(event.target.value)));
+  }
+
   async function loadBank(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -195,18 +248,16 @@
       const result = await window.AcademicFileImport.readAcademicFile(file, MAX_BANK_BYTES);
       const sheets = splitSpreadsheetText(result.text || "");
       if (!sheets.length) throw new Error("No worksheet rows could be parsed.");
-      const sheet = sheets.reduce((best, current) => current.records.length > best.records.length ? current : best, sheets[0]);
       state.fileName = file.name;
-      state.sheetName = sheet.sheetName;
-      state.headers = sheet.headers;
-      state.records = sheet.records.slice(0, MAX_BANK_ROWS);
-      state.filtered = state.records.slice(0, 50);
-      state.selected.clear();
-      state.mapping = autoMap(state.headers);
-      renderMapping();
-      renderResults();
+      state.sheets = sheets;
+      state.mappingBySheet = {};
+      state.activeSheetIndex = 0;
+      state.sheetName = "";
+      activateSheet(0);
       if ($("literatureBankTools")) $("literatureBankTools").hidden = false;
-      if (status) status.textContent = `${file.name} · ${state.records.length.toLocaleString()} indexed record(s) from sheet “${state.sheetName}”. Nothing has been sent to the server.`;
+      const totalDetected = sheets.reduce((sum, sheet) => sum + sheet.totalRecordCount, 0);
+      const totalIndexed = sheets.reduce((sum, sheet) => sum + sheet.records.length, 0);
+      if (status) status.textContent = `${file.name} · ${sheets.length} worksheet(s) retained · ${totalDetected.toLocaleString()} data row(s) detected · ${totalIndexed.toLocaleString()} row(s) available across sheet indexes. Active sheet: “${state.sheetName}”. Nothing has been sent to the server.`;
     } catch (err) {
       if (status) status.textContent = `Could not load literature bank: ${err.message}`;
     }
@@ -218,7 +269,7 @@
     const fields = ["title", "authors", "year", "abstract", "journal", "volume", "issue", "pages", "doi", "url", "country", "methodology", "findings"];
     target.innerHTML = `
       <details open class="evidence-bank-mapping">
-        <summary><strong>Column mapping</strong> · review the automatic matches so APA/retrieval fields are interpreted correctly</summary>
+        <summary><strong>Column mapping — ${esc(state.sheetName)}</strong> · mapping is stored separately for each worksheet</summary>
         <div class="evidence-bank-map-grid">
           ${fields.map((field) => `<label>${esc(field.replace(/_/g, " "))}<select data-bank-map="${esc(field)}"><option value="">Not mapped</option>${state.headers.map((header) => `<option value="${esc(header)}" ${state.mapping[field] === header ? "selected" : ""}>${esc(header)}</option>`).join("")}</select></label>`).join("")}
         </div>
@@ -226,6 +277,7 @@
     target.querySelectorAll("[data-bank-map]").forEach((select) => {
       select.addEventListener("change", () => {
         state.mapping[select.dataset.bankMap] = select.value;
+        state.mappingBySheet[state.sheetName] = { ...state.mapping };
         renderResults();
       });
     });
@@ -294,7 +346,7 @@
     }
     const rows = state.filtered.slice(0, 50);
     target.innerHTML = `
-      <div class="evidence-bank-result-head"><strong>${rows.length.toLocaleString()} displayed</strong><span>${state.records.length.toLocaleString()} total indexed</span></div>
+      <div class="evidence-bank-result-head"><strong>${rows.length.toLocaleString()} displayed from ${esc(state.sheetName)}</strong><span>${state.records.length.toLocaleString()} indexed in active sheet</span></div>
       <div class="evidence-bank-results">
         ${rows.map((record) => {
           const title = mapped(record, "title") || `Row ${record.rowNumber}`;
@@ -304,7 +356,7 @@
           const apa = apaCandidate(record);
           return `<article class="evidence-bank-record">
             <label class="evidence-bank-select"><input type="checkbox" data-bank-select="${esc(record.id)}" ${state.selected.has(record.id) ? "checked" : ""} /> <strong>${esc(title)}</strong></label>
-            <div class="muted">${esc([authors, year].filter(Boolean).join(" · "))}${Number.isFinite(record.relevanceScore) ? ` · relevance ${esc(record.relevanceScore)}` : ""}</div>
+            <div class="muted">${esc(record.sheetName)} · row ${record.rowNumber}${authors || year ? ` · ${esc([authors, year].filter(Boolean).join(" · "))}` : ""}${Number.isFinite(record.relevanceScore) ? ` · relevance ${esc(record.relevanceScore)}` : ""}</div>
             <p>${esc(abstract.slice(0, 650))}${abstract.length > 650 ? "…" : ""}</p>
             ${apa ? `<details><summary>APA 7 reference candidate</summary><p>${esc(apa)}</p></details>` : ""}
           </article>`;
@@ -323,7 +375,7 @@
   function updateSelectionStatus(message = "") {
     const status = $("literatureBankSelectionStatus");
     if (!status) return;
-    status.textContent = message || `${state.selected.size} selected · up to ${TRANSFER_LIMIT} can be transferred at once`;
+    status.textContent = message || `${state.selected.size} selected from ${state.sheetName} · up to ${TRANSFER_LIMIT} can be transferred at once`;
   }
 
   function selectTop() {
@@ -361,7 +413,7 @@
     const chosen = selected.slice(0, remaining);
     const dt = new DataTransfer();
     chosen.forEach((record, index) => {
-      const safeTitle = (mapped(record, "title") || `literature-row-${record.rowNumber}`).replace(/[^a-z0-9._-]+/gi, "-").slice(0, 80);
+      const safeTitle = (mapped(record, "title") || `${record.sheetName}-row-${record.rowNumber}`).replace(/[^a-z0-9._-]+/gi, "-").slice(0, 80);
       dt.items.add(new File([recordText(record)], `${safeTitle || `source-${index + 1}`}.txt`, { type: "text/plain" }));
     });
     input.files = dt.files;
@@ -375,12 +427,12 @@
     });
     state.selected.clear();
     renderResults();
-    updateSelectionStatus(`${chosen.length} literature record(s) transferred with citation labels. Align them when your argument map is ready.`);
+    updateSelectionStatus(`${chosen.length} literature record(s) transferred from “${state.sheetName}” with citation labels. Align them when your argument map is ready.`);
   }
 
   const style = document.createElement("style");
   style.textContent = `
-    .evidence-bank-card{border-color:#4e6b85!important}.evidence-bank-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start}.evidence-bank-head h4{margin-top:0}.evidence-bank-badge{white-space:nowrap;border:1px solid #526b83;border-radius:999px;padding:.3rem .6rem;font-size:.82em}.evidence-bank-mapping{margin:.8rem 0;padding:.7rem;border:1px solid #405269;border-radius:8px}.evidence-bank-map-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.6rem;margin-top:.7rem}.evidence-bank-map-grid label{display:flex;flex-direction:column;gap:.25rem}.evidence-bank-search-row{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto;gap:.5rem;margin:.8rem 0}.evidence-bank-result-head{display:flex;justify-content:space-between;gap:1rem;margin:.75rem 0}.evidence-bank-results{display:grid;gap:.65rem;max-height:620px;overflow:auto;padding-right:.25rem}.evidence-bank-record{padding:.75rem;border:1px solid #405269;border-radius:8px;background:rgba(8,16,28,.28)}.evidence-bank-record p{margin:.45rem 0}.evidence-bank-select{display:flex;gap:.45rem;align-items:flex-start}.evidence-bank-select input{width:auto!important;margin-top:.25rem}@media(max-width:900px){.evidence-bank-search-row{grid-template-columns:1fr}.evidence-bank-head{flex-direction:column}}
+    .evidence-bank-card{border-color:#4e6b85!important}.evidence-bank-head{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start}.evidence-bank-head h4{margin-top:0}.evidence-bank-badge{white-space:nowrap;border:1px solid #526b83;border-radius:999px;padding:.3rem .6rem;font-size:.82em}.evidence-bank-sheet-controls{display:grid;grid-template-columns:minmax(260px,1fr) minmax(260px,1fr);gap:.8rem;margin:.8rem 0;padding:.75rem;border:1px solid #405269;border-radius:8px}.evidence-bank-sheet-controls label{display:grid;gap:.35rem}.evidence-bank-sheet-summary{display:flex;flex-direction:column;gap:.2rem;justify-content:center;color:var(--muted)}.evidence-bank-mapping{margin:.8rem 0;padding:.7rem;border:1px solid #405269;border-radius:8px}.evidence-bank-map-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.6rem;margin-top:.7rem}.evidence-bank-map-grid label{display:flex;flex-direction:column;gap:.25rem}.evidence-bank-search-row{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto;gap:.5rem;margin:.8rem 0}.evidence-bank-result-head{display:flex;justify-content:space-between;gap:1rem;margin:.75rem 0}.evidence-bank-results{display:grid;gap:.65rem;max-height:620px;overflow:auto;padding-right:.25rem}.evidence-bank-record{padding:.75rem;border:1px solid #405269;border-radius:8px;background:rgba(8,16,28,.28)}.evidence-bank-record p{margin:.45rem 0}.evidence-bank-select{display:flex;gap:.45rem;align-items:flex-start}.evidence-bank-select input{width:auto!important;margin-top:.25rem}@media(max-width:900px){.evidence-bank-search-row,.evidence-bank-sheet-controls{grid-template-columns:1fr}.evidence-bank-head{flex-direction:column}}
   `;
   document.head.appendChild(style);
 
@@ -389,4 +441,16 @@
     attempts += 1;
     if (install() || attempts > 100) clearInterval(timer);
   }, 50);
+
+  window.__DavisLiteratureEvidenceBank = {
+    version: BANK_VERSION,
+    limits: { maxBytes: MAX_BANK_BYTES, maxRowsPerSheet: MAX_BANK_ROWS },
+    getStateSummary: () => ({
+      fileName: state.fileName,
+      sheetCount: state.sheets.length,
+      activeSheet: state.sheetName,
+      activeRows: state.records.length,
+      sheets: state.sheets.map((sheet) => ({ name: sheet.sheetName, rows: sheet.totalRecordCount, indexed: sheet.records.length, truncated: sheet.truncated })),
+    }),
+  };
 })();
