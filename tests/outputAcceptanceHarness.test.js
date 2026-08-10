@@ -82,6 +82,11 @@ test("completed-output audit does not clear polished paragraph choreography mere
   assert.ok(
     audit.reasons.includes("machine_pattern_reduction_insufficient") ||
     audit.reasons.includes("high_machine_pattern_residual") ||
+    audit.reasons.includes("machine_language_residual") ||
+    audit.reasons.includes("high_machine_language_residual") ||
+    audit.reasons.includes("machine_language_reduction_insufficient") ||
+    audit.reasons.includes("high_discourse_regularity_residual") ||
+    audit.reasons.includes("discourse_regularity_reduction_insufficient") ||
     audit.reasons.includes("source_skeleton_dependence_high")
   );
   assert.equal(audit.release_gate.external_detector_check_recommended, false);
@@ -120,6 +125,12 @@ test("acceptance report exposes the dimensions needed to separate good writing f
     "source_machine_pattern",
     "candidate_machine_pattern",
     "machine_pattern_delta",
+    "source_machine_language",
+    "candidate_machine_language",
+    "machine_language_delta",
+    "source_discourse_regularity",
+    "candidate_discourse_regularity",
+    "discourse_regularity_delta",
     "source_authorial_texture",
     "candidate_authorial_texture",
     "authorial_texture_delta",
