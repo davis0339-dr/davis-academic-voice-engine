@@ -6,14 +6,18 @@
   window.__academicSafeDomInstalled = true;
 
   const allowedTags = new Set([
-    "A", "B", "BR", "BUTTON", "DETAILS", "DIV", "EM", "H4", "LI", "P", "PRE",
-    "SECTION", "SPAN", "STRONG", "SUMMARY", "TABLE", "TBODY", "TD", "TEXTAREA",
-    "TH", "THEAD", "TR", "UL",
+    "A", "B", "BR", "BUTTON", "DETAILS", "DIV", "EM", "H3", "H4", "H5", "INPUT",
+    "LABEL", "LI", "OL", "OPTION", "P", "PRE", "SECTION", "SELECT", "SPAN", "STRONG",
+    "SUMMARY", "TABLE", "TBODY", "TD", "TEXTAREA", "TH", "THEAD", "TR", "UL",
   ]);
   const allowedAttrs = new Set([
-    "class", "id", "href", "target", "rel", "readonly", "rows", "title", "role",
+    "class", "id", "href", "target", "rel", "readonly", "rows", "cols", "title", "role",
+    "type", "value", "placeholder", "checked", "disabled", "selected", "for", "accept", "multiple",
+    "maxlength", "minlength", "min", "max", "step", "autocomplete", "name", "size",
   ]);
-  const dropEntirely = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "BASE", "FORM", "INPUT"]);
+  const dropEntirely = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "BASE", "FORM"]);
+  const safeInputTypes = new Set(["text", "checkbox", "radio", "file", "number", "range", "search", "email", "url", "hidden"]);
+  const safeButtonTypes = new Set(["button", "submit", "reset"]);
 
   function safeUrl(value) {
     const raw = String(value || "").trim();
@@ -55,6 +59,14 @@
       }
     }
 
+    if (tag === "INPUT") {
+      const type = String(el.getAttribute("type") || "text").toLowerCase();
+      el.setAttribute("type", safeInputTypes.has(type) ? type : "text");
+    }
+    if (tag === "BUTTON") {
+      const type = String(el.getAttribute("type") || "button").toLowerCase();
+      el.setAttribute("type", safeButtonTypes.has(type) ? type : "button");
+    }
     if (tag === "A" && el.getAttribute("target") === "_blank") {
       el.setAttribute("rel", "noopener noreferrer");
     }
