@@ -52,6 +52,7 @@ jobs:
           node --check public/detectorResearchUI.js
           node --check public/detectorEvidenceUI.js
           node --check public/researchStudioUI.js
+          node --check public/researchCoauthoringUI.js
           node --check public/researchStudioEvidenceGateway.js
           node --check public/researchStudioEvidenceCoreUI.js
           node --check public/researchStudioCapabilitiesUI.js
@@ -112,12 +113,13 @@ jobs:
           grep -q '/rewriteLineage.js' public/optionalFeatures.js
           grep -q '/longDocumentVNextUI.js' public/optionalFeatures.js
           grep -q '/researchStudioUI.js?v=3.1.1' studio-smoke.html
+          grep -q '/researchCoauthoringUI.js?v=1.0.0' studio-smoke.html
           grep -q '/researchStudioEvidenceGateway.js?v=3.2.0' studio-smoke.html
           grep -q '/researchEvidenceBankUI.js?v=3.2.0' studio-smoke.html
-          grep -q '/researchEvidenceUploadRouter.js?v=3.2.0' studio-smoke.html
+          grep -q '/researchEvidenceUploadRouter.js?v=3.2.1' studio-smoke.html
           grep -q 'evidenceGatewayFiles' studio-smoke.html
           grep -q 'evidenceGatewayPasteText' studio-smoke.html
-          grep -q 'Evidence Gateway v3.2.0' studio-smoke.html
+          grep -q 'Evidence Gateway v3.2.1' studio-smoke.html
           grep -q '/researchStudioEvidenceCoreUI.js' studio-smoke.html
           grep -q '/researchStudioCandidateBridge.js' studio-smoke.html
           grep -q 'transferToResearchStudio' public/researchStudioEvidenceGateway.js
@@ -127,6 +129,9 @@ jobs:
           grep -q 'interceptDirectWorkspaceSpreadsheetChange' public/researchEvidenceUploadRouter.js
           grep -q 'BANK_VERSION = "3.2.0"' public/researchEvidenceBankUI.js
           grep -q 'literatureBankSheetSelect' public/researchEvidenceBankUI.js
+          grep -q 'manuscriptFirstCoauthoring' public/researchCoauthoringUI.js
+          grep -q '/research/manuscript-questions' server/routes/researchStudio.js
+          grep -q '/research/response-assess' server/routes/researchStudio.js
           grep -q 'browseResearchEvidenceBtn' public/researchStudioEvidenceCoreUI.js
           grep -q 'evidencePasteText' public/researchStudioEvidenceCoreUI.js
           grep -q 'evidence-enhance-candidate' server/routes/evidenceEnhance.js
