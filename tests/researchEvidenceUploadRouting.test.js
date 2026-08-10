@@ -31,12 +31,15 @@ test("spreadsheet routing also intercepts the internal Research Studio file choo
   assert.match(router, /document\.addEventListener\("change", interceptDirectWorkspaceSpreadsheetChange, true\)/);
 });
 
-test("Evidence gateway no longer promises an indefinite automatic transfer while Studio is absent", () => {
+test("Evidence gateway repairs a partial Studio instead of promising a long invisible transfer", () => {
   const router = read("public/researchEvidenceUploadRouter.js");
-  assert.match(router, /TARGET_WAIT_MS\s*=\s*12000/);
-  assert.match(router, /No background transfer is still running/i);
-  assert.match(router, /did not initialise within 12 seconds/i);
+  assert.match(router, /ROUTER_VERSION\s*=\s*"3\.2\.1"/);
+  assert.match(router, /TARGET_WAIT_MS\s*=\s*2500/);
+  assert.match(router, /REPAIR_WAIT_MS\s*=\s*6000/);
+  assert.match(router, /repairResearchStudioUi/);
+  assert.match(router, /No background transfer is running/i);
   assert.match(router, /processing did not complete within 90 seconds/i);
+  assert.doesNotMatch(router, /did not initialise within 12 seconds/i);
 });
 
 test("Literature Evidence Bank retains every worksheet instead of silently choosing only the largest sheet", () => {
@@ -53,11 +56,12 @@ test("Literature Evidence Bank retains every worksheet instead of silently choos
 test("Studio loads the sheet-aware bank before the router and cache-busts the core Research Studio scripts", () => {
   const html = read("public/studio.html");
   const bankIndex = html.indexOf("researchEvidenceBankUI.js?v=3.2.0");
-  const routerIndex = html.indexOf("researchEvidenceUploadRouter.js?v=3.1.1");
+  const routerIndex = html.indexOf("researchEvidenceUploadRouter.js?v=3.2.1");
   assert.ok(bankIndex >= 0, "Literature Evidence Bank script should be present");
   assert.ok(routerIndex > bankIndex, "upload router must load after Literature Evidence Bank UI");
-  assert.match(html, /Evidence Gateway v3\.1\.1/);
-  assert.match(html, /researchStudioUI\.js\?v=3\.1\.0/);
+  assert.match(html, /Evidence Gateway v3\.2\.1/);
+  assert.match(html, /researchStudioUI\.js\?v=3\.1\.1/);
+  assert.match(html, /researchCoauthoringUI\.js\?v=1\.0\.0/);
   assert.match(html, /fileImport\.js\?v=3\.1\.0/);
   assert.match(html, /CSV\/XLSX: Literature Evidence Bank \(25 MB, up to 10,000 indexed rows per worksheet/i);
 });
