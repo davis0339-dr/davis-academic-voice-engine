@@ -11,7 +11,7 @@ import { assessContrastiveLanguage } from "./contrastiveLanguage.js";
 import { parseTextStructure } from "./textStructure.js";
 import { analyseDiscourseArchitecture } from "./discourseArchitecture.js";
 import { assessArgumentativeSufficiency } from "./argumentativeSufficiency.js";
-import { analyseDiscourseRegularity } from "./discourseRegularityForensics.js";
+import { analyseCalibratedDiscourseRegularity } from "./discourseRegularityCalibration.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -174,7 +174,7 @@ export function diagnose(text) {
   const humanDiscourse = analyseHumanDiscourse(text);
   const contrastiveLanguage = assessContrastiveLanguage(text, { humanDiscourse });
   const baseDiscourseArchitecture = analyseDiscourseArchitecture(text, textStructure);
-  const discourseRegularityForensics = analyseDiscourseRegularity(text, textStructure);
+  const discourseRegularityForensics = analyseCalibratedDiscourseRegularity(text, textStructure);
   const discourseArchitecture = {
     ...baseDiscourseArchitecture,
     signals: [
