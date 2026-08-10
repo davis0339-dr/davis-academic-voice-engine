@@ -317,6 +317,7 @@ export function auditOutputAcceptance({
   const natural = String(naturalisation || "faithful").toLowerCase();
   const assertiveMode = natural === "aggressive" || natural === "authorial";
   const deepMode = intensity === "deep";
+  const moderateOrDeeper = intensity === "moderate" || deepMode;
 
   const reasons = [];
   const hardFailures = [];
@@ -336,10 +337,20 @@ export function auditOutputAcceptance({
     reasons.push("machine_pattern_reduction_insufficient");
   }
 
-  // A sophisticated paraphrase is not successful reconstruction when substantive
-  // work was actually authorised.
-  if (assertiveMode && substantive >= 0.25 && dependence.score >= 0.72) reasons.push("source_skeleton_dependence_high");
-  if (deepMode && assertiveMode && substantive >= 0.35 && dependence.exact_sentence_retention_ratio >= 0.58) reasons.push("deep_mode_under_transformed");
+  // A sophisticated near-source rewrite must not be cleared merely because the
+  // planner itself under-scoped the source. Earlier trials showed exactly this
+  // failure: Moderate + Aggressive labelled most units MICRO_EDIT, preserved the
+  // source skeleton, looked academically polished and still remained strongly
+  // machine-shaped externally. For Moderate/Deep assertive treatment, source
+  // dependence is therefore an independent acceptance dimension once there was
+  // any meaningful non-local authority in the plan.
+  const dependenceThreshold = deepMode ? 0.62 : 0.76;
+  if (assertiveMode && moderateOrDeeper && substantive >= 0.10 && dependence.score >= dependenceThreshold) {
+    reasons.push("source_skeleton_dependence_high");
+  }
+  if (deepMode && assertiveMode && dependence.exact_sentence_retention_ratio >= 0.45) {
+    reasons.push("deep_mode_under_transformed");
+  }
 
   if (sourceTexture >= 0.50 && textureDelta < -0.12) reasons.push("authorial_texture_eroded");
   if (candidateMachine.narrative_paragraph_count > 0 && surfaceQuality < 0.58) reasons.push("academic_surface_quality_low");
@@ -347,7 +358,8 @@ export function auditOutputAcceptance({
   const uniqueReasons = [...new Set(reasons)];
   const machineImprovement = clamp01((sourceMachine.score - candidateMachine.score + 0.20) / 0.40);
   const textureRetention = sourceMachine.narrative_paragraph_count === 0 ? 1 : clamp01(0.65 + textureDelta);
-  const dependenceFitness = assertiveMode && substantive >= 0.25 ? clamp01(1 - dependence.score) : clamp01(1 - dependence.score * 0.35);
+  const dependenceShouldCount = assertiveMode && moderateOrDeeper && substantive >= 0.10;
+  const dependenceFitness = dependenceShouldCount ? clamp01(1 - dependence.score) : clamp01(1 - dependence.score * 0.35);
   const score = Math.round(100 * (
     (preservationOk ? 1 : 0) * 0.30 +
     surfaceQuality * 0.15 +
@@ -362,7 +374,7 @@ export function auditOutputAcceptance({
 
   const targetParagraphIndices = [...new Set(candidateMachine.choreography.target_paragraph_indices || [])].slice(0, 6);
   return {
-    version: "output-acceptance-v1.1",
+    version: "output-acceptance-v1.2",
     status,
     passed: status === "pass",
     score,
