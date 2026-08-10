@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const ROUTER_VERSION = "3.1.0";
+  const ROUTER_VERSION = "3.1.1";
   const SPREADSHEET_RE = /\.(?:xlsx|csv)$/i;
   const BANK_MAX_BYTES = 25 * 1024 * 1024;
   const DIRECT_SOURCE_MAX_BYTES = 5 * 1024 * 1024;
@@ -10,10 +10,13 @@
   const $ = (id) => document.getElementById(id);
 
   function gatewayStatus(message, error = false) {
-    const el = $("evidenceGatewayStatus");
-    if (!el) return;
-    el.textContent = message;
-    el.className = `file-status ${error ? "error" : ""}`.trim();
+    const gateway = $("evidenceGatewayStatus");
+    const direct = $("researchEvidenceUiStatus") || $("researchEvidenceStatus");
+    for (const el of [gateway, direct]) {
+      if (!el) continue;
+      el.textContent = message;
+      el.className = `file-status ${error ? "error" : ""}`.trim();
+    }
   }
 
   function fileSizeMb(file) {
@@ -70,7 +73,7 @@
     });
     observer.observe(bankStatus, { childList: true, subtree: true, characterData: true });
     setTimeout(() => {
-      if (observer) observer.disconnect();
+      observer.disconnect();
       if (/reading|routing|initialis/i.test(String($("evidenceGatewayStatus")?.textContent || ""))) {
         gatewayStatus(`${fileName}: workbook processing did not complete within 90 seconds. Reload the Studio and retry; the interface will no longer claim that processing is still active indefinitely.`, true);
       }
@@ -134,7 +137,7 @@
     const direct = chosen.filter((file) => !SPREADSHEET_RE.test(file.name || ""));
 
     if (spreadsheets.length > 1) {
-      gatewayStatus(`You selected ${spreadsheets.length} spreadsheets. The Literature Evidence Bank holds one active workbook at a time; routing the first (${spreadsheets[0].name}). Load the others separately after reviewing the first.`, false);
+      gatewayStatus(`You selected ${spreadsheets.length} spreadsheets. The Literature Evidence Bank holds one active workbook at a time; routing the first (${spreadsheets[0].name}). Load the others separately after reviewing the first.`);
     }
 
     if (spreadsheets.length) await routeSpreadsheet(spreadsheets[0]);
@@ -148,6 +151,21 @@
     event.stopImmediatePropagation();
     event.stopPropagation();
     routeFiles(files).catch((err) => gatewayStatus(`Evidence routing failed: ${err.message}`, true));
+    try { event.target.value = ""; } catch {}
+  }
+
+  function interceptDirectWorkspaceSpreadsheetChange(event) {
+    if (event.target?.id !== "researchEvidenceFiles") return;
+    const files = Array.from(event.target.files || []);
+    const spreadsheets = files.filter((file) => SPREADSHEET_RE.test(file.name || ""));
+    if (!spreadsheets.length) return;
+
+    const direct = files.filter((file) => !SPREADSHEET_RE.test(file.name || ""));
+    event.stopImmediatePropagation();
+    event.stopPropagation();
+    routeSpreadsheet(spreadsheets[0])
+      .then(() => direct.length ? routeDirectSources(direct) : true)
+      .catch((err) => gatewayStatus(`Evidence routing failed: ${err.message}`, true));
     try { event.target.value = ""; } catch {}
   }
 
@@ -172,6 +190,7 @@
   }
 
   document.addEventListener("change", interceptGatewayChange, true);
+  document.addEventListener("change", interceptDirectWorkspaceSpreadsheetChange, true);
   document.addEventListener("drop", interceptGatewayDrop, true);
   window.addEventListener("load", () => setTimeout(clearFalseInitialisingState, 1500), { once: true });
   setTimeout(clearFalseInitialisingState, 15000);
@@ -179,6 +198,7 @@
   window.__DavisEvidenceUploadRouter = {
     version: ROUTER_VERSION,
     routeFiles,
+    routeSpreadsheet,
     limits: { spreadsheetBytes: BANK_MAX_BYTES, directSourceBytes: DIRECT_SOURCE_MAX_BYTES },
   };
 })();
