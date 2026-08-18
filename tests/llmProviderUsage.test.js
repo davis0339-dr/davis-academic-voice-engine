@@ -70,3 +70,34 @@ test("request-scoped provider accounting blocks calls beyond the configured ceil
     else process.env.ANTHROPIC_API_KEY = previousKey;
   }
 });
+
+test("request-scoped provider accounting stops new calls after the wall-clock budget", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  const previousFetch = global.fetch;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  let fetchCalls = 0;
+  global.fetch = async () => {
+    fetchCalls += 1;
+    return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
+  };
+
+  try {
+    const snapshot = await llmProvider.withUsageTracking(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await assert.rejects(
+        llmProvider.callAnthropic({ system: "test", messages: [{ role: "user", content: "late" }] }),
+        (error) => error.code === "PROVIDER_TIME_BUDGET_EXCEEDED"
+      );
+      return llmProvider.usageSnapshot();
+    }, { maxCalls: 4, maxDurationMs: 1 });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(snapshot.attempted_calls, 0);
+    assert.equal(snapshot.time_budget_blocked_calls, 1);
+    assert.equal(snapshot.max_duration_ms, 1);
+  } finally {
+    global.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+  }
+});

@@ -6,6 +6,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const DEFAULT_MAX_PROVIDER_CALLS = 12;
+const DEFAULT_MAX_PROVIDER_DURATION_MS = 240000;
 const usageStorage = new AsyncLocalStorage();
 
 export const HealthState = Object.freeze({
@@ -17,6 +18,7 @@ export const HealthState = Object.freeze({
   PROVIDER_UNAVAILABLE: "PROVIDER_UNAVAILABLE",
   PROVIDER_BILLING_REQUIRED: "PROVIDER_BILLING_REQUIRED",
   PROVIDER_CALL_BUDGET_EXCEEDED: "PROVIDER_CALL_BUDGET_EXCEEDED",
+  PROVIDER_TIME_BUDGET_EXCEEDED: "PROVIDER_TIME_BUDGET_EXCEEDED",
   NETWORK_TIMEOUT: "NETWORK_TIMEOUT",
   PROVIDER_ERROR: "PROVIDER_ERROR",
 });
@@ -38,14 +40,21 @@ function configuredMaxCalls() {
   return clampInteger(process.env.MAX_PROVIDER_CALLS_PER_REWRITE, DEFAULT_MAX_PROVIDER_CALLS, 1, 30);
 }
 
-function createUsageStore(maxCalls = configuredMaxCalls()) {
+function configuredMaxDurationMs() {
+  return clampInteger(process.env.MAX_PROVIDER_DURATION_MS_PER_REWRITE, DEFAULT_MAX_PROVIDER_DURATION_MS, 30000, 600000);
+}
+
+function createUsageStore(maxCalls = configuredMaxCalls(), maxDurationMs = configuredMaxDurationMs()) {
   return {
     model: getConfig().model,
     max_calls: clampInteger(maxCalls, configuredMaxCalls(), 1, 30),
+    max_duration_ms: clampInteger(maxDurationMs, configuredMaxDurationMs(), 1, 600000),
+    started_at_ms: Date.now(),
     attempted_calls: 0,
     successful_calls: 0,
     failed_calls: 0,
     budget_blocked_calls: 0,
+    time_budget_blocked_calls: 0,
     input_tokens: 0,
     output_tokens: 0,
   };
@@ -67,6 +76,8 @@ function usageSnapshot() {
     : null;
   return {
     ...usage,
+    started_at_ms: undefined,
+    elapsed_ms: Math.max(0, Date.now() - usage.started_at_ms),
     estimated_cost_usd: estimatedCost === null ? null : Number(estimatedCost.toFixed(6)),
     estimate_note: rates
       ? "Estimated from standard Anthropic model token rates; the provider invoice remains authoritative."
@@ -74,8 +85,8 @@ function usageSnapshot() {
   };
 }
 
-function withUsageTracking(callback, { maxCalls } = {}) {
-  return usageStorage.run(createUsageStore(maxCalls), callback);
+function withUsageTracking(callback, { maxCalls, maxDurationMs } = {}) {
+  return usageStorage.run(createUsageStore(maxCalls, maxDurationMs), callback);
 }
 
 function usageMiddleware(req, res, next) {
@@ -85,6 +96,13 @@ function usageMiddleware(req, res, next) {
 function beginTrackedCall() {
   const usage = usageStorage.getStore();
   if (!usage) return null;
+  if (Date.now() - usage.started_at_ms >= usage.max_duration_ms) {
+    usage.time_budget_blocked_calls += 1;
+    const err = new Error(`Provider time budget reached (${Math.round(usage.max_duration_ms / 1000)} seconds for this rewrite). The request was stopped to prevent prolonged or uncontrolled credit use.`);
+    err.code = HealthState.PROVIDER_TIME_BUDGET_EXCEEDED;
+    err.healthState = HealthState.PROVIDER_TIME_BUDGET_EXCEEDED;
+    throw err;
+  }
   if (usage.attempted_calls >= usage.max_calls) {
     usage.budget_blocked_calls += 1;
     const err = new Error(`Provider call ceiling reached (${usage.max_calls} calls for this rewrite). The request was stopped to prevent uncontrolled credit use.`);
@@ -157,7 +175,10 @@ async function callAnthropic({ system, messages, maxTokens = 4096, timeoutOverri
   const trackedUsage = beginTrackedCall();
 
   try {
-    const effectiveTimeoutMs = timeoutOverrideMs || timeoutMs;
+    const remainingBudgetMs = trackedUsage
+      ? Math.max(1, trackedUsage.max_duration_ms - (Date.now() - trackedUsage.started_at_ms))
+      : Number.POSITIVE_INFINITY;
+    const effectiveTimeoutMs = Math.min(timeoutOverrideMs || timeoutMs, remainingBudgetMs);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
 

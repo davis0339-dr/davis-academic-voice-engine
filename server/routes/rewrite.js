@@ -636,6 +636,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     state === "AUTH_FAILED" ? 401 :
     state === "RATE_LIMITED" ? 429 :
     state === "PROVIDER_CALL_BUDGET_EXCEEDED" ? 503 :
+    state === "PROVIDER_TIME_BUDGET_EXCEEDED" ? 503 :
     state === "NETWORK_TIMEOUT" ? 504 :
     state === "PROVIDER_OVERLOADED" || state === "PROVIDER_UNAVAILABLE" ? 503 :
     502;
