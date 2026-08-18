@@ -81,6 +81,10 @@ test("the 1,000-word mixed-origin benchmark keeps proposed contributions outside
     assert.match(capturedRequest.system, /never insert proposed material into revised_text/i);
     assert.match(capturedRequest.system, /do not infer authorship/i);
     assert.match(capturedRequest.system, /do not (?:invent|fabricate)[^.]*citations/i);
+    assert.ok(
+      capturedRequest.max_tokens >= 6144,
+      `long collaborative revisions need enough room for revised prose plus review metadata; received ${capturedRequest.max_tokens}`
+    );
   } finally {
     global.fetch = previousFetch;
     if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;

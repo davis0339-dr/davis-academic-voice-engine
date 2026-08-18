@@ -117,11 +117,19 @@ function validateShape(parsed) {
   return errors;
 }
 
-async function runModelPass({ systemPrompt, sourceText }) {
+export function modelOutputTokenBudget(sourceText, revisionPurpose = "fidelity") {
+  const wordCount = String(sourceText || "").trim().split(/\s+/).filter(Boolean).length;
+  const metadataAllowance = normalizeRevisionPurpose(revisionPurpose) === "collaborative" ? 3200 : 1800;
+  const estimatedNeed = Math.ceil(wordCount * 2.75 + metadataAllowance);
+  const roundedNeed = Math.ceil(estimatedNeed / 1024) * 1024;
+  return Math.min(8192, Math.max(4096, roundedNeed));
+}
+
+async function runModelPass({ systemPrompt, sourceText, maxTokens = 4096 }) {
   const llmResult = await llmProvider.callAnthropic({
     system: systemPrompt,
     messages: [{ role: "user", content: sourceText }],
-    maxTokens: 4096,
+    maxTokens,
   });
 
   if (llmResult.raw?.stop_reason === "max_tokens") {
@@ -137,7 +145,7 @@ async function runModelPass({ systemPrompt, sourceText }) {
     const repairResult = await llmProvider.callAnthropic({
       system: buildJsonRepairSystemPrompt(),
       messages: [{ role: "user", content: llmResult.text }],
-      maxTokens: 4096,
+      maxTokens,
     });
     if (repairResult.raw?.stop_reason === "max_tokens") {
       const err = new Error("JSON syntax recovery was truncated before completion.");
@@ -284,6 +292,7 @@ export async function rewrite({
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
+  const outputTokenBudget = modelOutputTokenBudget(sourceText, effectiveRevisionPurpose);
   const lineage = normaliseRewriteLineage(rewriteLineage, sourceText);
   const analysis = analyse({
     sourceText,
@@ -312,7 +321,7 @@ export async function rewrite({
     revisionPurpose: effectiveRevisionPurpose,
   }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage });
 
-  let parsed = await runModelPass({ systemPrompt, sourceText });
+  let parsed = await runModelPass({ systemPrompt, sourceText, maxTokens: outputTokenBudget });
   let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
   let iterativeQuality = assessIterativeRegularisation({
     sourceText,
@@ -334,6 +343,7 @@ export async function rewrite({
     const corrected = await runModelPass({
       systemPrompt: systemPrompt + qualityCorrectionBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
       sourceText,
+      maxTokens: outputTokenBudget,
     });
     const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, qOptions);
     const correctedIterativeQuality = assessIterativeRegularisation({
@@ -369,6 +379,7 @@ export async function rewrite({
     const rescued = await runModelPass({
       systemPrompt: systemPrompt + finalRescueBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
       sourceText: rescuePayload,
+      maxTokens: outputTokenBudget,
     });
     const rescuedQuality = assessTransformationQuality(sourceText, rescued.revised_text, naturalisationLevel, qOptions);
     const rescuedIterativeQuality = assessIterativeRegularisation({
