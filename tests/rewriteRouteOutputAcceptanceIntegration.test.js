@@ -48,3 +48,9 @@ test("rewrite requests are provider-budgeted and expose request-scoped usage", (
   assert.match(route, /rewriteRouter\.post\("\/rewrite", llmProvider\.usageMiddleware/);
   assert.match(route, /provider_usage: llmProvider\.usageSnapshot\(\)/);
 });
+
+test("a failed optional model refinement blocks further residual provider spending", () => {
+  assert.match(route, /const optionalProviderFailure = Boolean\(/);
+  assert.match(route, /!optionalProviderFailure &&/);
+  assert.match(route, /residualStageBlockedReason = "provider_refinement_failed"/);
+});

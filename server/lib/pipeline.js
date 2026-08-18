@@ -330,6 +330,8 @@ export async function rewrite({
   });
   let qualityRetryUsed = false;
   let rescueRetryUsed = false;
+  let qualityRetryError = null;
+  let rescueRetryError = null;
   let responseRepairUsed = Boolean(parsed.__response_repair_used);
   let responseEnvelopeRecovered = Boolean(parsed.__response_envelope_recovered);
   let firstAttemptQuality = null;
@@ -340,31 +342,38 @@ export async function rewrite({
   if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)) {
     firstAttemptQuality = transformationQuality;
     firstAttemptIterativeQuality = iterativeQuality;
-    const corrected = await runModelPass({
-      systemPrompt: systemPrompt + qualityCorrectionBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
-      sourceText,
-      maxTokens: outputTokenBudget,
-    });
-    const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, qOptions);
-    const correctedIterativeQuality = assessIterativeRegularisation({
-      sourceText,
-      candidateText: corrected.revised_text,
-      rewriteLineage: lineage,
-    });
     qualityRetryUsed = true;
-    responseRepairUsed = responseRepairUsed || Boolean(corrected.__response_repair_used);
-    responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(corrected.__response_envelope_recovered);
+    try {
+      const corrected = await runModelPass({
+        systemPrompt: systemPrompt + qualityCorrectionBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
+        sourceText,
+        maxTokens: outputTokenBudget,
+      });
+      const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, qOptions);
+      const correctedIterativeQuality = assessIterativeRegularisation({
+        sourceText,
+        candidateText: corrected.revised_text,
+        rewriteLineage: lineage,
+      });
+      responseRepairUsed = responseRepairUsed || Boolean(corrected.__response_repair_used);
+      responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(corrected.__response_envelope_recovered);
 
-    const correctedPasses = correctedQuality.passed && !correctedIterativeQuality.blocking;
-    const correctedIsBetter = correctedPasses || candidateScore(correctedQuality, corrected.revised_text, measuredLanguageFamily, correctedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality);
-    if (correctedIsBetter) {
-      parsed = corrected;
-      transformationQuality = correctedQuality;
-      iterativeQuality = correctedIterativeQuality;
+      const correctedPasses = correctedQuality.passed && !correctedIterativeQuality.blocking;
+      const correctedIsBetter = correctedPasses || candidateScore(correctedQuality, corrected.revised_text, measuredLanguageFamily, correctedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality);
+      if (correctedIsBetter) {
+        parsed = corrected;
+        transformationQuality = correctedQuality;
+        iterativeQuality = correctedIterativeQuality;
+      }
+    } catch (err) {
+      qualityRetryError = {
+        code: err.code || err.healthState || "QUALITY_RETRY_FAILED",
+        message: err.message || "Optional quality refinement failed.",
+      };
     }
   }
 
-  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)) {
+  if (!qualityRetryError && qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)) {
     preRescueQuality = transformationQuality;
     preRescueIterativeQuality = iterativeQuality;
     const candidateText = parsed.revised_text;
@@ -375,27 +384,33 @@ export async function rewrite({
       "CURRENT CANDIDATE REVISION (repair this prose; do not merely copy the source):",
       candidateText,
     ].join("\n");
-
-    const rescued = await runModelPass({
-      systemPrompt: systemPrompt + finalRescueBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
-      sourceText: rescuePayload,
-      maxTokens: outputTokenBudget,
-    });
-    const rescuedQuality = assessTransformationQuality(sourceText, rescued.revised_text, naturalisationLevel, qOptions);
-    const rescuedIterativeQuality = assessIterativeRegularisation({
-      sourceText,
-      candidateText: rescued.revised_text,
-      rewriteLineage: lineage,
-    });
     rescueRetryUsed = true;
-    responseRepairUsed = responseRepairUsed || Boolean(rescued.__response_repair_used);
-    responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(rescued.__response_envelope_recovered);
+    try {
+      const rescued = await runModelPass({
+        systemPrompt: systemPrompt + finalRescueBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
+        sourceText: rescuePayload,
+        maxTokens: outputTokenBudget,
+      });
+      const rescuedQuality = assessTransformationQuality(sourceText, rescued.revised_text, naturalisationLevel, qOptions);
+      const rescuedIterativeQuality = assessIterativeRegularisation({
+        sourceText,
+        candidateText: rescued.revised_text,
+        rewriteLineage: lineage,
+      });
+      responseRepairUsed = responseRepairUsed || Boolean(rescued.__response_repair_used);
+      responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(rescued.__response_envelope_recovered);
 
-    const rescuedPasses = rescuedQuality.passed && !rescuedIterativeQuality.blocking;
-    if (rescuedPasses || candidateScore(rescuedQuality, rescued.revised_text, measuredLanguageFamily, rescuedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality)) {
-      parsed = rescued;
-      transformationQuality = rescuedQuality;
-      iterativeQuality = rescuedIterativeQuality;
+      const rescuedPasses = rescuedQuality.passed && !rescuedIterativeQuality.blocking;
+      if (rescuedPasses || candidateScore(rescuedQuality, rescued.revised_text, measuredLanguageFamily, rescuedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality)) {
+        parsed = rescued;
+        transformationQuality = rescuedQuality;
+        iterativeQuality = rescuedIterativeQuality;
+      }
+    } catch (err) {
+      rescueRetryError = {
+        code: err.code || err.healthState || "RESCUE_RETRY_FAILED",
+        message: err.message || "Optional final rescue failed.",
+      };
     }
   }
 
@@ -431,6 +446,8 @@ export async function rewrite({
       substantive_plan_ratio: Number(substantiveRatio.toFixed(3)),
       corrective_retry_used: qualityRetryUsed,
       rescue_retry_used: rescueRetryUsed,
+      corrective_retry_error: qualityRetryError,
+      rescue_retry_error: rescueRetryError,
       first_attempt: firstAttemptQuality,
       pre_rescue_attempt: preRescueQuality,
     },

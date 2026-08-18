@@ -442,9 +442,14 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       let residualStageEligible = false;
       let residualStageBlockedReason = null;
       const visibleOnlyUnder = visibleChangeOnlyUnderExecution(executionCompliance);
+      const optionalProviderFailure = Boolean(
+        result.transformation_quality?.corrective_retry_error ||
+        result.transformation_quality?.rescue_retry_error
+      );
       residualStageEligible = Boolean(
         !sourceRetainedForSafety &&
         !overExecutionRecoveryUsed &&
+        !optionalProviderFailure &&
         executionCompliance.preservation_ok &&
         !executionCompliance.over_executed &&
         (executionCompliance.execution_passed || visibleOnlyUnder) &&
@@ -454,6 +459,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       if (!residualStageEligible) {
         if (sourceRetainedForSafety) residualStageBlockedReason = "non_edit_result";
         else if (overExecutionRecoveryUsed) residualStageBlockedReason = "surgical_recovery_is_final";
+        else if (optionalProviderFailure) residualStageBlockedReason = "provider_refinement_failed";
         else if (modePolicy.effective_naturalisation === "off") residualStageBlockedReason = "naturalisation_off";
         else if (!executionCompliance.preservation_ok) residualStageBlockedReason = "preservation_failed";
         else if (executionCompliance.over_executed) residualStageBlockedReason = "over_execution";
