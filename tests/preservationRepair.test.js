@@ -9,7 +9,9 @@ test("preservation repair fixes the completed candidate instead of regenerating 
   const repairedText = "The proposed study will examine debt costs in 2023 (Chava et al., 2009).";
   const originalCall = llmProvider.callAnthropic;
   let userPayload = "";
-  llmProvider.callAnthropic = async ({ messages }) => {
+  let systemPrompt = "";
+  llmProvider.callAnthropic = async ({ system, messages }) => {
+    systemPrompt = system;
     userPayload = messages[0].content;
     return {
       text: JSON.stringify({ revised_text: repairedText }),
@@ -29,7 +31,10 @@ test("preservation repair fixes the completed candidate instead of regenerating 
     const repaired = await repairPreservationCandidate({ sourceText, candidateResult });
     assert.match(userPayload, /ORIGINAL SOURCE/);
     assert.match(userPayload, /CURRENT CANDIDATE/);
+    assert.match(userPayload, /DETAILED RHETORICAL\/SEMANTIC DEFECT REPORT/);
     assert.match(userPayload, /The study examines debt costs\./);
+    assert.match(systemPrompt, /TARGETED MINIMUM-CHANGE repair/);
+    assert.match(systemPrompt, /must remain verbatim/);
     assert.equal(repaired.revised_text, repairedText);
     assert.equal(repaired.preservation.numbers_ok, true);
     assert.equal(repaired.preservation.citations_ok, true);
@@ -41,3 +46,4 @@ test("preservation repair fixes the completed candidate instead of regenerating 
     llmProvider.callAnthropic = originalCall;
   }
 });
+

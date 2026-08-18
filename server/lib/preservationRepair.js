@@ -12,17 +12,22 @@ function repairPrompt() {
     "Repair rhetorical and semantic losses as well as factual defects. Restore missing topic/framing work, transitions, evidence interpretation, contrast, concession, synthesis, qualifications and scope conditions in fresh, natural wording rather than copying mechanically.",
     "Restore the source degree of modality, certainty, causality, magnitude, direction, comparison, generalisability and temporality. Do not replace a qualified relationship with a stronger simplified proposition.",
     "When evidence survived but its explanation of relevance was lost, reconstruct that interpretive function from the source. When a logical connector carried a balanced relationship, keep that relationship explicit even if sentence boundaries change.",
+    "This is a TARGETED MINIMUM-CHANGE repair. Use the detailed defect report and edit only the candidate location needed to correct each listed defect. Candidate sentences and paragraphs not implicated by a listed defect must remain verbatim.",
     "Restore every missing or altered protected item in its logically correct location. Remove any claim, number or citation that the candidate introduced without source support.",
     "Preserve proposal/future orientation exactly when the source describes planned research. Do not convert a prospectus into a completed study.",
-    "Do not add new evidence, mechanisms, interpretations or references. Do not undo legitimate sentence restructuring merely to increase lexical overlap with the source.",
+    "Do not add new evidence, mechanisms, interpretations or references. Do not undo legitimate sentence restructuring merely to increase lexical overlap with the source. Do not replace the candidate wholesale with the source; that is a failed repair.",
     "Return exactly one JSON object and nothing else: {\"revised_text\":\"the fully repaired candidate\"}",
   ].join("\n");
 }
 
 function repairPayload(sourceText, candidateResult, protectedSpans) {
+  const rhetoricalReport = candidateResult?.preservation?.rhetorical_semantic_preservation || null;
   return [
     "PRESERVATION DEFECTS DETECTED:",
     JSON.stringify(candidateResult?.preservation?.warnings || [], null, 2),
+    "",
+    "DETAILED RHETORICAL/SEMANTIC DEFECT REPORT (supporting evidence; role-marker differences alone are not proof of loss):",
+    JSON.stringify(rhetoricalReport, null, 2),
     "",
     "PROTECTED SOURCE MATERIAL:",
     JSON.stringify(protectedSpans, null, 2),
