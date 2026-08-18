@@ -31,6 +31,31 @@ function normalise(text) {
   return String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+export function shouldAcceptResidualCandidate({
+  preservationOk,
+  noResidualRegression,
+  beforeScore,
+  afterScore,
+  beforeAcceptance,
+  afterAcceptance,
+}) {
+  const riskImproved = afterScore < beforeScore;
+  const riskMateriallyImproved = riskImproved && afterScore <= beforeScore - 3;
+  const acceptanceBetter = acceptanceImproved(beforeAcceptance, afterAcceptance);
+  const acceptanceCleared = afterAcceptance.status === "pass";
+  const acceptanceNotWorse = Number(afterAcceptance.score || 0) >= Number(beforeAcceptance.score || 0);
+
+  return Boolean(
+    preservationOk &&
+    noResidualRegression &&
+    (
+      acceptanceCleared ||
+      acceptanceBetter ||
+      (riskMateriallyImproved && acceptanceNotWorse)
+    )
+  );
+}
+
 function targetSignalLabels(diagnostics, target) {
   const sentenceSet = new Set(target.sentenceIndices || []);
   return (diagnostics.signals || [])
@@ -378,7 +403,6 @@ export async function selectiveResidualRework({
   const preservation = auditPreservation(sourceText, reworkedText, extractProtectedSpans(sourceText));
   const after = analyseResidualWriting(reworkedText);
   const afterScore = Number(after.metrics.total_risk_score || 0);
-  const riskImproved = afterScore < beforeScore;
   const noResidualRegression = afterScore <= Math.max(beforeScore + 1, sourceScore + 2);
   const preservationOk = preservationPassed(preservation);
   const afterAcceptance = auditOutputAcceptance({
@@ -389,9 +413,14 @@ export async function selectiveResidualRework({
     naturalisation,
     planSummary,
   });
-  const acceptanceBetter = acceptanceImproved(beforeAcceptance, afterAcceptance);
-  const acceptanceCleared = afterAcceptance.status === "pass";
-  const accepted = preservationOk && noResidualRegression && (acceptanceCleared || acceptanceBetter || (riskImproved && beforeAcceptance.status === "pass"));
+  const accepted = shouldAcceptResidualCandidate({
+    preservationOk,
+    noResidualRegression,
+    beforeScore,
+    afterScore,
+    beforeAcceptance,
+    afterAcceptance,
+  });
 
   return {
     attempted: true,
