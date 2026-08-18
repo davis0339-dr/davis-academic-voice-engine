@@ -418,7 +418,7 @@ async function runAnalyseAndRevise() {
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(`[${data.error || "ERROR"}] ${data.message || "Revision failed"}`);
+    if (!res.ok) throw new Error(`[${data.error || "ERROR"}] ${data.message || "Revision failed"}${formatProviderUsage(data.provider_usage)}`);
     revisedText.value = data.revised_text;
     updateWordCounts();
     renderDiagnostics(data.diagnostics);
@@ -426,11 +426,17 @@ async function runAnalyseAndRevise() {
     renderPreservation(data.preservation);
     renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
     renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
-    setBusy(false, `Done. Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}`);
+    setBusy(false, `Done. Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}${formatProviderUsage(data.provider_usage)}`);
   } catch (err) {
     setBusy(false);
     setError(err.message);
   }
+}
+
+function formatProviderUsage(usage) {
+  if (!usage) return "";
+  const cost = Number.isFinite(usage.estimated_cost_usd) ? ` · estimated $${usage.estimated_cost_usd.toFixed(4)}` : "";
+  return ` · provider ${usage.attempted_calls}/${usage.max_calls} calls · ${formatNumber(usage.input_tokens)} input + ${formatNumber(usage.output_tokens)} output tokens${cost}`;
 }
 
 function renderMethodology(data) {

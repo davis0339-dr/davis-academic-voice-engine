@@ -117,7 +117,7 @@ function finalCandidateStatus(
   return "accepted";
 }
 
-rewriteRouter.post("/rewrite", async (req, res) => {
+rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => {
   const requestId = randomUUID();
   const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage } = req.body || {};
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
@@ -619,7 +619,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
 
       result.revision_purpose = effectiveRevisionPurpose;
       result.additional_inputs = normalizeAdditionalInputs(result.additional_inputs, effectiveRevisionPurpose);
-      return res.json({ ...result, requestId });
+      return res.json({ ...result, provider_usage: llmProvider.usageSnapshot(), requestId });
     } catch (err) {
       lastErr = err;
       const state = err.healthState;
@@ -635,6 +635,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
   const httpStatus =
     state === "AUTH_FAILED" ? 401 :
     state === "RATE_LIMITED" ? 429 :
+    state === "PROVIDER_CALL_BUDGET_EXCEEDED" ? 503 :
     state === "NETWORK_TIMEOUT" ? 504 :
     state === "PROVIDER_OVERLOADED" || state === "PROVIDER_UNAVAILABLE" ? 503 :
     502;
@@ -642,6 +643,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
   res.status(httpStatus).json({
     error: lastErr?.code || state,
     message: lastErr?.message || "Rewrite failed.",
+    provider_usage: llmProvider.usageSnapshot(),
     requestId,
   });
 });

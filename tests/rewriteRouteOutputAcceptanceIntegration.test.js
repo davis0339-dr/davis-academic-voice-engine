@@ -43,3 +43,8 @@ test("candidate verdict reports internal acceptance and external-check recommend
   assert.match(route, /output_acceptance_score: completedOutputAcceptance\.score/);
   assert.match(route, /external_detector_check_recommended:/);
 });
+
+test("rewrite requests are provider-budgeted and expose request-scoped usage", () => {
+  assert.match(route, /rewriteRouter\.post\("\/rewrite", llmProvider\.usageMiddleware/);
+  assert.match(route, /provider_usage: llmProvider\.usageSnapshot\(\)/);
+});
