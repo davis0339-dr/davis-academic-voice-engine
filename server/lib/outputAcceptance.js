@@ -238,7 +238,7 @@ function sourceDependence(sourceText, candidateText) {
 function preservationPassed(result) {
   return Boolean(
     result?.numbers_ok && result?.citations_ok && result?.technical_terms_ok && result?.quotes_ok &&
-    result?.study_stage_ok !== false && !result?.new_factual_claims_detected
+    result?.study_stage_ok !== false && result?.rhetorical_semantic_ok !== false && !result?.new_factual_claims_detected
   );
 }
 
@@ -327,10 +327,11 @@ export function auditOutputAcceptance({
   rewriteIntensity = "auto",
   naturalisation = "faithful",
   planSummary = {},
+  lengthPreference = "auto",
 } = {}) {
   const source = String(sourceText || "");
   const candidate = String(candidateText || "");
-  const preservation = auditPreservation(source, candidate, extractProtectedSpans(source));
+  const preservation = auditPreservation(source, candidate, extractProtectedSpans(source), { lengthPreference });
   const preservationOk = preservationPassed(preservation);
   const sourceMachine = machineComposite(source, styleFilters);
   const candidateMachine = machineComposite(candidate, styleFilters);
@@ -496,3 +497,4 @@ export function acceptanceImproved(before, after) {
   const materialDiscourseGain = afterDiscourse <= beforeDiscourse - 0.04;
   return afterScore >= beforeScore + 3 && (materialPatternGain || materialLanguageGain || materialDiscourseGain);
 }
+

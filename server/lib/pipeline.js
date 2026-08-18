@@ -6,6 +6,7 @@ import { diagnose } from "./diagnostics.js";
 import { buildDiagnosisScopedPlan } from "./diagnosisScopedPlanner.js";
 import { resolveProfile } from "./styleProfileStore.js";
 import { buildSystemPrompt } from "./promptContract.js";
+import { buildRhetoricalLedger } from "./rhetoricalPreservation.js";
 import { auditPreservation } from "./preservation.js";
 import { llmProvider } from "./llmProvider.js";
 import { assessCadenceDeviation } from "./cadenceDeviation.js";
@@ -321,6 +322,8 @@ export async function rewrite({
     protectedSpans: analysis.protectedSpans,
     plan: analysis.plan,
     grammarIntensity: grammarIntensity || "standard",
+    lengthPreference,
+    rhetoricalLedger: buildRhetoricalLedger(sourceText),
     precedingContext,
     documentGlossary,
     humanCadence,
@@ -428,7 +431,7 @@ export async function rewrite({
     }
   }
 
-  const preservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans);
+  const preservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans, { lengthPreference });
   const revisedLanguageFingerprint = measureLanguageFingerprint(parsed.revised_text);
   const revisedLanguageDeviation = assessLanguageDeviation(revisedLanguageFingerprint, measuredLanguageFamily);
   const sourceAlignment = analysis.diagnostics.measured_language_deviation?.family_alignment_score;

@@ -63,6 +63,7 @@ function preservationAssessment(result) {
   if (!p.technical_terms_ok) reasons.push("Protected technical terms or acronyms were not fully preserved.");
   if (!p.quotes_ok) reasons.push("Quoted material did not survive the revision as required.");
   if (p.study_stage_ok === false) reasons.push("The revision changed proposal/completed-study orientation.");
+  if (p.rhetorical_semantic_ok === false) reasons.push("The revision lost rhetorical functions or propositions, altered semantic force, or breached the selected length architecture.");
   if (p.new_factual_claims_detected) reasons.push("The preservation audit detected a new factual claim or factual drift.");
   return { passed: reasons.length === 0, reasons };
 }
@@ -445,3 +446,4 @@ export function preferByExecutionCompliance(firstResult, secondResult) {
   if (second.overall_score > first.overall_score) return { result: secondResult, compliance: second, selected: "second" };
   return { result: firstResult, compliance: first, selected: "first" };
 }
+

@@ -160,11 +160,19 @@ function compactSentencePlan(plan) {
   ]);
 }
 
-export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, precedingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
+export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, lengthPreference, rhetoricalLedger, precedingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
   const level = NATURALISATION_FIDELITY[naturalisation] !== undefined ? naturalisation : "faithful";
   const naturalisationOn = level !== "off";
   const fidelityClause = NATURALISATION_FIDELITY[level];
   const diagnosticRequirements = uniqueDiagnosticRequirements(plan);
+  const requestedLength = String(lengthPreference || "auto").toLowerCase();
+  const lengthMode = ["normal", "maintain", "preserve", "same", "same_length", "similar"].includes(requestedLength)
+    ? "maintain"
+    : ["short", "shorter", "concise"].includes(requestedLength)
+      ? "concise"
+      : ["long", "longer", "expand"].includes(requestedLength)
+        ? "expand"
+        : "auto";
 
   return [
     BASE_SYSTEM_PROMPT,
@@ -176,6 +184,17 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     `Recommended intervention: ${plan.intent?.recommended || "not supplied"}`,
     `Effective intervention: ${plan.intent?.effective || "not supplied"}`,
     `Intervention budget: ${plan.interventionBudget?.label || "not supplied"} (${plan.interventionBudget?.conceptualStructuralChangeRange || "n/a"} conceptual structural change; this is guidance, not a word-replacement quota).`,
+    [
+      `AUTHORITATIVE LENGTH CONTRACT: ${lengthMode}.`,
+      lengthMode === "maintain"
+        ? "Do not optimise for concision. Soft range: 95-110% of source length. Depart only for an intellectual reason; never delete a distinct proposition/function to shorten."
+        : lengthMode === "concise"
+          ? "Compression is authorised, but preserve argument scaffolding, qualifications, claim-evidence links and interpretation."
+          : lengthMode === "expand"
+            ? "Develop only from supplied reasoning/evidence; never invent facts, findings, citations or mechanisms."
+            : "No shortening was selected. Keep source length as the centre of gravity; do not reward brevity.",
+      "Length is diagnostic, not a padding quota; intellectual completeness outranks compactness.",
+    ].join("\n"),
     plan.argumentativeSufficiency
       ? `Argumentative sufficiency: ${plan.argumentativeSufficiency.development_need || "n/a"} development need; score ${plan.argumentativeSufficiency.development_score ?? "n/a"}. ${plan.argumentativeSufficiency.guardrail || ""}`
       : "",
@@ -232,11 +251,19 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
         ].join("\n")
       : "",
     "",
+    [
+      "RHETORICAL/SEMANTIC PRESERVATION:",
+      "Preserve each proposition and intellectual job: framing, funnel, evidence, qualification, interpretation, contrast/concession, cause, synthesis, transition, caveat, implication and forward link. Remove only semantic-and-functional duplicates.",
+      "Deep changes syntax/discourse, not intellectual content. Preserve sequence: FRAME -> EXPLAIN -> EVIDENCE -> INTERPRET -> QUALIFY -> SYNTHESISE -> TRANSITION.",
+      "Preserve modality, causality, magnitude, direction, certainty, comparison, scope, time and generalisability. Association != cause; possibility != certainty; coexistence != equality. Uncited reasoning is not redundant.",
+      rhetoricalLedger?.length ? `Source role ledger: ${JSON.stringify(rhetoricalLedger)}` : "",
+    ].filter(Boolean).join("\n"),
+    "",
     "PARAGRAPH / DISCOURSE PLAN. Execute this before sentence-level polishing. Multiple actions may apply to one block; primaryAction is the dominant instruction. KEEP_PARAGRAPH means preserve its reasoning structure, not necessarily freeze every sentence. PRESERVE_AUTHORIAL_PASSAGE means do not rewrite the passage itself. REBUILD_DISCOURSE means preserve propositions/evidence while changing how the paragraph develops. DEVELOP_EVIDENCE means give cited findings enough explanatory space where the source/context supports that development. QUALIFY_EVIDENCE means make a conditional or bounded finding clear without strengthening it. EXPLAIN_MECHANISM means explain a relationship only where the mechanism already exists in supplied material. DISTINGUISH_MEASURES means clarify why related outcomes/proxies are not interchangeable. CONTEXTUALISE_SETTING and TEMPORALISE_EVIDENCE develop institutional or time-setting implications from supplied evidence only. BUILD_GAP develops the research need from the accumulated evidence rather than announcing a generic gap. REDUCE_SIGNPOSTING and REMOVE_REDUNDANT_CLOSURE target global rhetorical regularity without deleting substantive content. Paragraph actions govern the reasoning unit and must not be converted mechanically into a requirement to rewrite every source sentence.",
     JSON.stringify(compactParagraphPlan(plan)),
     "",
     "SENTENCE INTERVENTION PLAN (source order). Each compact row is [sentenceIndex, operation, paragraphBlockIndex, decisionCode, preservationClass]. Apply it after the paragraph plan:",
-    "KEEP = do not alter sentence wording. KEEP classifications explain why: KEEP_VOICE, KEEP_EVIDENCE, KEEP_QUOTE, KEEP_TECHNICAL or KEEP_NATURAL. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = rebuild sentence architecture as needed. REWRITE_PATTERN in decisionCode means the sentence may be fluent individually but contributes to a diagnosed local/global pattern requiring a concrete sentence operation. SELECTIVE_ARGUMENT_DEVELOPMENT marks a paragraph whose intellectual work needs development; do not rewrite every sentence independently. DISCOURSE_REPACKAGE = the proposition/evidence belongs to a paragraph-level reconstruction; it is NOT an obligatory standalone rewrite and may remain, move, merge, split or be recast as the paragraph's reasoning requires. SPLIT_OR_MERGE = redistribute propositions across sentence boundaries. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add reasoning using only content already present in the source/context/evidence; it does not mean add words for their own sake. COMPRESS = remove padding. FLAG_FOR_AUTHOR = leave substantively as-is and flag rather than guessing. In edit_summary, report only operations actually performed; do not count paragraph scope as one compulsory edit per source sentence.",
+    "KEEP = do not alter sentence wording. KEEP classifications explain why: KEEP_VOICE, KEEP_EVIDENCE, KEEP_QUOTE, KEEP_TECHNICAL or KEEP_NATURAL. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = rebuild sentence architecture as needed. REWRITE_PATTERN in decisionCode means the sentence may be fluent individually but contributes to a diagnosed local/global pattern requiring a concrete sentence operation. SELECTIVE_ARGUMENT_DEVELOPMENT marks a paragraph whose intellectual work needs development; do not rewrite every sentence independently. DISCOURSE_REPACKAGE = the proposition/evidence belongs to a paragraph-level reconstruction; it is NOT an obligatory standalone rewrite and may remain, move, merge, split or be recast as the paragraph's reasoning requires. SPLIT_OR_MERGE = redistribute propositions across sentence boundaries only when the resulting form makes every contrastive, causal, concessive, comparative or parallel relationship at least as explicit; a long sentence is not a defect by itself. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add reasoning using only content already present in the source/context/evidence; it does not mean add words for their own sake. COMPRESS = remove semantically empty padding only, never unique rhetorical scaffolding. FLAG_FOR_AUTHOR = leave substantively as-is and flag rather than guessing. In edit_summary, report only operations actually performed; do not count paragraph scope as one compulsory edit per source sentence.",
     JSON.stringify(compactSentencePlan(plan)),
     plan.paragraphReorderSuggested
       ? "\nDocument-level note: a paragraph-level structural pattern was actually diagnosed. You may restructure sentence grouping or local paragraph order only as needed to resolve that pattern. Preserve the section's macro-argument sequence, claim-to-citation relationships and transitions between rhetorical stages. Do not move ideas merely to create novelty."
@@ -278,3 +305,4 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     .filter(Boolean)
     .join("\n");
 }
+

@@ -411,6 +411,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
             sourceText: text,
             candidateResult: result,
             revisionPurpose: effectiveRevisionPurpose,
+            lengthPreference,
           });
           result = {
             ...repairedResult,
@@ -494,6 +495,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
             rewriteIntensity: modePolicy.effective_intensity,
             naturalisation: modePolicy.effective_naturalisation,
             planSummary: result.intervention_plan_summary || {},
+            lengthPreference,
           });
           if (residualRework.accepted) {
             const refreshedQuality = refreshTransformationQuality(
@@ -531,6 +533,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         rewriteIntensity: modePolicy.effective_intensity,
         naturalisation: modePolicy.effective_naturalisation,
         planSummary: result.intervention_plan_summary || {},
+        lengthPreference,
       });
       const outputAcceptanceEnforced = Boolean(
         ["moderate", "deep"].includes(String(modePolicy.effective_intensity || "").toLowerCase()) &&
@@ -673,3 +676,4 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     requestId,
   });
 });
+

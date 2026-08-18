@@ -301,21 +301,38 @@ function renderAdditionalInputs(additionalInputs = [], revisionPurpose = "fideli
 }
 
 function renderPreservation(preservation) {
+  const rhetorical = preservation.rhetorical_semantic_preservation || {};
   const rows = [
     ["Numbers preserved", preservation.numbers_ok],
     ["Citations preserved", preservation.citations_ok],
     ["Technical terms preserved", preservation.technical_terms_ok],
     ["Quotations unaltered", preservation.quotes_ok],
     ["Study stage / proposal tense preserved", preservation.study_stage_ok !== false],
+    ["Rhetorical & semantic architecture preserved", preservation.rhetorical_semantic_ok !== false],
     ["No new factual claims detected", !preservation.new_factual_claims_detected],
   ];
   const rowsHtml = rows
     .map(([label, ok]) => `<div class="warning-item ${ok ? "" : "bad"}">${ok ? "✓" : "✗"} ${label}</div>`)
     .join("");
-  const warnings = preservation.warnings
+  const warnings = (preservation.warnings || [])
     .map((w) => `<div class="warning-item bad">${w.type}: ${w.detail}</div>`)
     .join("");
-  $("tab-preservation").innerHTML = rowsHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
+  const rhetoricalHtml = rhetorical.audit_version ? `
+    <section class="preservation-detail-panel">
+      <h4>Rhetorical &amp; Semantic Preservation</h4>
+      <div class="warning-item">Source propositions preserved: ${escapeHtml(String(rhetorical.source_propositions_preserved ?? "n/a"))}/${escapeHtml(String(rhetorical.source_propositions_total ?? "n/a"))}</div>
+      <div class="warning-item ${rhetorical.topic_or_framing_sentences_lost ? "bad" : ""}">Topic/framing sentences lost: ${escapeHtml(rhetorical.topic_or_framing_sentences_lost || 0)}</div>
+      <div class="warning-item ${rhetorical.transitions_lost ? "bad" : ""}">Transitions lost: ${escapeHtml(rhetorical.transitions_lost || 0)}</div>
+      <div class="warning-item ${rhetorical.interpretive_statements_lost ? "bad" : ""}">Interpretive statements lost: ${escapeHtml(rhetorical.interpretive_statements_lost || 0)}</div>
+      <div class="warning-item ${rhetorical.qualifications_or_caveats_lost ? "bad" : ""}">Qualifications/caveats lost: ${escapeHtml(rhetorical.qualifications_or_caveats_lost || 0)}</div>
+      <div class="warning-item ${(rhetorical.modality_changes || []).length ? "bad" : ""}">Modality/certainty changes: ${escapeHtml((rhetorical.modality_changes || []).length)}</div>
+      <div class="warning-item ${(rhetorical.causality_changes || []).length ? "bad" : ""}">Causality changes: ${escapeHtml((rhetorical.causality_changes || []).length)}</div>
+      <div class="warning-item ${(rhetorical.scope_or_generalisation_changes || []).length ? "bad" : ""}">Scope/generalisation changes: ${escapeHtml((rhetorical.scope_or_generalisation_changes || []).length)}</div>
+      <div class="warning-item ${(rhetorical.unsupported_additions || []).length ? "bad" : ""}">Unsupported additions: ${escapeHtml((rhetorical.unsupported_additions || []).length)}</div>
+      <div class="warning-item ${(rhetorical.paragraphs_compressed_beyond_threshold || []).length ? "bad" : ""}">Paragraphs compressed beyond threshold: ${escapeHtml((rhetorical.paragraphs_compressed_beyond_threshold || []).length)}</div>
+      <div class="warning-item ${rhetorical.length_within_soft_range === false ? "bad" : ""}">Source/revision length ratio: ${escapeHtml(rhetorical.overall_length_ratio ?? "n/a")} (${escapeHtml(rhetorical.length_preference || "auto")})</div>
+    </section>` : "";
+  $("tab-preservation").innerHTML = rowsHtml + rhetoricalHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
 }
 
 function clearBusyTimer() {
@@ -686,3 +703,4 @@ loadMethodology();
 loadDetectorHealth();
 updateLimitUi();
 updateWordCounts();
+

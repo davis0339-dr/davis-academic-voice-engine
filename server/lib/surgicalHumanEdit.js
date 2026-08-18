@@ -68,6 +68,7 @@ function preservationPassed(audit) {
     audit.study_stage_ok !== false &&
     audit.researcher_voice_ok !== false &&
     audit.document_structure_ok !== false &&
+    audit.rhetorical_semantic_ok !== false &&
     audit.new_factual_claims_detected !== true
   );
 }
@@ -432,3 +433,4 @@ export async function surgicalHumanEdit({
       : "No proposed clear local edit survived the surgical safety checks; the source remains unchanged and is reported explicitly as a non-edit result.",
   };
 }
+

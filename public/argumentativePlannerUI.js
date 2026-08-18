@@ -72,6 +72,9 @@
     } else if (preference === "concise" && delta > 0) {
       respected = false;
       note = "Concise was selected, but the revision became longer. Review whether the added reasoning was necessary.";
+    } else if (preference === "maintain" && (deltaPct < -5 || deltaPct > 10)) {
+      respected = false;
+      note = "Maintain uses a 95-110% soft range. This result falls outside it, so the Rhetorical & Semantic Preservation audit must show a substantive reason rather than treating brevity as an improvement.";
     }
     return { preference, sourceWords, revisedWords, delta, deltaPct, respected, note };
   }
@@ -140,3 +143,4 @@
   `;
   document.head.appendChild(style);
 })();
+

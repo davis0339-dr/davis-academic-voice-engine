@@ -19,13 +19,18 @@ test("the governance benchmark uses a compact plan rather than repeating every s
     protectedSpans: analysis.protectedSpans,
     plan: analysis.plan,
     grammarIntensity: "standard",
+    lengthPreference: "similar",
+    rhetoricalLedger: [],
     humanCadence: analysis.diagnostics.cadence_deviation?.family,
     naturalisation: "aggressive",
     revisionPurpose: "collaborative",
   });
 
-  assert.ok(prompt.length < 45000, `prompt remained too large at ${prompt.length} characters`);
+  assert.ok(prompt.length < 47000, `prompt remained too large at ${prompt.length} characters`);
   assert.doesNotMatch(prompt, /"sentence"\s*:/);
   assert.match(prompt, /REGIONAL AND NON-NATIVE ACADEMIC VOICE/);
   assert.match(prompt, /Do not manufacture errors/);
+  assert.match(prompt, /AUTHORITATIVE LENGTH CONTRACT: maintain/);
+  assert.match(prompt, /RHETORICAL\/SEMANTIC PRESERVATION/);
 });
+

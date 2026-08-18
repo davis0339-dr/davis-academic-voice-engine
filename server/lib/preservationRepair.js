@@ -9,6 +9,9 @@ function repairPrompt() {
     "You are repairing factual and evidential preservation defects in an already completed academic revision.",
     "Work on the CURRENT CANDIDATE. Do not regenerate the document from the original and do not flatten its revised cadence or argument presentation.",
     "Use the ORIGINAL SOURCE only as the authority for meaning, citations, numbers, quotations, technical terms, qualifications, research stage and factual relationships.",
+    "Repair rhetorical and semantic losses as well as factual defects. Restore missing topic/framing work, transitions, evidence interpretation, contrast, concession, synthesis, qualifications and scope conditions in fresh, natural wording rather than copying mechanically.",
+    "Restore the source degree of modality, certainty, causality, magnitude, direction, comparison, generalisability and temporality. Do not replace a qualified relationship with a stronger simplified proposition.",
+    "When evidence survived but its explanation of relevance was lost, reconstruct that interpretive function from the source. When a logical connector carried a balanced relationship, keep that relationship explicit even if sentence boundaries change.",
     "Restore every missing or altered protected item in its logically correct location. Remove any claim, number or citation that the candidate introduced without source support.",
     "Preserve proposal/future orientation exactly when the source describes planned research. Do not convert a prospectus into a completed study.",
     "Do not add new evidence, mechanisms, interpretations or references. Do not undo legitimate sentence restructuring merely to increase lexical overlap with the source.",
@@ -32,7 +35,7 @@ function repairPayload(sourceText, candidateResult, protectedSpans) {
   ].join("\n");
 }
 
-export async function repairPreservationCandidate({ sourceText, candidateResult, revisionPurpose = "fidelity" } = {}) {
+export async function repairPreservationCandidate({ sourceText, candidateResult, revisionPurpose = "fidelity", lengthPreference = "auto" } = {}) {
   const source = String(sourceText || "");
   const candidate = String(candidateResult?.revised_text || "");
   if (!source || !candidate) {
@@ -64,7 +67,7 @@ export async function repairPreservationCandidate({ sourceText, candidateResult,
     throw error;
   }
 
-  const preservation = auditPreservation(source, revisedText, protectedSpans);
+  const preservation = auditPreservation(source, revisedText, protectedSpans, { lengthPreference });
   const passed = Boolean(
     preservation.numbers_ok &&
     preservation.citations_ok &&
@@ -73,6 +76,7 @@ export async function repairPreservationCandidate({ sourceText, candidateResult,
     preservation.study_stage_ok !== false &&
     preservation.researcher_voice_ok !== false &&
     preservation.document_structure_ok !== false &&
+    preservation.rhetorical_semantic_ok !== false &&
     !preservation.new_factual_claims_detected
   );
 
@@ -88,3 +92,4 @@ export async function repairPreservationCandidate({ sourceText, candidateResult,
     },
   };
 }
+

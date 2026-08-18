@@ -23,6 +23,7 @@ function preservationPassed(p) {
     p?.technical_terms_ok &&
     p?.quotes_ok &&
     p?.study_stage_ok !== false &&
+    p?.rhetorical_semantic_ok !== false &&
     !p?.new_factual_claims_detected
   );
 }
@@ -287,6 +288,7 @@ export async function selectiveResidualRework({
   rewriteIntensity = "auto",
   naturalisation = "faithful",
   planSummary = {},
+  lengthPreference = "auto",
 }) {
   const sourceBaseline = analyseResidualWriting(sourceText);
   const before = analyseResidualWriting(candidateText);
@@ -300,6 +302,7 @@ export async function selectiveResidualRework({
     rewriteIntensity,
     naturalisation,
     planSummary,
+    lengthPreference,
   });
 
   const candidateStructure = parseTextStructure(candidateText);
@@ -400,7 +403,7 @@ export async function selectiveResidualRework({
   }
 
   const reworkedText = replaceBlocksSequentially(candidateText, replacements, candidateStructure);
-  const preservation = auditPreservation(sourceText, reworkedText, extractProtectedSpans(sourceText));
+  const preservation = auditPreservation(sourceText, reworkedText, extractProtectedSpans(sourceText), { lengthPreference });
   const after = analyseResidualWriting(reworkedText);
   const afterScore = Number(after.metrics.total_risk_score || 0);
   const noResidualRegression = afterScore <= Math.max(beforeScore + 1, sourceScore + 2);
@@ -412,6 +415,7 @@ export async function selectiveResidualRework({
     rewriteIntensity,
     naturalisation,
     planSummary,
+    lengthPreference,
   });
   const accepted = shouldAcceptResidualCandidate({
     preservationOk,
