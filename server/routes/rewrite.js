@@ -20,6 +20,7 @@ import {
 import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "../lib/collaborativeRevision.js";
+import { retainSourceAfterPreservationFailure } from "../lib/finalSafetyFallback.js";
 
 export const rewriteRouter = Router();
 
@@ -208,6 +209,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       let surgicalRecovery = null;
       let sourceRetainedForSafety = false;
       let rejectedOverExecution = null;
+      let rejectedPreservationFailure = null;
       let firstAttemptCompliance = null;
       let selectedAttempt = "first";
       let authorialExecutionRecoveryUsed = false;
@@ -416,6 +418,26 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         }
       }
 
+      // A candidate that still fails deterministic preservation after the
+      // existing recovery attempt must never be presented as usable revised
+      // prose. Keep the diagnostics, quarantine the rejected text, and return an
+      // explicit non-edit containing the source verbatim.
+      if (!sourceRetainedForSafety && !executionCompliance.preservation_ok) {
+        rejectedPreservationFailure = {
+          compliance: executionCompliance,
+          preservation: result.preservation || null,
+          selected_attempt: selectedAttempt,
+        };
+        sourceRetainedForSafety = true;
+        result = retainSourceAfterPreservationFailure({
+          sourceText: text,
+          result,
+          rewriteLineage,
+        });
+        executionCompliance = assessExecutionCompliance(result);
+        selectedAttempt = "transparent-preservation-fallback";
+      }
+
       let residualRework = null;
       let residualStageEligible = false;
       let residualStageBlockedReason = null;
@@ -509,6 +531,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         surgical_recovery_applied_edits: surgicalRecovery?.applied_edit_count ?? 0,
         source_retained_for_safety: sourceRetainedForSafety,
         rejected_over_execution: rejectedOverExecution,
+        rejected_preservation_failure: rejectedPreservationFailure,
         selected_attempt: sourceRetainedForSafety ? "transparent-no-edit-fallback" : selectedAttempt,
         first_attempt: firstAttemptCompliance,
         residual_stage_eligible: residualStageEligible,
@@ -549,7 +572,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
 
       let verdictNote;
       if (sourceRetainedForSafety) {
-        verdictNote = "No safe local correction survived after the broad rewrite exceeded authorial-preservation authority. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision.";
+        verdictNote = result.safety_fallback?.reason || "No safe revision survived the final safeguards. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.execution_passed && executionCompliance.preservation_ok) {
         verdictNote = "The first Deep candidate under-executed the structural plan. Automatic Deep execution recovery produced a preservation-safe candidate that now satisfies execution compliance; under-execution was treated as a generation defect, not as a safe stopping point.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.under_executed) {

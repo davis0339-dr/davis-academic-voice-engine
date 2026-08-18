@@ -20,6 +20,15 @@ test("completed-output acceptance runs after residual recovery and before final 
   assert.ok(verdictIndex > acceptanceIndex);
 });
 
+test("preservation failure is converted to an explicit source-retained non-edit before release auditing", () => {
+  const fallbackIndex = route.indexOf("retainSourceAfterPreservationFailure({");
+  const acceptanceIndex = route.indexOf("const completedOutputAcceptance = auditOutputAcceptance({");
+  assert.ok(fallbackIndex >= 0);
+  assert.ok(acceptanceIndex > fallbackIndex);
+  assert.match(route, /if \(!sourceRetainedForSafety && !executionCompliance\.preservation_ok\)/);
+  assert.match(route, /rejected_preservation_failure: rejectedPreservationFailure/);
+});
+
 test("Moderate/Deep assertive output gate can block final acceptance", () => {
   assert.match(
     route,

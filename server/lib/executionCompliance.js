@@ -304,6 +304,32 @@ export function assessExecutionCompliance(result) {
     addOver("MAX_SUBSTANTIVE_BREADTH", `Model-reported substantive operations equal ${(reportedSubstantiveRatio * 100).toFixed(0)}% of planner units, above the ${Math.round(maxSubstantiveRatio * 100)}% structural breadth ceiling after the split/merge tolerance.`);
   }
 
+  // The model-authored edit summary is supporting evidence, not an independent
+  // measurement. If deterministic comparison proves that the candidate changed
+  // more text than authorised, a sparse self-report cannot simultaneously prove
+  // that too little editing occurred. Preserve the discrepancy as an auditable
+  // variance while classifying the actionable defect as over-execution.
+  if (overCodes.includes("MAX_CHANGED_SENTENCE_BREADTH") && underCodes.length > 0) {
+    const summaryCoverageCodes = new Set([
+      "PLAN_INTERVENTION_COVERAGE",
+      "PLAN_STRUCTURAL_COVERAGE",
+      "DISCOURSE_CONCRETE_COVERAGE",
+    ]);
+    let movedSummaryCoverage = false;
+    for (let index = underCodes.length - 1; index >= 0; index -= 1) {
+      if (!summaryCoverageCodes.has(underCodes[index])) continue;
+      underCodes.splice(index, 1);
+      underReasons.splice(index, 1);
+      movedSummaryCoverage = true;
+    }
+    if (movedSummaryCoverage) {
+      addVariance(
+        "MODEL_EDIT_SUMMARY_UNDERREPORTING",
+        `The model reported ${reported.intervention} concrete edit(s), while independent source/revision comparison found ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed. The self-reported edit counts are inconsistent and are not used to misclassify this over-edited candidate as under-executed.`
+      );
+    }
+  }
+
   if (planned.total > 0 && reported.total > 0) {
     const countDrift = Math.abs(reported.total - planned.total) / planned.total;
     if (countDrift > 0.35) {
@@ -339,7 +365,7 @@ export function assessExecutionCompliance(result) {
   const overallScore = Number(((executionScore * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3));
 
   return {
-    version: "planner-execution-compliance-v5",
+    version: "planner-execution-compliance-v6",
     passed: executionPassed,
     execution_passed: executionPassed,
     execution_status: status,

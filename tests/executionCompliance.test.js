@@ -215,6 +215,34 @@ test("never prefers a deeper rewrite that breaks preservation", () => {
   assert.equal(preferred.result.revised_text, "safe");
 });
 
+test("independent over-edit evidence supersedes an under-reported model edit summary", () => {
+  const result = assessExecutionCompliance(baseResult({
+    intervention_plan_summary: { SENTENCE_RESTRUCTURE: 58 },
+    edit_summary: {
+      kept: 0,
+      micro_edits: 0,
+      sentence_restructures: 5,
+      split_or_merge: 0,
+      paragraph_reorders: 0,
+      flags_for_author: [],
+    },
+    transformation_quality: { unchanged_sentence_ratio: 0.02 },
+    intervention_authority: {
+      preservation_priority: "medium",
+      min_changed_sentence_ratio: 0,
+      max_changed_sentence_ratio: 0.75,
+      max_substantive_operation_ratio: 0.68,
+    },
+  }));
+
+  assert.equal(result.execution_status, "over-executed");
+  assert.equal(result.over_executed, true);
+  assert.equal(result.under_executed, false);
+  assert.ok(result.over_execution_codes.includes("MAX_CHANGED_SENTENCE_BREADTH"));
+  assert.ok(result.execution_variance_codes.includes("MODEL_EDIT_SUMMARY_UNDERREPORTING"));
+  assert.match(result.execution_variance_reasons.join(" "), /98%.*five|5.*98%/i);
+});
+
 test("surgical recovery supersedes the rejected broad plan for execution scoring", () => {
   const result = assessExecutionCompliance(baseResult({
     intervention_plan_summary: { KEEP: 36, SPLIT_OR_MERGE: 9 },
