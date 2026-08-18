@@ -221,12 +221,16 @@ export function validateApiPayload(req, res, next) {
     grammarIntensity,
     lengthPreference,
     naturalisation,
+    revisionPurpose,
     label,
   } = req.body;
   for (const [key, value] of Object.entries({ text, sourceText, candidateText, thoughts, manuscriptContext, researchContext, constraints, section })) {
     if (value !== undefined && typeof value !== "string") {
       return res.status(400).json({ error: "BAD_REQUEST", message: `\`${key}\` must be a string.`, requestId: req.requestId });
     }
+  }
+  if (revisionPurpose !== undefined && !["fidelity", "collaborative"].includes(revisionPurpose)) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "`revisionPurpose` must be `fidelity` or `collaborative`.", requestId: req.requestId });
   }
   if (observations !== undefined) {
     if (!Array.isArray(observations) || observations.length > 20 || !observations.every(validateDetectorObservation)) {

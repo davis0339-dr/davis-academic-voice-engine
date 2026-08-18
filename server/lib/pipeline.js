@@ -14,6 +14,7 @@ import { measureLanguageFingerprint } from "./languageFingerprint.js";
 import { assessLanguageDeviation } from "./languageFamilyEngine.js";
 import { getBuildInfo } from "./buildInfo.js";
 import { parseStructuredResponseText, buildJsonRepairSystemPrompt } from "./modelResponse.js";
+import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "./collaborativeRevision.js";
 import {
   assessIterativeRegularisation,
   buildIterativeRewriteDirective,
@@ -275,12 +276,14 @@ export async function rewrite({
   grammarIntensity,
   lengthPreference,
   naturalisation,
+  revisionPurpose,
   precedingContext,
   documentGlossary,
   documentContext,
   rewriteLineage,
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
+  const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
   const lineage = normaliseRewriteLineage(rewriteLineage, sourceText);
   const analysis = analyse({
     sourceText,
@@ -306,6 +309,7 @@ export async function rewrite({
     documentGlossary,
     humanCadence,
     naturalisation: naturalisationLevel,
+    revisionPurpose: effectiveRevisionPurpose,
   }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage });
 
   let parsed = await runModelPass({ systemPrompt, sourceText });
@@ -395,6 +399,8 @@ export async function rewrite({
 
   return {
     revised_text: parsed.revised_text,
+    revision_purpose: effectiveRevisionPurpose,
+    additional_inputs: normalizeAdditionalInputs(parsed.additional_inputs, effectiveRevisionPurpose),
     style_profile_used: analysis.style_profile_used,
     edit_summary: parsed.edit_summary,
     intervention_plan_summary: analysis.plan.summary,

@@ -3,6 +3,7 @@
 // statistics are descriptive boundaries, not a recipe for random variation.
 
 import { texturePromptBlock } from "../data/textureExemplars.js";
+import { buildCollaborativeRevisionPromptBlock } from "./collaborativeRevision.js";
 
 export const BASE_SYSTEM_PROMPT = `You are the revision engine for an evidence-backed academic editor.
 
@@ -134,7 +135,7 @@ function uniqueDiagnosticRequirements(plan) {
   return reasons;
 }
 
-export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, precedingContext, documentGlossary, humanCadence, naturalisation }) {
+export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, precedingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
   const level = NATURALISATION_FIDELITY[naturalisation] !== undefined ? naturalisation : "faithful";
   const naturalisationOn = level !== "off";
   const fidelityClause = NATURALISATION_FIDELITY[level];
@@ -221,6 +222,8 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
       ? "\nDocument-level note: a paragraph-level structural pattern was actually diagnosed. You may restructure sentence grouping or local paragraph order only as needed to resolve that pattern. Preserve the section's macro-argument sequence, claim-to-citation relationships and transitions between rhetorical stages. Do not move ideas merely to create novelty."
       : "\nDocument-level note: no paragraph reorder was diagnosed. Preserve the existing macro-argument and paragraph sequence; perform any authorised reconstruction or development within that logical order.",
     "",
+    buildCollaborativeRevisionPromptBlock(revisionPurpose),
+    "",
     "--- RESPONSE FORMAT ---",
     "Return a single JSON object matching exactly this shape, and nothing else:",
     JSON.stringify(
@@ -234,6 +237,18 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
           paragraph_reorders: 0,
           flags_for_author: ["string reasons, empty array if none"],
         },
+        additional_inputs: [
+          {
+            id: "additional-input-1",
+            kind: "idea|evidence|depth|clarification|mechanism|qualification|counterargument|researcher_question",
+            location: "the passage, paragraph or claim this applies to",
+            proposal: "the possible addition or intellectual need; never silently insert it into revised_text",
+            reason: "why this would strengthen clarity, evidence or argument development",
+            status: "researcher_confirmation_required|verification_required",
+            researcher_question: "a direct question when researcher reasoning is needed, otherwise empty",
+            evidence_needed: "what must be verified or supplied, otherwise empty",
+          },
+        ],
         diagnostics_notes: "string, 1-3 sentences on what kind of revision was applied and why",
       },
       null,

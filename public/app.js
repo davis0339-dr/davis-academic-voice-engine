@@ -47,6 +47,15 @@ function formatNumber(n) {
   return Number(n || 0).toLocaleString();
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function formatDuration(ms) {
   if (!Number.isFinite(ms) || ms <= 0) return "";
   const seconds = Math.max(1, Math.round(ms / 1000));
@@ -265,6 +274,32 @@ function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, 
     $("tab-changes").innerHTML;
 }
 
+function renderAdditionalInputs(additionalInputs = [], revisionPurpose = "fidelity") {
+  const target = $("tab-changes");
+  if (!target || revisionPurpose !== "collaborative") return;
+  const items = Array.isArray(additionalInputs) ? additionalInputs : [];
+  const content = items.length
+    ? items.map((item) => `
+      <article class="additional-input-card">
+        <div class="additional-input-head">
+          <strong>${escapeHtml(String(item.kind || "input").replace(/_/g, " "))}</strong>
+          <span class="additional-input-status">${escapeHtml(String(item.status || "researcher_confirmation_required").replace(/_/g, " "))}</span>
+        </div>
+        ${item.location ? `<p class="muted"><strong>Applies to:</strong> ${escapeHtml(item.location)}</p>` : ""}
+        <p>${escapeHtml(item.proposal)}</p>
+        ${item.reason ? `<p class="muted"><strong>Why it matters:</strong> ${escapeHtml(item.reason)}</p>` : ""}
+        ${item.researcher_question ? `<p><strong>Question for you:</strong> ${escapeHtml(item.researcher_question)}</p>` : ""}
+        ${item.evidence_needed ? `<p class="additional-input-evidence"><strong>Verification needed:</strong> ${escapeHtml(item.evidence_needed)}</p>` : ""}
+      </article>`).join("")
+    : '<p class="muted">No high-value additions or verification needs were identified in this revision.</p>';
+  target.insertAdjacentHTML("afterbegin", `
+    <section class="additional-inputs-panel" aria-label="Proposed additions requiring review">
+      <h3>Additional inputs — not inserted into the manuscript</h3>
+      <p class="muted">These are collaboration prompts only. Confirm the reasoning or verify the evidence before adding anything to the revised text.</p>
+      ${content}
+    </section>`);
+}
+
 function renderPreservation(preservation) {
   const rows = [
     ["Numbers preserved", preservation.numbers_ok],
@@ -349,6 +384,7 @@ async function runAnalyseOnly() {
         grammarIntensity: $("grammarIntensity").value,
         lengthPreference: $("lengthPreference").value,
         naturalisation: $("naturalisation").value,
+        revisionPurpose: $("revisionPurpose").value,
       }),
     });
     const data = await res.json();
@@ -378,6 +414,7 @@ async function runAnalyseAndRevise() {
         grammarIntensity: $("grammarIntensity").value,
         lengthPreference: $("lengthPreference").value,
         naturalisation: $("naturalisation").value,
+        revisionPurpose: $("revisionPurpose").value,
       }),
     });
     const data = await res.json();
@@ -388,6 +425,7 @@ async function runAnalyseAndRevise() {
     renderProfile(data.style_profile_used);
     renderPreservation(data.preservation);
     renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
+    renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
     setBusy(false, `Done. Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}`);
   } catch (err) {
     setBusy(false);

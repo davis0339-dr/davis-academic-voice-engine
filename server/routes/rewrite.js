@@ -19,6 +19,7 @@ import {
 } from "../lib/underExecutionRecovery.js";
 import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
+import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "../lib/collaborativeRevision.js";
 
 export const rewriteRouter = Router();
 
@@ -117,7 +118,8 @@ function finalCandidateStatus(
 
 rewriteRouter.post("/rewrite", async (req, res) => {
   const requestId = randomUUID();
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, rewriteLineage } = req.body || {};
+  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage } = req.body || {};
+  const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string.", requestId });
@@ -163,6 +165,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
     grammarIntensity,
     lengthPreference,
     naturalisation: naturalisationLevel,
+    revisionPurpose: effectiveRevisionPurpose,
     rewriteLineage,
   });
 
@@ -591,6 +594,8 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         note: verdictNote,
       };
 
+      result.revision_purpose = effectiveRevisionPurpose;
+      result.additional_inputs = normalizeAdditionalInputs(result.additional_inputs, effectiveRevisionPurpose);
       return res.json({ ...result, requestId });
     } catch (err) {
       lastErr = err;
