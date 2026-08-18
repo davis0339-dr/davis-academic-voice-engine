@@ -37,6 +37,16 @@ test("semantic audit rejects unsupported equality", () => {
   assert.ok(report.unsupported_additions.length > 0);
 });
 
+test("role-marker changes remain review evidence when propositions and paragraph architecture survive", () => {
+  const reconstructed = source
+    .replace("Commercial scale, however, does not eliminate the professional-performance problem.", "Large international networks still face the professional problem of engagement performance.")
+    .replace("Canada provides a complementary picture.", "The Canadian evidence extends the comparison.");
+  const report = analyseRhetoricalSemanticPreservation(source, reconstructed, { lengthPreference: "maintain" });
+  assert.ok(report.role_losses.length > 0);
+  assert.equal(report.material_rhetorical_role_loss, false);
+  assert.equal(report.passed, true);
+});
+
 test("balanced contrast survives when wording and punctuation remain unchanged", () => {
   const report = auditPreservation(source, source, extractProtectedSpans(source), { lengthPreference: "maintain" });
   assert.equal(report.rhetorical_semantic_ok, true);

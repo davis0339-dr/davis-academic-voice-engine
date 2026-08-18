@@ -231,8 +231,11 @@ export function analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
   const compressionCorroboratesLoss = lengthRatio < 0.95 || paragraphCompression.length > 0;
   const materialPropositionLoss = possibleLosses.length > 0 && compressionCorroboratesLoss &&
     (possibleLosses.length >= materialLossFloor || lengthRatio < 0.93);
-  const materialRoleLoss = roleLosses.length > 0 && compressionCorroboratesLoss &&
-    (roleLosses.length >= materialLossFloor || lengthRatio < 0.93);
+  const materialRoleLoss = roleLosses.length > 0 && (
+    materialPropositionLoss ||
+    lengthRatio < 0.90 ||
+    paragraphCompression.length > 0
+  );
   const passed = !maintainedLengthHardFailure && !materialPropositionLoss && !materialRoleLoss && semantic.length === 0;
 
   return {
