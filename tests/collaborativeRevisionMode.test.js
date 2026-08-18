@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   buildCollaborativeRevisionPromptBlock,
+  ensureCollaborativeReviewInputs,
   normalizeAdditionalInputs,
   normalizeRevisionPurpose,
 } from "../server/lib/collaborativeRevision.js";
@@ -86,4 +87,33 @@ test("rewrite contract keeps additions separate and returns them as bounded meta
   assert.match(rewriteRoute, /additional_inputs/);
   assert.match(rewriteRoute, /normalizeAdditionalInputs/);
   assert.match(modelResponse, /Preserve all additional_inputs entries/);
+});
+
+test("collaborative mode supplies bounded review needs when the model returns none for a proposal with checkable claims", () => {
+  const sourceText = `The mixed methods study will examine debt cost during 2015-2024. Corporate debt reached $13.68 trillion in 2024 (Board of Governors, 2025). Direct contemporary evidence remains limited.`;
+  const additions = ensureCollaborativeReviewInputs({
+    sourceText,
+    revisionPurpose: "collaborative",
+    modelInputs: [],
+  });
+
+  assert.equal(additions.length, 3);
+  assert.ok(additions.some((item) => item.kind === "evidence" && item.status === "verification_required"));
+  assert.ok(additions.some((item) => item.kind === "researcher_question" && /mixed.methods/i.test(item.proposal)));
+  assert.ok(additions.some((item) => item.kind === "evidence" && /literature[- ]gap/i.test(item.proposal)));
+  assert.ok(additions.every((item) => item.proposal && item.researcher_question));
+});
+
+test("fallback review needs never appear in fidelity mode or replace model-supplied collaborative inputs", () => {
+  const supplied = [{ id: "kept", kind: "depth", proposal: "Clarify the mechanism.", status: "researcher_confirmation_required" }];
+  assert.deepEqual(ensureCollaborativeReviewInputs({
+    sourceText: "A mixed methods study will test 2024 evidence.",
+    revisionPurpose: "fidelity",
+    modelInputs: [],
+  }), []);
+  assert.deepEqual(ensureCollaborativeReviewInputs({
+    sourceText: "A mixed methods study will test 2024 evidence.",
+    revisionPurpose: "collaborative",
+    modelInputs: supplied,
+  }), supplied);
 });

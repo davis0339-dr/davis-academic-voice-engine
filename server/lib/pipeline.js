@@ -14,7 +14,7 @@ import { measureLanguageFingerprint } from "./languageFingerprint.js";
 import { assessLanguageDeviation } from "./languageFamilyEngine.js";
 import { getBuildInfo } from "./buildInfo.js";
 import { parseStructuredResponseText, buildJsonRepairSystemPrompt } from "./modelResponse.js";
-import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "./collaborativeRevision.js";
+import { ensureCollaborativeReviewInputs, normalizeAdditionalInputs, normalizeRevisionPurpose } from "./collaborativeRevision.js";
 import {
   assessIterativeRegularisation,
   buildIterativeRewriteDirective,
@@ -411,7 +411,11 @@ export async function rewrite({
   return {
     revised_text: parsed.revised_text,
     revision_purpose: effectiveRevisionPurpose,
-    additional_inputs: normalizeAdditionalInputs(parsed.additional_inputs, effectiveRevisionPurpose),
+    additional_inputs: ensureCollaborativeReviewInputs({
+      sourceText,
+      revisionPurpose: effectiveRevisionPurpose,
+      modelInputs: normalizeAdditionalInputs(parsed.additional_inputs, effectiveRevisionPurpose),
+    }),
     style_profile_used: analysis.style_profile_used,
     edit_summary: parsed.edit_summary,
     intervention_plan_summary: analysis.plan.summary,

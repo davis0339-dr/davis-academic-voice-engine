@@ -32,6 +32,7 @@ const NARRATIVE_REFERENCE = /\b(?!(?:Because|Although|Though|While|Whereas|Since
 
 function canonicalAuthor(author) {
   return String(author || "")
+    .replace(/([A-Za-z])['’]s\b/g, "$1")
     .replace(/\[[A-Z0-9&.\-]{2,12}\]/g, " ")
     .replace(/&/g, " and ")
     .replace(/\bet\s+al\.?/gi, " et al ")
