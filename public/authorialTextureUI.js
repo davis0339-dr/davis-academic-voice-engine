@@ -88,6 +88,7 @@
     const authority = latest.intervention_authority;
     const policy = latest.rewrite_mode_policy;
     const compliance = latest.execution_compliance;
+    const diagnosticBreadth = authority?.breadth_enforcement === "diagnostic";
     if (!texture && !authority) return;
 
     let panel = document.getElementById("authorialTextureV5");
@@ -126,12 +127,12 @@
         <div><span>Execution ceiling</span><strong>${esc(label(authority?.author_choice_ceiling || policy?.author_choice_ceiling || "auto"))}</strong></div>
         <div><span>Rewrite breadth</span><strong>${esc(label(authority?.breadth || texture?.recommended_breadth))}</strong></div>
         <div><span>Depth permission</span><strong>${esc(label(authority?.depth_permission || policy?.depth_permission))}</strong></div>
-        <div><span>Maximum changed sentences</span><strong>${pct(ceiling)}</strong></div>
+        <div><span>${diagnosticBreadth ? "Changed-sentence reference" : "Maximum changed sentences"}</span><strong>${pct(ceiling)}</strong></div>
       </div>
       <div class="atv5-construct"><strong>Construct rule:</strong> high surface quality never by itself creates high expressive preservation. Authorial texture is judged from rhetorical/discourse variation and is reduced by machine-pattern regularity. Cross-paragraph choreography is assessed separately so a fluent document can still be flagged for repeated claim/evidence/closure sequencing, predictable evidence placement, tidy closures or low rhetorical asymmetry. Semantic fidelity remains separately protected.</div>
       ${policy ? `<div class="atv5-choice"><strong>Author choice rule:</strong> ${esc(choiceMessage)}</div>` : ""}
       ${policy ? `<div class="atv5-policy"><strong>Mode resolution:</strong> ${esc(label(policy.requested_intensity))} → ${esc(label(policy.effective_intensity))}; ${esc(label(policy.requested_naturalisation))} → ${esc(label(policy.effective_naturalisation))}. ${esc(policy.rationale || "")}</div>` : ""}
-      ${compliance ? `<div class="atv5-execution ${status === "passed" ? "good" : "warn"}"><strong>Intervention fidelity:</strong> ${esc(label(status))}. Actual changed sentences: ${pct(changed)}; authorised ceiling: ${pct(ceiling)}. Changed-sentence breadth is evidence, not a target.</div>` : ""}
+      ${compliance ? `<div class="atv5-execution ${status === "passed" || status === "passed-with-variance" ? "good" : "warn"}"><strong>Intervention fidelity:</strong> ${esc(label(status))}. Actual changed sentences: ${pct(changed)}; ${diagnosticBreadth ? `diagnostic reference: ${pct(ceiling)}. High change is permitted when meaning, evidence and argument remain intact.` : `authorised ceiling: ${pct(ceiling)}.`} Changed-sentence breadth is evidence, not a target.</div>` : ""}
       ${forensicReasoning(forensics)}
       ${textureReasoning(texture)}`;
   }

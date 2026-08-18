@@ -43,7 +43,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
 
   if (explicitMinor) {
     return {
-      version: "intervention-authority-v7",
+      version: "intervention-authority-v8",
       preservation_priority: priority,
       preservation_basis: "surface_and_semantic_fidelity",
       surface_preservation_required: true,
@@ -54,6 +54,8 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
       author_choice_ceiling: "minor",
       author_choice_respected: true,
       depth_permission: "micro_edit_only",
+      breadth_enforcement: "hard",
+      paragraph_reordering_authorised: false,
       planned_keep_ratio: Number((keep / total).toFixed(3)),
       planned_intervention_ratio: Number(interventionRatio.toFixed(3)),
       planned_substantive_ratio: Number(substantiveRatio.toFixed(3)),
@@ -76,7 +78,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
       : Number(clamp(substantiveRatio + 0.15, 0.12, 0.55).toFixed(3));
 
     return {
-      version: "intervention-authority-v7",
+      version: "intervention-authority-v8",
       preservation_priority: priority,
       preservation_basis: "surface_and_semantic_fidelity",
       surface_preservation_required: true,
@@ -87,6 +89,8 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
       author_choice_ceiling: "moderate",
       author_choice_respected: true,
       depth_permission: selectiveDevelopment ? "selective_development_where_diagnosed" : "sentence_level_where_diagnosed",
+      breadth_enforcement: "diagnostic",
+      paragraph_reordering_authorised: false,
       planned_keep_ratio: Number((keep / total).toFixed(3)),
       planned_intervention_ratio: Number(interventionRatio.toFixed(3)),
       planned_substantive_ratio: Number(substantiveRatio.toFixed(3)),
@@ -97,8 +101,8 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
       minimum_basis: "no_change_quota_for_moderate_edit",
       effective_intent: effectiveIntent || null,
       rule: selectiveDevelopment
-        ? "Moderate remains an authorial ceiling: wholesale discourse reconstruction, paragraph resequencing and unsupported expansion are not authorised. However, diagnosed paragraphs may be selectively developed from existing reasoning/evidence so that strong surface texture does not preserve argumentative compression. Added words must complete an identified rhetorical function; word-count growth is never a target."
-        : "Moderate is an explicit authorial ceiling. Sentence restructuring, split/merge and flow repair are permitted where diagnosed, but deeper paragraph/discourse recommendations are advisory for this run. There is no minimum rewrite quota.",
+        ? "Moderate may change a high proportion of sentences when machine-patterned expression is distributed across the source. Change percentage is diagnostic, not a failure condition. The hard boundaries are preservation of meaning, evidence, citations, study stage and argument, plus no paragraph resequencing or unsupported expansion; word-count growth is never a target."
+        : "Moderate may restructure sentences broadly where clarity, cadence or machine-patterned expression requires it. Change percentage is diagnostic rather than a rejection rule; paragraph resequencing, unsupported claims and factual or argumentative drift remain prohibited, and word-count growth is never a target.",
     };
   }
 
@@ -134,7 +138,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     : clamp(substantiveRatio + substantiveMargin, 0.15, 1);
 
   return {
-    version: "intervention-authority-v7",
+    version: "intervention-authority-v8",
     preservation_priority: priority,
     preservation_basis: authorialMode ? "semantic_evidential_fidelity" : "surface_and_semantic_fidelity",
     surface_preservation_required: !authorialMode,
@@ -149,6 +153,8 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     depth_permission: intensity === "deep" || authorialMode
       ? "deep_where_diagnosed"
       : selectiveDevelopment ? "selective_development_where_diagnosed" : "as_planned",
+    breadth_enforcement: "hard",
+    paragraph_reordering_authorised: Boolean(Number(planSummary?.PARAGRAPH_REORDER || 0) > 0),
     planned_keep_ratio: Number((keep / total).toFixed(3)),
     planned_intervention_ratio: Number(interventionRatio.toFixed(3)),
     planned_substantive_ratio: Number(substantiveRatio.toFixed(3)),

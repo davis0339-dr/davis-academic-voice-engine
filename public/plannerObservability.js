@@ -113,6 +113,8 @@
     const paragraphSummary = rewrite?.paragraph_plan_summary || plan?.paragraphSummary || {};
     const planSummary = rewrite?.intervention_plan_summary || plan?.summary || {};
     const compliance = rewrite?.execution_compliance || null;
+    const authority = rewrite?.intervention_authority || compliance?.intervention_authority || {};
+    const diagnosticBreadth = authority.breadth_enforcement === "diagnostic";
     const planned = compliance?.planned || {};
     const reported = compliance?.reported || {};
     const totalUnits = planned.total ?? sum(planSummary);
@@ -146,10 +148,10 @@
           <div><span>Structural coverage</span><strong>${pct(compliance.structural_coverage)}</strong></div>
           <div><span>Changed sentences</span><strong>${pct(compliance.changed_sentence_ratio)}</strong></div>
           <div><span>Minimum plausibility floor</span><strong>${pct(compliance.minimum_changed_sentence_ratio)}</strong></div>
-          <div><span>Maximum disturbance ceiling</span><strong>${pct(compliance.changed_sentence_ceiling)}</strong></div>
+          <div><span>${diagnosticBreadth ? "Diagnostic change reference" : "Maximum disturbance ceiling"}</span><strong>${pct(compliance.changed_sentence_ceiling)}</strong></div>
           <div><span>Residual discourse stage</span><strong>${esc(residualState(rewrite))}</strong></div>
         </div>
-        <div class="pov-boundary"><strong>Interpretation:</strong> the minimum is a plausibility safeguard, not a rewrite target. The maximum is an authorised ceiling, not a goal. DISCOURSE_REPACKAGE is paragraph-level scope and is not counted as one compulsory rewrite per source sentence.</div>
+        <div class="pov-boundary"><strong>Interpretation:</strong> the minimum is a plausibility safeguard, not a rewrite target. ${diagnosticBreadth ? "For this mode, the changed-sentence percentage is a diagnostic reference, not a rejection ceiling; high change is acceptable when preservation and structural-authority checks pass." : "The maximum is an authorised ceiling, not a goal."} DISCOURSE_REPACKAGE is paragraph-level scope and is not counted as one compulsory rewrite per source sentence.</div>
         ${(compliance.execution_reasons || compliance.reasons || []).length ? `<div class="pov-reasons"><strong>Execution issue:</strong> ${(compliance.execution_reasons || compliance.reasons).map(esc).join(" ")}</div>` : ""}
         ${(compliance.warnings || []).length ? `<div class="pov-warnings"><strong>Watch:</strong> ${compliance.warnings.map(esc).join(" ")}</div>` : ""}
       </div>` : "";

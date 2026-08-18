@@ -132,7 +132,32 @@ function uniqueDiagnosticRequirements(plan) {
   for (const guidance of plan.documentGuidance || []) {
     if (!reasons.includes(guidance)) reasons.push(guidance);
   }
-  return reasons;
+  return reasons.slice(0, 18).map((reason) => String(reason).slice(0, 360));
+}
+
+function compactReasons(reasons, limit = 2) {
+  return [...new Set((reasons || []).map((reason) => String(reason).trim()).filter(Boolean))]
+    .slice(0, limit)
+    .map((reason) => reason.slice(0, 260));
+}
+
+function compactParagraphPlan(plan) {
+  return (plan?.paragraphPlan || []).map((item) => ({
+    paragraphBlockIndex: item.paragraphBlockIndex,
+    primaryAction: item.primaryAction,
+    actions: (item.actions || []).slice(0, 4),
+    reasons: compactReasons(item.reasons, 3),
+  }));
+}
+
+function compactSentencePlan(plan) {
+  return (plan?.items || []).map((item) => [
+    item.sentenceIndex,
+    item.level,
+    item.paragraphBlockIndex,
+    item.decisionCode,
+    item.preservationClass,
+  ]);
 }
 
 export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, precedingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
@@ -181,16 +206,24 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     `Grammar intensity: ${grammarIntensity}. Light = correct only errors that obstruct meaning. Standard = correct clear grammar problems while preserving personal cadence. Strict = apply formal academic grammar consistently. Never manufacture grammatical mistakes.`,
     "",
     "Style profile (descriptive evidence and section guidance, not an imitation target):",
-    JSON.stringify(styleProfile, null, 2),
+    JSON.stringify(styleProfile),
+    "",
+    [
+      "REGIONAL AND NON-NATIVE ACADEMIC VOICE:",
+      "- Do not silently standardise credible British, Nigerian, West African or other regional academic usage into a generic American editorial voice when the supplied profile or source supports that register.",
+      "- Preserve clear writer-owned collocations, degrees of explicitness, explanatory pacing and locally conventional academic phrasing when they carry meaning or voice.",
+      "- Human academic texture may include uneven emphasis, delayed synthesis, direct exposition, long explanatory sentences beside shorter statements, and recurring discipline terms. These are not defects merely because a generic style model would smooth them.",
+      "- Do not stereotype any region or imitate an accent. Do not manufacture errors, broken grammar or artificial roughness. Improve genuine clarity problems while allowing defensible variation to remain.",
+    ].join("\n"),
     "",
     "Protected spans -- these exact strings must still be present, verbatim, somewhere in the revised text unless the source itself is flagged for author clarification:",
-    JSON.stringify(protectedSpans, null, 2),
+    JSON.stringify(protectedSpans),
     "",
     precedingContext
       ? `This passage is one chunk of a longer document. The text immediately before it (already revised and final) ends with:\n"${precedingContext}"\nUse this only to make the opening flow naturally. Do not repeat or revise that context.`
       : "",
     documentGlossary && Object.keys(documentGlossary).length > 0
-      ? `Document-wide glossary established elsewhere in the document. Keep abbreviation use consistent if these terms occur in this chunk:\n${JSON.stringify(documentGlossary, null, 2)}`
+      ? `Document-wide glossary established elsewhere in the document. Keep abbreviation use consistent if these terms occur in this chunk:\n${JSON.stringify(documentGlossary)}`
       : "",
     diagnosticRequirements.length
       ? [
@@ -200,24 +233,11 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
       : "",
     "",
     "PARAGRAPH / DISCOURSE PLAN. Execute this before sentence-level polishing. Multiple actions may apply to one block; primaryAction is the dominant instruction. KEEP_PARAGRAPH means preserve its reasoning structure, not necessarily freeze every sentence. PRESERVE_AUTHORIAL_PASSAGE means do not rewrite the passage itself. REBUILD_DISCOURSE means preserve propositions/evidence while changing how the paragraph develops. DEVELOP_EVIDENCE means give cited findings enough explanatory space where the source/context supports that development. QUALIFY_EVIDENCE means make a conditional or bounded finding clear without strengthening it. EXPLAIN_MECHANISM means explain a relationship only where the mechanism already exists in supplied material. DISTINGUISH_MEASURES means clarify why related outcomes/proxies are not interchangeable. CONTEXTUALISE_SETTING and TEMPORALISE_EVIDENCE develop institutional or time-setting implications from supplied evidence only. BUILD_GAP develops the research need from the accumulated evidence rather than announcing a generic gap. REDUCE_SIGNPOSTING and REMOVE_REDUNDANT_CLOSURE target global rhetorical regularity without deleting substantive content. Paragraph actions govern the reasoning unit and must not be converted mechanically into a requirement to rewrite every source sentence.",
-    JSON.stringify(plan.paragraphPlan || [], null, 2),
+    JSON.stringify(compactParagraphPlan(plan)),
     "",
-    "SENTENCE INTERVENTION PLAN (source order). Follow the assigned level AND its reason after applying the paragraph plan:",
+    "SENTENCE INTERVENTION PLAN (source order). Each compact row is [sentenceIndex, operation, paragraphBlockIndex, decisionCode, preservationClass]. Apply it after the paragraph plan:",
     "KEEP = do not alter sentence wording. KEEP classifications explain why: KEEP_VOICE, KEEP_EVIDENCE, KEEP_QUOTE, KEEP_TECHNICAL or KEEP_NATURAL. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = rebuild sentence architecture as needed. REWRITE_PATTERN in decisionCode means the sentence may be fluent individually but contributes to a diagnosed local/global pattern requiring a concrete sentence operation. SELECTIVE_ARGUMENT_DEVELOPMENT marks a paragraph whose intellectual work needs development; do not rewrite every sentence independently. DISCOURSE_REPACKAGE = the proposition/evidence belongs to a paragraph-level reconstruction; it is NOT an obligatory standalone rewrite and may remain, move, merge, split or be recast as the paragraph's reasoning requires. SPLIT_OR_MERGE = redistribute propositions across sentence boundaries. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add reasoning using only content already present in the source/context/evidence; it does not mean add words for their own sake. COMPRESS = remove padding. FLAG_FOR_AUTHOR = leave substantively as-is and flag rather than guessing. In edit_summary, report only operations actually performed; do not count paragraph scope as one compulsory edit per source sentence.",
-    JSON.stringify(
-      (plan.items || []).map((i) => ({
-        sentenceIndex: i.sentenceIndex,
-        level: i.level,
-        decisionCode: i.decisionCode,
-        preservationClass: i.preservationClass,
-        paragraphBlockIndex: i.paragraphBlockIndex,
-        paragraphAction: i.paragraphAction,
-        reasons: i.reasons,
-        sentence: i.sentence,
-      })),
-      null,
-      2
-    ),
+    JSON.stringify(compactSentencePlan(plan)),
     plan.paragraphReorderSuggested
       ? "\nDocument-level note: a paragraph-level structural pattern was actually diagnosed. You may restructure sentence grouping or local paragraph order only as needed to resolve that pattern. Preserve the section's macro-argument sequence, claim-to-citation relationships and transitions between rhetorical stages. Do not move ideas merely to create novelty."
       : "\nDocument-level note: no paragraph reorder was diagnosed. Preserve the existing macro-argument and paragraph sequence; perform any authorised reconstruction or development within that logical order.",

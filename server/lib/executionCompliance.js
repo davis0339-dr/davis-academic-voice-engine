@@ -32,13 +32,14 @@ function plannedCounts(result) {
   const keep = Number(summary.KEEP || 0);
   const micro = Number(summary.MICRO_EDIT || 0);
   const discourseRepackage = Number(summary[DISCOURSE_REPACKAGE_LEVEL] || 0);
+  const paragraphReorders = Number(summary.PARAGRAPH_REORDER || 0);
   const substantive = [...SUBSTANTIVE_LEVELS].reduce((sum, key) => sum + Number(summary[key] || 0), 0);
   // DISCOURSE_REPACKAGE identifies material that belongs to a paragraph-level
   // reconstruction. It authorises structural handling but does not demand one
   // independently countable rewrite per source sentence.
   const intervention = Math.max(0, total - keep - discourseRepackage);
   const materialIntervention = Math.max(0, total - keep);
-  return { total, keep, micro, substantive, discourseRepackage, intervention, materialIntervention };
+  return { total, keep, micro, substantive, discourseRepackage, paragraphReorders, intervention, materialIntervention };
 }
 
 function reportedCounts(result) {
@@ -231,6 +232,7 @@ export function assessExecutionCompliance(result) {
     : null;
   const changedSentenceRatio = unchangedSentenceRatio === null ? null : clamp01(1 - unchangedSentenceRatio);
   const reportedSubstantiveRatio = planned.total ? reported.substantive / planned.total : 0;
+  const diagnosticBreadth = authority.breadth_enforcement === "diagnostic";
 
   const underReasons = [];
   const underCodes = [];
@@ -297,11 +299,29 @@ export function assessExecutionCompliance(result) {
     : Math.min(0.92, ratio(planned.substantive + planned.discourseRepackage, planned.total, 0) + 0.30);
 
   if (planned.total >= 8 && changedSentenceRatio !== null && changedSentenceRatio > maxChangedSentenceRatio + 0.03) {
-    addOver("MAX_CHANGED_SENTENCE_BREADTH", `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, above the ${Math.round(maxChangedSentenceRatio * 100)}% maximum breadth authorised by this plan.`);
+    const reason = diagnosticBreadth
+      ? `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, above the plan's ${Math.round(maxChangedSentenceRatio * 100)}% diagnostic reference. High change is not itself a defect; meaning, evidence, argument and structural authority are evaluated separately.`
+      : `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, above the ${Math.round(maxChangedSentenceRatio * 100)}% maximum breadth authorised by this plan.`;
+    if (diagnosticBreadth) addVariance("HIGH_CHANGED_SENTENCE_BREADTH", reason);
+    else addOver("MAX_CHANGED_SENTENCE_BREADTH", reason);
   }
 
   if (planned.total >= 8 && reportedSubstantiveRatio > maxSubstantiveRatio + 0.12) {
-    addOver("MAX_SUBSTANTIVE_BREADTH", `Model-reported substantive operations equal ${(reportedSubstantiveRatio * 100).toFixed(0)}% of planner units, above the ${Math.round(maxSubstantiveRatio * 100)}% structural breadth ceiling after the split/merge tolerance.`);
+    const reason = diagnosticBreadth
+      ? `Model-reported substantive operations equal ${(reportedSubstantiveRatio * 100).toFixed(0)}% of planner units, above the plan's ${Math.round(maxSubstantiveRatio * 100)}% diagnostic reference after split/merge tolerance.`
+      : `Model-reported substantive operations equal ${(reportedSubstantiveRatio * 100).toFixed(0)}% of planner units, above the ${Math.round(maxSubstantiveRatio * 100)}% structural breadth ceiling after split/merge tolerance.`;
+    if (diagnosticBreadth) addVariance("HIGH_SUBSTANTIVE_BREADTH", reason);
+    else addOver("MAX_SUBSTANTIVE_BREADTH", reason);
+  }
+
+  if (
+    reported.paragraphReorders > planned.paragraphReorders &&
+    authority.paragraph_reordering_authorised !== true
+  ) {
+    addOver(
+      "UNAUTHORISED_PARAGRAPH_REORDER",
+      `The model reported ${reported.paragraphReorders} paragraph reorder(s), but this mode did not authorise paragraph resequencing.`
+    );
   }
 
   // The model-authored edit summary is supporting evidence, not an independent
@@ -345,10 +365,10 @@ export function assessExecutionCompliance(result) {
   const visiblePlausibilityScore = changedSentenceRatio === null || minChangedSentenceRatio <= 0 || changedSentenceRatio >= minChangedSentenceRatio
     ? 1
     : clamp01(changedSentenceRatio / Math.max(0.05, minChangedSentenceRatio));
-  const breadthScore = changedSentenceRatio === null || changedSentenceRatio <= maxChangedSentenceRatio
+  const breadthScore = diagnosticBreadth || changedSentenceRatio === null || changedSentenceRatio <= maxChangedSentenceRatio
     ? 1
     : clamp01(1 - (changedSentenceRatio - maxChangedSentenceRatio) / Math.max(0.15, maxChangedSentenceRatio));
-  const substantiveBreadthScore = reportedSubstantiveRatio <= maxSubstantiveRatio + 0.12
+  const substantiveBreadthScore = diagnosticBreadth || reportedSubstantiveRatio <= maxSubstantiveRatio + 0.12
     ? 1
     : clamp01(1 - (reportedSubstantiveRatio - maxSubstantiveRatio) / Math.max(0.15, maxSubstantiveRatio));
 
@@ -365,13 +385,17 @@ export function assessExecutionCompliance(result) {
   const overallScore = Number(((executionScore * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3));
 
   return {
-    version: "planner-execution-compliance-v6",
+    version: "planner-execution-compliance-v7",
     passed: executionPassed,
     execution_passed: executionPassed,
     execution_status: status,
     plan_fidelity_status: underReasons.length ? "under-executed" : overReasons.length ? "over-executed" : "passed",
     plan_fidelity_passed: underReasons.length === 0 && overReasons.length === 0,
-    visible_change_plausibility_status: hasVariance ? "below-plausibility-floor" : "within-authorised-band",
+    visible_change_plausibility_status: varianceCodes.includes("VISIBLE_CHANGE_FLOOR")
+      ? "below-plausibility-floor"
+      : varianceCodes.some((code) => code.startsWith("HIGH_"))
+        ? "high-change-diagnostic"
+        : "within-authorised-band",
     visible_change_plausibility_score: Number(visiblePlausibilityScore.toFixed(3)),
     under_executed: underReasons.length > 0,
     over_executed: overReasons.length > 0,

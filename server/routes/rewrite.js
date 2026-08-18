@@ -21,6 +21,7 @@ import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "../lib/collaborativeRevision.js";
 import { retainSourceAfterPreservationFailure } from "../lib/finalSafetyFallback.js";
+import { repairPreservationCandidate } from "../lib/preservationRepair.js";
 
 export const rewriteRouter = Router();
 
@@ -76,6 +77,8 @@ function refreshTransformationQuality(sourceText, result, revisedText, naturalis
     ...refreshed,
     corrective_retry_used: Boolean(previous.corrective_retry_used),
     rescue_retry_used: Boolean(previous.rescue_retry_used),
+    corrective_retry_error: previous.corrective_retry_error || null,
+    rescue_retry_error: previous.rescue_retry_error || null,
     first_attempt: previous.first_attempt || null,
     pre_rescue_attempt: previous.pre_rescue_attempt || null,
     recomputed_after_residual_rework: true,
@@ -400,16 +403,32 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       if (
         !sourceRetainedForSafety &&
         !overExecutionRecoveryUsed &&
-        !executionCompliance.preservation_ok &&
-        !reconciliationRetryUsed
+        !executionCompliance.preservation_ok
       ) {
         preservationRecoveryUsed = true;
         try {
-          const recoveryResult = enrichForCompliance(await runRewrite());
-          const preferred = preferByExecutionCompliance(result, recoveryResult);
-          result = preferred.result;
-          executionCompliance = preferred.compliance;
-          selectedAttempt = preferred.selected === "second" ? "preservation-recovery" : selectedAttempt;
+          const repairedResult = await repairPreservationCandidate({
+            sourceText: text,
+            candidateResult: result,
+            revisionPurpose: effectiveRevisionPurpose,
+          });
+          result = {
+            ...repairedResult,
+            transformation_quality: refreshTransformationQuality(
+              text,
+              result,
+              repairedResult.revised_text,
+              modePolicy.effective_naturalisation
+            ),
+            iterative_rewrite_quality: refreshIterativeQuality(
+              text,
+              result,
+              repairedResult.revised_text,
+              rewriteLineage
+            ),
+          };
+          executionCompliance = assessExecutionCompliance(result);
+          selectedAttempt = "preservation-candidate-repair";
         } catch (retryErr) {
           preservationRecoveryError = {
             code: retryErr.code || retryErr.healthState || "PRESERVATION_RECOVERY_FAILED",

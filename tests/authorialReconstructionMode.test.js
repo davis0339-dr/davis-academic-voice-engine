@@ -45,6 +45,20 @@ test("Moderate preserves the structural ceiling while honouring aggressive/autho
   assert.equal(policy.universal_rewrite_authorised, false);
 });
 
+test("Moderate treats changed-sentence breadth as diagnostic while prohibiting paragraph resequencing", () => {
+  const authority = deriveInterventionAuthority({
+    planSummary: { MICRO_EDIT: 32, SENTENCE_RESTRUCTURE: 14, SPLIT_OR_MERGE: 12 },
+    authorialTexture: { preservation_priority: "medium" },
+    requestedIntensity: "moderate",
+    requestedNaturalisation: "aggressive",
+    effectiveIntent: "context_scholarly_strengthening",
+  });
+
+  assert.equal(authority.breadth_enforcement, "diagnostic");
+  assert.equal(authority.paragraph_reordering_authorised, false);
+  assert.match(authority.rule, /High change is not itself a defect|Change percentage is diagnostic/i);
+});
+
 test("authorial intervention authority is broad only when authorial mode is paired with Deep", () => {
   const planSummary = { KEEP: 20, DISCOURSE_REPACKAGE: 14, SPLIT_OR_MERGE: 5, SENTENCE_RESTRUCTURE: 2 };
   const minor = deriveInterventionAuthority({ planSummary, authorialTexture: strongTexture, requestedIntensity: "minor", requestedNaturalisation: "authorial", effectiveIntent: "preserve_polish" });

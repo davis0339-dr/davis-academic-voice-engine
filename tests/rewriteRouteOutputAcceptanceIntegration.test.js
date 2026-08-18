@@ -29,6 +29,12 @@ test("preservation failure is converted to an explicit source-retained non-edit 
   assert.match(route, /rejected_preservation_failure: rejectedPreservationFailure/);
 });
 
+test("preservation recovery repairs the completed candidate instead of regenerating the whole source", () => {
+  assert.match(route, /repairPreservationCandidate\(\{[\s\S]*sourceText: text,[\s\S]*candidateResult: result/);
+  assert.doesNotMatch(route, /const recoveryResult = enrichForCompliance\(await runRewrite\(\)\)/);
+  assert.match(route, /selectedAttempt = "preservation-candidate-repair"/);
+});
+
 test("Moderate/Deep assertive output gate can block final acceptance", () => {
   assert.match(
     route,
