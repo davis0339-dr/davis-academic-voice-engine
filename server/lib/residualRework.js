@@ -257,7 +257,7 @@ async function callResidualModel(payload) {
 export async function selectiveResidualRework({
   sourceText,
   candidateText,
-  maxBlocks = 6,
+  maxBlocks = 8,
   styleFilters = {},
   rewriteIntensity = "auto",
   naturalisation = "faithful",
@@ -422,3 +422,4 @@ export async function selectiveResidualRework({
     diagnostics_notes: result.diagnostics_notes || "",
   };
 }
+

@@ -51,3 +51,48 @@ test("an optional quality-refinement timeout retains the completed candidate ins
     llmProvider.callAnthropic = originalCall;
   }
 });
+
+test("Moderate + Aggressive uses one full-document pass and defers machine-pattern recovery to the selective residual stage", async () => {
+  const originalCall = llmProvider.callAnthropic;
+  let calls = 0;
+  llmProvider.callAnthropic = async () => {
+    calls += 1;
+    return {
+      text: JSON.stringify({
+        revised_text: source,
+        edit_summary: {
+          kept: 8,
+          micro_edits: 0,
+          sentence_restructures: 0,
+          split_or_merge: 0,
+          paragraph_reorders: 0,
+          flags_for_author: [],
+        },
+        additional_inputs: [],
+      }),
+      raw: { stop_reason: "end_turn" },
+      usage: { input_tokens: 100, output_tokens: 50 },
+    };
+  };
+
+  try {
+    const result = await rewrite({
+      sourceText: source,
+      styleFilters: {},
+      rewriteIntensity: "moderate",
+      grammarIntensity: "standard",
+      lengthPreference: "similar",
+      naturalisation: "aggressive",
+      revisionPurpose: "collaborative",
+    });
+
+    assert.equal(calls, 1, "Moderate must not repeat the entire manuscript prompt before selective recovery");
+    assert.equal(result.transformation_quality.corrective_retry_used, false);
+    assert.equal(result.transformation_quality.rescue_retry_used, false);
+    assert.equal(result.transformation_quality.full_document_quality_recovery_allowed, false);
+    assert.equal(result.transformation_quality.selective_residual_recovery_preferred, true);
+  } finally {
+    llmProvider.callAnthropic = originalCall;
+  }
+});
+

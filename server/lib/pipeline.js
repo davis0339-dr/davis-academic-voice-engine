@@ -308,6 +308,13 @@ export async function rewrite({
   const measuredLanguageFamily = analysis.measured_language_family;
   const substantiveRatio = plannedSubstantiveRatio(analysis.plan);
   const qualityGateEnforced = naturalisationLevel === "aggressive" && substantiveRatio >= 0.30;
+  // Moderate + Aggressive already receives a full-document generation pass.
+  // Repeating that same large prompt for quality correction can consume the
+  // entire interactive request window before preservation-aware, paragraph-
+  // targeted recovery runs. Reserve whole-document retries for genuinely Deep
+  // work; ordinary developmental revision is better served by the selective
+  // residual stage after factual preservation has been established.
+  const fullDocumentQualityRecoveryAllowed = rewriteIntensity === "deep";
 
   const systemPrompt = buildSystemPrompt({
     styleProfile: analysis.style_profile_used.effective,
@@ -339,7 +346,10 @@ export async function rewrite({
   let preRescueQuality = null;
   let preRescueIterativeQuality = null;
 
-  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)) {
+  if (
+    fullDocumentQualityRecoveryAllowed &&
+    qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)
+  ) {
     firstAttemptQuality = transformationQuality;
     firstAttemptIterativeQuality = iterativeQuality;
     qualityRetryUsed = true;
@@ -373,7 +383,11 @@ export async function rewrite({
     }
   }
 
-  if (!qualityRetryError && qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)) {
+  if (
+    fullDocumentQualityRecoveryAllowed &&
+    !qualityRetryError &&
+    qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)
+  ) {
     preRescueQuality = transformationQuality;
     preRescueIterativeQuality = iterativeQuality;
     const candidateText = parsed.revised_text;
@@ -443,6 +457,8 @@ export async function rewrite({
     transformation_quality: {
       ...transformationQuality,
       enforced: qualityGateEnforced,
+      full_document_quality_recovery_allowed: fullDocumentQualityRecoveryAllowed,
+      selective_residual_recovery_preferred: !fullDocumentQualityRecoveryAllowed,
       substantive_plan_ratio: Number(substantiveRatio.toFixed(3)),
       corrective_retry_used: qualityRetryUsed,
       rescue_retry_used: rescueRetryUsed,
@@ -512,3 +528,4 @@ export async function rewrite({
     build: getBuildInfo(),
   };
 }
+
