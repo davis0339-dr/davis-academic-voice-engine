@@ -228,8 +228,11 @@ export function analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
   // role loss only when it is repeated/material, or when compression supplies
   // corroborating evidence. Explicit semantic-force changes remain hard fails.
   const materialLossFloor = Math.max(2, Math.ceil(sourceRecords.length * 0.08));
-  const materialPropositionLoss = possibleLosses.length >= materialLossFloor || (possibleLosses.length > 0 && lengthRatio < 0.93);
-  const materialRoleLoss = roleLosses.length >= materialLossFloor || (roleLosses.length > 0 && lengthRatio < 0.93);
+  const compressionCorroboratesLoss = lengthRatio < 0.95 || paragraphCompression.length > 0;
+  const materialPropositionLoss = possibleLosses.length > 0 && compressionCorroboratesLoss &&
+    (possibleLosses.length >= materialLossFloor || lengthRatio < 0.93);
+  const materialRoleLoss = roleLosses.length > 0 && compressionCorroboratesLoss &&
+    (roleLosses.length >= materialLossFloor || lengthRatio < 0.93);
   const passed = !maintainedLengthHardFailure && !materialPropositionLoss && !materialRoleLoss && semantic.length === 0;
 
   return {
