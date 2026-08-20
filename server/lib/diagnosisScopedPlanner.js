@@ -138,8 +138,7 @@ function forensicExecutionScope(plan, diagnostics, { requestedIntensity, request
   return plan;
 }
 
-function deepAuthorialProtocol() {
-  return [
+export const DEEP_AUTHORIAL_PROTOCOL = Object.freeze([
     "DEEP AUTHORIAL V4 EXECUTION PROTOCOL: this is not a sentence-by-sentence paraphrase pass. Before drafting each authorised substantive paragraph, recover its protected proposition/evidence ledger: claim(s), evidence/citation attachment, qualification/condition, measurement distinction, mechanism, setting/time context, and rhetorical purpose. Reconstruct from that ledger rather than walking through source sentence shells in order.",
     "PRESERVE RESEARCH, NOT AUTOMATICALLY SURFACE PACKAGING: factual meaning, citations, statistics, variables, hypotheses, methods, chronology, study stage, technical terminology and epistemic strength are immutable. Sentence boundaries, grammatical subjects, clause order, local information packaging and paragraph development are available for reconstruction only where diagnosis supports intervention.",
     "NUMERIC RELATIONSHIPS ARE ATOMIC: copy protected years, year ranges, sample-size ranges, percentages, monetary values and statistical notation without changing their relationship. In particular, a range such as 2015-2024 or 10-15 must never become two comma-separated values such as 2015, 2024 or 10, 15. Preserve the exact source range string when possible.",
@@ -157,8 +156,7 @@ function deepAuthorialProtocol() {
     "CAN CHANGE IS NOT SHOULD CHANGE: Deep/Authorial supplies broad permission, not a quota. A technically clean sentence or paragraph may still be kept when its authorial texture is genuine and no discourse-regularity or argumentative diagnosis warrants intervention.",
     "FINAL SELF-CHECK BEFORE RETURNING: for paragraphs actually authorised for reconstruction, ask whether the candidate is essentially the same paragraph sequence with cleaner synonyms and recast clauses. Also ask whether the candidate has accumulated polished editorial pivots, abstract signposts or tidy synthesis sentences that were not required by the argument. If either is true, the authorised Deep Authorial operation is under-executed or over-regularised. Rebuild that authorised material from the proposition/evidence ledger while retaining all protected research content.",
     "EXTERNAL CLASSIFIERS ARE DIAGNOSTIC ONLY: do not target a detector score, insert errors, conceal machine provenance, or use tricks. The objective is defensible, heterogeneous, author-like academic discourse produced by better reasoning architecture and fidelity, not score gaming.",
-  ];
-}
+]);
 
 export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   const requestedNaturalisation = String(options.naturalisation || "faithful").toLowerCase();
@@ -214,7 +212,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     "A Deep/Authorial request must not be silently collapsed into local synonym polishing where genuine reconstruction has been diagnosed.",
     "Expand develops diagnosed reasoning, evidence, qualification, context, measurement or gap work; it is not a word-growth quota.",
     "Keep decisions remain legitimate in every mode for headings, quotations, equations, technical labels, evidence, formal research artefacts, and genuinely author-specific passages that do not warrant intervention.",
-    ...(authorialAuthority ? deepAuthorialProtocol() : []),
+    ...(authorialAuthority ? DEEP_AUTHORIAL_PROTOCOL : []),
   ];
   plan.documentGuidance = [
     ...(plan.documentGuidance || []),

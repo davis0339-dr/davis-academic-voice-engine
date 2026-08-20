@@ -3,10 +3,13 @@ import { parseStructuredResponseText } from "./modelResponse.js";
 import { extractProtectedSpans } from "./protect.js";
 import { auditPreservation } from "./preservation.js";
 import { modelOutputTokenBudget } from "./pipeline.js";
+import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
 
-function repairPrompt() {
+export function repairPrompt() {
   return [
     "You are repairing factual and evidential preservation defects in an already completed academic revision.",
+    "MANDATORY PRESERVATION CONTRACT (these invariants also govern repair):",
+    ...MANDATORY_REVISION_GUARDRAILS,
     "Work on the CURRENT CANDIDATE. Do not regenerate the document from the original and do not flatten its revised cadence or argument presentation.",
     "Use the ORIGINAL SOURCE only as the authority for meaning, citations, numbers, quotations, technical terms, qualifications, research stage and factual relationships.",
     "Repair rhetorical and semantic losses as well as factual defects. Restore missing topic/framing work, transitions, evidence interpretation, contrast, concession, synthesis, qualifications and scope conditions in fresh, natural wording rather than copying mechanically.",

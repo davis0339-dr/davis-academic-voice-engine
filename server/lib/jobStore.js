@@ -207,6 +207,7 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
         lengthPreference: (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference,
         naturalisation: coverageRecovery ? "aggressive" : globalRepair ? "faithful" : policy.effective.naturalisation,
         precedingContext: previousRevisedTail(job, chunk) || chunk.precedingContextTail,
+        followingContext: chunk.followingContextHead,
         documentGlossary: job.documentMap.glossary,
         documentContext: baseDocumentContext,
       });

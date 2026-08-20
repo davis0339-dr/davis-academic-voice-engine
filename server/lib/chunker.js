@@ -100,6 +100,12 @@ function lastSentenceTail(text, maxChars = 240) {
   return (sentenceStart >= 0 ? tail.slice(sentenceStart) : tail).trim();
 }
 
+function firstSentenceHead(text, maxChars = 240) {
+  if (!text) return "";
+  const first = splitSentences(text)[0] || String(text).slice(0, maxChars);
+  return first.slice(0, maxChars).trim();
+}
+
 function isFormalPassthrough(heading, body) {
   if (heading && (PASSTHROUGH_HEADING.test(heading.trim()) || STANDALONE_INSTITUTIONAL.test(heading.trim()))) return true;
   if (/\bH0?\d+[a-z]?\s*:/i.test(body || "") || /\bH1\d*[a-z]?\s*:/i.test(body || "")) return true;
@@ -169,6 +175,7 @@ export function chunkDocument(fullText, documentMap, options = {}) {
       sourceText: c.body,
       wordCount: wordCount(c.body),
       precedingContextTail: index > 0 ? lastSentenceTail(rawChunks[index - 1].body) : "",
+      followingContextHead: index < rawChunks.length - 1 ? firstSentenceHead(rawChunks[index + 1].body) : "",
     })),
   };
 }

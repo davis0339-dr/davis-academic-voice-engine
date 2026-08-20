@@ -4,6 +4,35 @@
 
 import { texturePromptBlock } from "../data/textureExemplars.js";
 import { buildCollaborativeRevisionPromptBlock } from "./collaborativeRevision.js";
+import { DEEP_AUTHORIAL_PROTOCOL } from "./diagnosisScopedPlanner.js";
+
+// These rules are generation invariants, not optional diagnostic commentary.
+// They are inserted through their own untruncated channel so prompt-size
+// compacting cannot silently remove them behind sentence/paragraph reasons.
+export const MANDATORY_REVISION_GUARDRAILS = Object.freeze([
+  "[G01 INTELLECTUAL-JOB] Before deleting, absorbing, splitting or merging a source unit, identify the intellectual job it performs. Preserve every distinct proposition, qualification, relationship, interpretation, transition, implication and scope condition; lexical repetition is not proof of redundancy.",
+  "[G02 RHETORICAL-SEQUENCE] Preserve or defensibly reconstruct paragraph and cross-paragraph progression. Framing, funnel movement, evidence, interpretation, qualification, synthesis and transition may be reworded or redistributed, but must not silently collapse into a list of facts or clipped conclusions.",
+  "[G03 AUTHORIAL-REASONING] Citation-free reasoning is not expendable. A sentence explaining why evidence matters, distinguishing concepts, qualifying a statistic, linking jurisdictions or carrying the argument forward performs intellectual work even when neighbouring sentences retain the evidence and citations.",
+  "[G04 LOGICAL-RELATIONS] A long or complex sentence is not defective merely because it is long. Do not split contrastive, concessive, causal, comparative or balanced parallel constructions unless the resulting form preserves their logical relationship at least as explicitly and effectively.",
+  "[G05 SEMANTIC-FORCE] Preserve modality, causality, magnitude, direction, certainty, comparison, scope, temporality and generalisability. Possibility is not certainty; association is not causation; coexistence is not equality; a bounded finding is not universal.",
+  "[G06 CLAIM-EVIDENCE] Keep citations, quotations, numbers and evidence attached to the claims, qualifications and interpretations they support. Do not retain a citation while deleting the reasoning that established its relevance.",
+  "[G07 NO-INVENTION] Reconstruction may clarify and reorganise only supplied intellectual content. Do not manufacture facts, findings, mechanisms, citations, local realities or stronger propositions. Put possible additions in additional_inputs for researcher confirmation or verification.",
+  "[G08 DEEP-NOT-DELETION] Rewrite depth controls how extensively authorised expression may be rebuilt; it does not authorise deeper deletion. Deep reconstruction must change discourse and syntax where diagnosed while preserving the protected proposition/evidence/function ledger.",
+  "[G09 HUMAN-TEXTURE] Human academic texture comes from reasoning-led variation, purposeful complexity, disciplined transitions, interpretation and qualification. Never simulate it with errors, fragments, arbitrary synonyms, fake informality, random quirks or forced short sentences.",
+  "[G10 PRESERVATION-OVERRIDES] If a stylistic, cadence, concision, grammar or naturalisation instruction conflicts with rhetorical or semantic preservation, preservation wins. If the requested length is maintain/normal, brevity has no independent value.",
+]);
+
+function mandatoryGuardrailBlock(plan) {
+  const deepRules = plan?.authorialAuthorityActive
+    ? DEEP_AUTHORIAL_PROTOCOL.map((rule, index) => `[D${String(index + 1).padStart(2, "0")}] ${rule}`)
+    : [];
+  return [
+    "--- MANDATORY REVISION GUARDRAILS (untruncated; higher priority than style advice) ---",
+    ...MANDATORY_REVISION_GUARDRAILS,
+    ...deepRules,
+    "--- END MANDATORY REVISION GUARDRAILS ---",
+  ].join("\n");
+}
 
 export const BASE_SYSTEM_PROMPT = `You are the revision engine for an evidence-backed academic editor.
 
@@ -119,20 +148,27 @@ const NATURALISATION_FIDELITY = {
 
 function uniqueDiagnosticRequirements(plan) {
   const reasons = [];
-  for (const item of plan.items || []) {
-    for (const reason of item.reasons || []) {
-      if (!reasons.includes(reason)) reasons.push(reason);
-    }
-  }
+  const invariantGuidance = new Set(plan.scopePrinciples || []);
+  const add = (reason) => {
+    const normalised = String(reason || "").trim();
+    if (normalised && !reasons.includes(normalised)) reasons.push(normalised);
+  };
+
+  // Paragraph/document diagnosis is more important to a reconstruction pass
+  // than repeated sentence-local wording. Invariant scope rules are delivered
+  // separately by mandatoryGuardrailBlock and must never compete for this cap.
   for (const item of plan.paragraphPlan || []) {
     for (const reason of item.reasons || []) {
-      if (!reasons.includes(reason)) reasons.push(reason);
+      add(reason);
     }
   }
   for (const guidance of plan.documentGuidance || []) {
-    if (!reasons.includes(guidance)) reasons.push(guidance);
+    if (!invariantGuidance.has(guidance)) add(guidance);
   }
-  return reasons.slice(0, 18).map((reason) => String(reason).slice(0, 360));
+  for (const item of plan.items || []) {
+    for (const reason of item.reasons || []) add(reason);
+  }
+  return reasons.slice(0, 14).map((reason) => reason.slice(0, 360));
 }
 
 function compactReasons(reasons, limit = 2) {
@@ -160,7 +196,23 @@ function compactSentencePlan(plan) {
   ]);
 }
 
-export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, lengthPreference, rhetoricalLedger, precedingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
+function compactRhetoricalLedgerForPrompt(ledger) {
+  return (ledger || []).map((paragraph) => [
+    paragraph.paragraphIndex,
+    paragraph.rhetoricalSequence || [],
+    (paragraph.sentences || []).map((sentence) => [
+      sentence.sentenceIndex,
+      sentence.roles || [],
+      sentence.propositionAnchors || [],
+      sentence.logicalRelations?.length ? sentence.logicalRelations : null,
+      sentence.epistemicQualifiers?.length ? sentence.epistemicQualifiers : null,
+      sentence.citationAnchors?.length ? sentence.citationAnchors : null,
+      sentence.relationClauses || 0,
+    ]),
+  ]);
+}
+
+export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, lengthPreference, rhetoricalLedger, precedingContext, followingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
   const level = NATURALISATION_FIDELITY[naturalisation] !== undefined ? naturalisation : "faithful";
   const naturalisationOn = level !== "off";
   const fidelityClause = NATURALISATION_FIDELITY[level];
@@ -195,6 +247,8 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
             : "No shortening was selected. Keep source length as the centre of gravity; do not reward brevity.",
       "Length is diagnostic, not a padding quota; intellectual completeness outranks compactness.",
     ].join("\n"),
+    "",
+    mandatoryGuardrailBlock(plan),
     plan.argumentativeSufficiency
       ? `Argumentative sufficiency: ${plan.argumentativeSufficiency.development_need || "n/a"} development need; score ${plan.argumentativeSufficiency.development_score ?? "n/a"}. ${plan.argumentativeSufficiency.guardrail || ""}`
       : "",
@@ -241,6 +295,9 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     precedingContext
       ? `This passage is one chunk of a longer document. The text immediately before it (already revised and final) ends with:\n"${precedingContext}"\nUse this only to make the opening flow naturally. Do not repeat or revise that context.`
       : "",
+    followingContext
+      ? `The next source chunk begins with:\n"${followingContext}"\nUse this only to preserve the present chunk's outgoing transition, unresolved tension or forward link. Do not rewrite, preview mechanically or copy that future text.`
+      : "",
     documentGlossary && Object.keys(documentGlossary).length > 0
       ? `Document-wide glossary established elsewhere in the document. Keep abbreviation use consistent if these terms occur in this chunk:\n${JSON.stringify(documentGlossary)}`
       : "",
@@ -256,7 +313,9 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
       "Preserve each proposition and intellectual job: framing, funnel, evidence, qualification, interpretation, contrast/concession, cause, synthesis, transition, caveat, implication and forward link. Remove only semantic-and-functional duplicates.",
       "Deep changes syntax/discourse, not intellectual content. Preserve sequence: FRAME -> EXPLAIN -> EVIDENCE -> INTERPRET -> QUALIFY -> SYNTHESISE -> TRANSITION.",
       "Preserve modality, causality, magnitude, direction, certainty, comparison, scope, time and generalisability. Association != cause; possibility != certainty; coexistence != equality. Uncited reasoning is not redundant.",
-      rhetoricalLedger?.length ? `Source role ledger: ${JSON.stringify(rhetoricalLedger)}` : "",
+      rhetoricalLedger?.length
+        ? `Source rhetorical ledger. Paragraph row = [paragraphIndex, rhetoricalSequence, sentenceRows]. Sentence row = [sourceSentenceIndex, roles, propositionAnchors, logicalRelations|null, epistemicQualifiers|null, citationAnchors|null, relationClauseCount]. Use it as a preservation map, not a rewrite quota: ${JSON.stringify(compactRhetoricalLedgerForPrompt(rhetoricalLedger))}`
+        : "",
     ].filter(Boolean).join("\n"),
     "",
     "PARAGRAPH / DISCOURSE PLAN. Execute this before sentence-level polishing. Multiple actions may apply to one block; primaryAction is the dominant instruction. KEEP_PARAGRAPH means preserve its reasoning structure, not necessarily freeze every sentence. PRESERVE_AUTHORIAL_PASSAGE means do not rewrite the passage itself. REBUILD_DISCOURSE means preserve propositions/evidence while changing how the paragraph develops. DEVELOP_EVIDENCE means give cited findings enough explanatory space where the source/context supports that development. QUALIFY_EVIDENCE means make a conditional or bounded finding clear without strengthening it. EXPLAIN_MECHANISM means explain a relationship only where the mechanism already exists in supplied material. DISTINGUISH_MEASURES means clarify why related outcomes/proxies are not interchangeable. CONTEXTUALISE_SETTING and TEMPORALISE_EVIDENCE develop institutional or time-setting implications from supplied evidence only. BUILD_GAP develops the research need from the accumulated evidence rather than announcing a generic gap. REDUCE_SIGNPOSTING and REMOVE_REDUNDANT_CLOSURE target global rhetorical regularity without deleting substantive content. Paragraph actions govern the reasoning unit and must not be converted mechanically into a requirement to rewrite every source sentence.",

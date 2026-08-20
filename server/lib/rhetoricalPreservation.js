@@ -35,6 +35,9 @@ const UNIVERSAL_RE = /\b(always|all|every|universally|invariably|necessarily|wit
 const SCOPE_RE = /\b(in this sample|among|within|for the firms?|in the period|during|under these conditions|in this context)\b/gi;
 const DIRECTION_RE = /\b(increas(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|higher|lower|positive|negative|rise|fall|improv(?:e|es|ed|ement)|worsen(?:s|ed|ing))\b/gi;
 const TEMPORAL_RE = /\b(previously|currently|subsequently|before|after|during|between|over time|more recently|historically)\b/gi;
+const RELATION_MARKER_RE = /\b(but|yet|whereas|while|although|though|despite|because|therefore|however|nevertheless|rather than|by contrast|conversely|as a result|consequently)\b/gi;
+const EPISTEMIC_MARKER_RE = /\b(may|might|could|can|appears?|seems?|suggests?|indicates?|likely|possibly|potentially|should|must|cannot|does not|in this sample|under these conditions)\b/gi;
+const CITATION_ANCHOR_RE = /\([^)]*\b(?:19|20)\d{2}[a-z]?[^)]*\)/g;
 
 function stem(token) {
   return token
@@ -50,6 +53,31 @@ function contentTokens(text) {
       .map(stem)
       .filter((token) => token.length >= 3)
   );
+}
+
+function propositionAnchors(text, limit = 7) {
+  const anchors = [];
+  for (const token of String(text || "").toLowerCase().match(/[a-z][a-z'-]{2,}/g) || []) {
+    if (STOPWORDS.has(token) || token.length < 4 || anchors.includes(token)) continue;
+    anchors.push(token);
+    if (anchors.length >= limit) break;
+  }
+  return anchors;
+}
+
+function compactMatches(regex, text, limit = 4) {
+  regex.lastIndex = 0;
+  return [...String(text || "").matchAll(regex)]
+    .map((match) => match[0].trim().toLowerCase())
+    .filter((value, index, all) => value && all.indexOf(value) === index)
+    .slice(0, limit);
+}
+
+function citationAnchors(text) {
+  CITATION_ANCHOR_RE.lastIndex = 0;
+  return [...String(text || "").matchAll(CITATION_ANCHOR_RE)]
+    .map((match) => match[0].replace(/\s+/g, " ").slice(0, 100))
+    .slice(0, 3);
 }
 
 function coverage(sourceTokens, candidateTokens) {
@@ -175,9 +203,21 @@ export function buildRhetoricalLedger(text) {
   const grouped = new Map();
   records.forEach((record, sentenceIndex) => {
     if (!grouped.has(record.paragraphIndex)) grouped.set(record.paragraphIndex, []);
-    grouped.get(record.paragraphIndex).push({ sentenceIndex, roles: record.roles, relationClauses: relationClauses(record.sentence).length });
+    grouped.get(record.paragraphIndex).push({
+      sentenceIndex,
+      roles: record.roles,
+      propositionAnchors: propositionAnchors(record.sentence),
+      logicalRelations: compactMatches(RELATION_MARKER_RE, record.sentence),
+      epistemicQualifiers: compactMatches(EPISTEMIC_MARKER_RE, record.sentence),
+      citationAnchors: citationAnchors(record.sentence),
+      relationClauses: relationClauses(record.sentence).length,
+    });
   });
-  return [...grouped.entries()].map(([paragraphIndex, sentences]) => ({ paragraphIndex, sentences }));
+  return [...grouped.entries()].map(([paragraphIndex, sentences]) => ({
+    paragraphIndex,
+    rhetoricalSequence: sentences.map((sentence) => sentence.roles[0] || "proposition"),
+    sentences,
+  }));
 }
 
 export function analyseRhetoricalSemanticPreservation(sourceText, revisedText, { lengthPreference = "auto" } = {}) {

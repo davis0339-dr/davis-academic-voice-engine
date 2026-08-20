@@ -15,6 +15,7 @@ import { auditPreservation } from "./preservation.js";
 import { analyseResidualWriting } from "./residualDiagnostics.js";
 import { splitSentences } from "./sentences.js";
 import { auditOutputAcceptance, acceptanceImproved } from "./outputAcceptance.js";
+import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
 
 function preservationPassed(p) {
   return Boolean(
@@ -203,12 +204,15 @@ function machineForensicLabels(acceptance, blockIndex, candidateStructure) {
   return labels;
 }
 
-function buildResidualSystemPrompt() {
+export function buildResidualSystemPrompt() {
   return `You are performing a SELECTIVE COMPLETED-OUTPUT RECOVERY on an already revised academic passage.
 
 This is not a fresh rewrite. Only the paragraph blocks supplied in TARGETS may change. Every other paragraph is locked and will be reinserted verbatim by the server.
 
 Objective: reduce the specific residual writing-quality, machine-language and discourse-regularity risks supplied for each target while preserving the argument, factual relationships, authorial stance, examples, context, citations, numbers, quotations, technical terms and macro-order.
+
+MANDATORY PRESERVATION CONTRACT (higher priority than the residual style lessons below):
+${MANDATORY_REVISION_GUARDRAILS.join("\n")}
 
 The most important distinction is this: good grammar, clarity, sophistication and coherence are not sufficient. A candidate can be academically excellent and still fail because its language is visibly machine-shaped or because its paragraph choreography, evidence placement, sentence roles and closures remain too mechanically regular.
 
