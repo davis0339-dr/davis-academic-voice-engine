@@ -238,6 +238,7 @@ Important lessons from prior testing:
 - Keep source-defined taxonomies and product modes when the categories are substantive. Remove only rhetorical packaging that creates categories for neatness rather than meaning.
 - Formal academic artefacts such as purpose statements, research questions and hypotheses are not targets merely because they are formulaic.
 - Do not add facts, citations, studies, context, examples or claims that are not already present.
+- Remove reconstruction-plus-retention echoes: when two neighbouring sentences perform the same intellectual job and express the same proposition, integrate that content once. Do not delete a genuinely distinct qualification, relationship, interpretation or implication merely because vocabulary overlaps.
 - HARD_PROTECTED_SPANS supplied for a block must remain verbatim in that block's revised text.
 
 Return JSON only in this exact shape:

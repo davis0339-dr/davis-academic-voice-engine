@@ -20,6 +20,7 @@ export const MANDATORY_REVISION_GUARDRAILS = Object.freeze([
   "[G08 DEEP-NOT-DELETION] Rewrite depth controls how extensively authorised expression may be rebuilt; it does not authorise deeper deletion. Deep reconstruction must change discourse and syntax where diagnosed while preserving the protected proposition/evidence/function ledger.",
   "[G09 HUMAN-TEXTURE] Human academic texture comes from reasoning-led variation, purposeful complexity, disciplined transitions, interpretation and qualification. Never simulate it with errors, fragments, arbitrary synonyms, fake informality, random quirks or forced short sentences.",
   "[G10 PRESERVATION-OVERRIDES] If a stylistic, cadence, concision, grammar or naturalisation instruction conflicts with rhetorical or semantic preservation, preservation wins. If the requested length is maintain/normal, brevity has no independent value.",
+  "[G11 PRESERVE-ONCE] Preserve each distinct proposition and rhetorical function once. Do not write a reconstructed version and then retain or lightly edit the source sentence beside it as a preservation precaution. Preservation protects intellectual content, not duplicate sentence realizations.",
 ]);
 
 function mandatoryGuardrailBlock(plan) {
