@@ -138,6 +138,74 @@ function forensicExecutionScope(plan, diagnostics, { requestedIntensity, request
   return plan;
 }
 
+function machineLanguageReason(mode) {
+  if (mode === "moderate") {
+    return [
+      "Modern machine-language forensics selected this sentence because polished editorial framing, binary qualification, abstract signposting, synthesis packaging or nominalisation pressure recurs across the passage. Moderate permits a substantive sentence/flow reconstruction here.",
+      "Rebuild around the supplied proposition and its relationship to neighbouring reasoning. Do not merely swap synonyms, and do not delete interpretation, qualification, evidence or transition functions.",
+    ];
+  }
+  return [
+    "Modern machine-language forensics selected this unit as a leverage point in a recurring lexical-rhetorical pattern. Deep Authorial permits proposition-led repackaging within the existing macro-argument.",
+    "Change the information packaging that creates the repeated pattern while preserving semantic force, evidence attachment, authorial reasoning and rhetorical function.",
+  ];
+}
+
+function machineLanguageExecutionScope(plan, diagnostics, { requestedIntensity, requestedNaturalisation }) {
+  const forensic = diagnostics?.machine_language_forensics;
+  const assertiveExpression = ["aggressive", "authorial"].includes(requestedNaturalisation);
+  const eligibleIntensity = requestedIntensity === "moderate" || requestedIntensity === "deep";
+  const hitRatio = Number(forensic?.metrics?.hit_sentence_ratio || 0);
+  const material = Number(forensic?.score || 0) >= 0.20 || hitRatio >= 0.22;
+  if (!assertiveExpression || !eligibleIntensity || !forensic?.available || !material) return plan;
+
+  const sourceIndices = (forensic.target_sentence_indices || []).filter(Number.isInteger);
+  if (!sourceIndices.length) return plan;
+  const ratioCap = requestedIntensity === "deep" ? 0.60 : 0.40;
+  const maxTargets = Math.min(18, Math.max(1, Math.floor((plan.items?.length || 1) * ratioCap)));
+  const targetIndices = new Set(sourceIndices.slice(0, maxTargets));
+  const executedTargetIndices = [];
+  let escalated = 0;
+
+  plan.items = (plan.items || []).map((item) => {
+    if (!targetIndices.has(item.sentenceIndex) || FORMAL_KEEP_CODES.has(item.decisionCode)) return item;
+    executedTargetIndices.push(item.sentenceIndex);
+    if (requestedIntensity === "moderate") {
+      if (MODERATE_FORENSIC_LEVELS.has(item.level)) escalated += 1;
+      return {
+        ...item,
+        level: MODERATE_FORENSIC_LEVELS.has(item.level) ? "SENTENCE_RESTRUCTURE" : item.level,
+        decisionCode: item.level === "DISCOURSE_REPACKAGE" ? item.decisionCode : "MACHINE_LANGUAGE_SENTENCE_RESTRUCTURE",
+        reasons: [...(item.reasons || []), ...machineLanguageReason("moderate")],
+      };
+    }
+    const canEscalate = DEEP_FORENSIC_LEVELS.has(item.level);
+    if (canEscalate) escalated += 1;
+    return {
+      ...item,
+      level: canEscalate ? "DISCOURSE_REPACKAGE" : item.level,
+      decisionCode: canEscalate || item.level === "DISCOURSE_REPACKAGE" ? "MACHINE_LANGUAGE_DISCOURSE_SCOPE" : item.decisionCode,
+      reasons: [...(item.reasons || []), ...machineLanguageReason("deep")],
+    };
+  });
+
+  plan.summary = summarise(plan.items);
+  plan.machineLanguageExecution = {
+    available: true,
+    version: forensic.version,
+    raw_score: forensic.score,
+    hit_sentence_ratio: hitRatio,
+    source_target_sentence_count: sourceIndices.length,
+    target_cap: maxTargets,
+    targeted_sentence_count: executedTargetIndices.length,
+    newly_escalated_sentence_count: escalated,
+    targeted_sentence_indices: executedTargetIndices,
+    mode: requestedIntensity === "deep" ? "targeted_machine_language_discourse_repackage" : "targeted_machine_language_sentence_restructure",
+    principle: "Forensic recurrence determines SHOULD_CHANGE; the selected intensity remains the structural ceiling; preservation remains mandatory.",
+  };
+  return plan;
+}
+
 export const DEEP_AUTHORIAL_PROTOCOL = Object.freeze([
     "DEEP AUTHORIAL V4 EXECUTION PROTOCOL: this is not a sentence-by-sentence paraphrase pass. Before drafting each authorised substantive paragraph, recover its protected proposition/evidence ledger: claim(s), evidence/citation attachment, qualification/condition, measurement distinction, mechanism, setting/time context, and rhetorical purpose. Reconstruct from that ledger rather than walking through source sentence shells in order.",
     "PRESERVE RESEARCH, NOT AUTOMATICALLY SURFACE PACKAGING: factual meaning, citations, statistics, variables, hypotheses, methods, chronology, study stage, technical terminology and epistemic strength are immutable. Sentence boundaries, grammatical subjects, clause order, local information packaging and paragraph development are available for reconstruction only where diagnosis supports intervention.",
@@ -181,6 +249,10 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     requestedIntensity,
     requestedNaturalisation,
   });
+  plan = machineLanguageExecutionScope(plan, diagnostics, {
+    requestedIntensity,
+    requestedNaturalisation,
+  });
 
   plan.intensity = requestedIntensity;
   plan.diagnosticIntensity = diagnosticIntensity;
@@ -194,7 +266,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   // to interpret a compatibility-string bump as a different policy contract.
   plan.scopePolicyVersion = "diagnosis-guided-authority-v3";
   plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v4.1" : null;
-  plan.scopeImplementationVersion = "diagnosis-guided-authority-v5.1";
+  plan.scopeImplementationVersion = "diagnosis-guided-authority-v5.2";
   plan.forensicScopeVersion = diagnostics?.discourse_regularity_forensics?.version || null;
   plan.machineLanguageForensicsVersion = diagnostics?.machine_language_forensics?.version || null;
 

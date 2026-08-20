@@ -124,6 +124,8 @@
     const keepReasons = keepReasonSummary(plan);
     const rewritePatternCount = (plan?.items || []).filter((item) => item.decisionCode === "REWRITE_PATTERN").length;
     const sourceArchitecture = latestAnalysis?.diagnostics?.discourse_architecture?.signals || [];
+    const machineLanguage = latestAnalysis?.diagnostics?.machine_language_forensics || null;
+    const machineExecution = plan?.machineLanguageExecution || null;
     const postDiag = rewrite?.post_rewrite_diagnostics || rewrite?.residual_rework?.after || rewrite?.residual_rework?.before || null;
     const postArchitecture = postDiag?.discourse_architecture?.signals || [];
 
@@ -178,6 +180,8 @@
         <div><span>Effective treatment</span><strong>${esc(title(intent.effective))}</strong></div>
         <div><span>Intervention budget</span><strong>${esc(intent.budget?.label || plan?.interventionBudget?.label || "n/a")}</strong></div>
         <div><span>Source discourse signals</span><strong>${sourceArchitecture.length}</strong></div>
+        <div><span>Machine-language density</span><strong>${machineLanguage?.available ? `${esc(title(machineLanguage.label))} · ${pct(machineLanguage.score)}` : "n/a"}</strong></div>
+        <div><span>Machine-language target units</span><strong>${esc(machineExecution?.targeted_sentence_count || 0)}</strong></div>
         <div><span>Pattern-driven sentence rewrites</span><strong>${rewritePatternCount}</strong></div>
         <div><span>Planner units</span><strong>${totalUnits}</strong></div>
       </div>
@@ -186,6 +190,7 @@
       <div class="pov-section"><strong>Paragraph/discourse actions</strong><div>${summaryChips(paragraphSummary, "paragraph")}</div></div>
       ${Object.keys(keepReasons).length ? `<div class="pov-section"><strong>Why sentences were kept</strong><div>${summaryChips(keepReasons, "keep")}</div></div>` : ""}
       ${sourceArchitecture.length ? `<details class="pov-details"><summary>Source discourse signals (${sourceArchitecture.length})</summary>${sourceArchitecture.map((signal) => `<div class="pov-signal"><strong>${esc(signal.id)}</strong> · ${esc(signal.severity)}<br>${esc(signal.interpretation)}</div>`).join("")}</details>` : ""}
+      ${machineLanguage?.available ? `<details class="pov-details"><summary>Modern machine-language diagnosis (${esc(machineLanguage.metrics?.hit_sentence_count || 0)} of ${esc(machineLanguage.metrics?.sentence_count || 0)} sentences)</summary><div class="pov-boundary"><strong>Interpretation:</strong> this is recurrence-based style evidence, not an authorship probability. The selected mode determines how deeply the diagnosed targets may be reconstructed.</div>${(machineLanguage.signals || []).map((signal) => `<div class="pov-signal"><strong>${esc(signal.issue)} · ${esc(signal.severity)}</strong><br>${esc(signal.interpretation)}<br><em>Action:</em> ${esc(signal.action)}</div>`).join("") || '<div class="pov-muted">Pattern density contributed to the index, but no individual signal crossed its reporting threshold.</div>'}</details>` : ""}
       ${rewrite ? `<details class="pov-details"><summary>Post-rewrite discourse signals (${postArchitecture.length})</summary>${postArchitecture.length ? postArchitecture.map((signal) => `<div class="pov-signal"><strong>${esc(signal.id)}</strong> · ${esc(signal.severity)}<br>${esc(signal.interpretation)}</div>`).join("") : '<div class="pov-muted">No residual discourse-architecture signal was reported in the final candidate.</div>'}</details>` : ""}
       ${complianceHtml}
       ${evidenceSummary}

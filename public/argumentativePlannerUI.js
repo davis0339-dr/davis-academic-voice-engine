@@ -120,7 +120,7 @@
       <div class="argdev-grid">
         <div><span>Surface quality</span><strong>${surface ? `${esc(title(surface.label))} · ${pct(surface.score)}` : "n/a"}</strong></div>
         <div><span>Authorial texture</span><strong>${texture ? `${esc(title(authorialLabel))} · ${pct(authorialScore)}` : "analysis pending"}</strong></div>
-        <div><span>Machine-pattern regularity</span><strong>${regularity ? `${esc(title(regularity.label))} · ${pct(regularity.score)}` : "n/a"}</strong></div>
+        <div><span>Machine-pattern pressure</span><strong>${regularity ? `${esc(title(regularity.label))} · index ${esc(Math.round(Number(regularity.score) * 100))}/100` : "n/a"}</strong></div>
         <div><span>Semantic preservation</span><strong>${esc(title(semantic?.priority || "n/a"))}</strong></div>
         <div><span>Expressive preservation</span><strong>${esc(title(expressive?.priority || texture?.preservation_priority || "n/a"))}</strong></div>
         <div><span>Argument development need</span><strong>${esc(title(need))}</strong></div>

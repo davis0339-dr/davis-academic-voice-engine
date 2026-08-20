@@ -45,10 +45,12 @@
         <p><strong>Important:</strong> grammar, clarity, citation density, technical sophistication and generic coherence do not directly create authorial-texture strength.</p>
         <div class="atv5-subhead">Positive authorial/discourse evidence</div>
         <div class="atv5-components">${componentHtml || '<span class="atv5-muted">No component detail returned.</span>'}</div>
-        <p>Positive evidence score: <strong>${pct(positive)}</strong>. Machine-pattern regularity penalty applied to texture: <strong>${pct(penalty)}</strong>.</p>
-        <div class="atv5-subhead">Machine-pattern regularity</div>
+        <p>Positive evidence score: <strong>${pct(positive)}</strong>. Machine-pattern pressure penalty applied to texture: <strong>${pct(penalty)}</strong>.</p>
+        <div class="atv5-subhead">Machine-pattern pressure — style risk, not AI probability</div>
         <div class="atv5-components">${regularityHtml || '<span class="atv5-muted">No regularity component detail returned.</span>'}</div>
         <div class="atv5-signals">${signalHtml}</div>
+        <p>Diagnostic confidence: <strong>${esc(label(regularity?.confidence || "not available"))}</strong>. Evidence dimensions above threshold: <strong>${esc(regularity?.evidence_dimension_count ?? "n/a")}</strong>.</p>
+        <p>${esc(regularity?.note || "")}</p>
         <p>${esc(texture?.note || "")}</p>
       </details>`;
   }
@@ -118,7 +120,7 @@
       <div class="atv5-grid">
         <div><span>Surface quality</span><strong>${surface ? `${esc(label(surface.label))} · ${pct(surface.score)}` : "n/a"}</strong></div>
         <div><span>Authorial texture</span><strong>${esc(label(textureLabel))} · ${pct(textureScore)}</strong></div>
-        <div><span>Machine-pattern regularity</span><strong>${regularity ? `${esc(label(regularity.label))} · ${pct(regularity.score)}` : "n/a"}</strong></div>
+        <div><span>Machine-pattern pressure</span><strong>${regularity ? `${esc(label(regularity.label))} · index ${esc(Math.round(Number(regularity.score) * 100))}/100 · ${esc(label(regularity.confidence || "confidence n/a"))} confidence` : "n/a"}</strong></div>
         <div><span>Cross-paragraph choreography</span><strong>${forensics?.available ? `${esc(label(forensics.label))} · ${pct(forensics.score)}` : "n/a"}</strong></div>
         <div><span>Rhetorical asymmetry</span><strong>${forensics?.available ? pct(forensics.rhetorical_asymmetry_score) : "n/a"}</strong></div>
         <div><span>Semantic preservation</span><strong>${esc(label(semantic?.priority || "n/a"))}</strong></div>
@@ -129,7 +131,7 @@
         <div><span>Depth permission</span><strong>${esc(label(authority?.depth_permission || policy?.depth_permission))}</strong></div>
         <div><span>${diagnosticBreadth ? "Changed-sentence reference" : "Maximum changed sentences"}</span><strong>${pct(ceiling)}</strong></div>
       </div>
-      <div class="atv5-construct"><strong>Construct rule:</strong> high surface quality never by itself creates high expressive preservation. Authorial texture is judged from rhetorical/discourse variation and is reduced by machine-pattern regularity. Cross-paragraph choreography is assessed separately so a fluent document can still be flagged for repeated claim/evidence/closure sequencing, predictable evidence placement, tidy closures or low rhetorical asymmetry. Semantic fidelity remains separately protected.</div>
+      <div class="atv5-construct"><strong>Construct rule:</strong> high surface quality never by itself creates high expressive preservation. Authorial texture is judged from rhetorical/discourse variation and is reduced by machine-pattern pressure. The index measures observable style risk; it is not the percentage probability that AI wrote the text. Cross-paragraph choreography is assessed separately so a fluent document can still be flagged for repeated claim/evidence/closure sequencing, predictable evidence placement, tidy closures or low rhetorical asymmetry. Semantic fidelity remains separately protected.</div>
       ${policy ? `<div class="atv5-choice"><strong>Author choice rule:</strong> ${esc(choiceMessage)}</div>` : ""}
       ${policy ? `<div class="atv5-policy"><strong>Mode resolution:</strong> ${esc(label(policy.requested_intensity))} → ${esc(label(policy.effective_intensity))}; ${esc(label(policy.requested_naturalisation))} → ${esc(label(policy.effective_naturalisation))}. ${esc(policy.rationale || "")}</div>` : ""}
       ${compliance ? `<div class="atv5-execution ${status === "passed" || status === "passed-with-variance" ? "good" : "warn"}"><strong>Intervention fidelity:</strong> ${esc(label(status))}. Actual changed sentences: ${pct(changed)}; ${diagnosticBreadth ? `diagnostic reference: ${pct(ceiling)}. High change is permitted when meaning, evidence and argument remain intact.` : `authorised ceiling: ${pct(ceiling)}.`} Changed-sentence breadth is evidence, not a target.</div>` : ""}

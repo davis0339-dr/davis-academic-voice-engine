@@ -71,6 +71,31 @@ function diagnosticPatternBurden(diagnostics, sentenceCount) {
   };
 }
 
+function machineLanguagePressure(diagnostics) {
+  const forensic = diagnostics?.machine_language_forensics;
+  if (!forensic?.available) {
+    return { score: 0, raw_score: 0, hit_sentence_ratio: 0, target_paragraph_count: 0, available: false };
+  }
+  const raw = clamp01(Number(forensic.score || 0));
+  const hitRatio = clamp01(Number(forensic.metrics?.hit_sentence_ratio || 0));
+  const targetParagraphCount = (forensic.target_paragraph_indices || []).length;
+  const recurrenceFloor = targetParagraphCount >= 2
+    ? hitRatio >= 0.35 ? 0.48 : hitRatio >= 0.22 ? 0.36 : hitRatio >= 0.15 ? 0.24 : 0
+    : 0;
+  return {
+    score: Number(Math.max(raw, recurrenceFloor).toFixed(3)),
+    raw_score: Number(raw.toFixed(3)),
+    hit_sentence_ratio: Number(hitRatio.toFixed(3)),
+    target_paragraph_count: targetParagraphCount,
+    recurrence_floor_applied: recurrenceFloor > raw,
+    available: true,
+  };
+}
+
+function regularityLabel(score) {
+  return score >= 0.66 ? "high" : score >= 0.34 ? "moderate" : "low";
+}
+
 function sentenceLengthMetrics(sentences) {
   const lengths = sentences.map((sentence) => words(sentence).length).filter((n) => n > 0);
   if (lengths.length < 2) {
@@ -241,7 +266,7 @@ function machinePatternRegularity({ sentences, diagnostics, cadenceDeviation }) 
   const paragraphs = paragraphMetrics(diagnostics);
   const diagnosticBurden = diagnosticPatternBurden(diagnostics, sentences.length);
   const cadencePenalty = cadenceDeviation?.threshold_flagged ? 0.8 : 0.25;
-  const score = clamp01(
+  const baseScore = clamp01(
     diagnosticBurden.normalized * 0.30 +
     openings.score * 0.18 +
     transitions.score * 0.16 +
@@ -250,6 +275,12 @@ function machinePatternRegularity({ sentences, diagnostics, cadenceDeviation }) 
     paragraphs.regularity * 0.08 +
     cadencePenalty * 0.06
   );
+  const machineLanguage = machineLanguagePressure(diagnostics);
+  const discourseForensics = diagnostics?.discourse_regularity_forensics;
+  const discourseScore = discourseForensics?.available ? clamp01(Number(discourseForensics.score || 0)) : 0;
+  let score = Math.max(baseScore, machineLanguage.score, discourseScore);
+  if (machineLanguage.score >= 0.34 && discourseScore >= 0.34) score = Math.max(score, 0.68);
+  score = clamp01(score);
   const signals = [];
   if (diagnosticBurden.normalized >= 0.55) signals.push("document_level_pattern_burden");
   if (openings.score >= 0.58) signals.push("repeated_sentence_opening_architecture");
@@ -258,9 +289,20 @@ function machinePatternRegularity({ sentences, diagnostics, cadenceDeviation }) 
   if (length.regularity >= 0.72) signals.push("sentence_length_regularisation");
   if (paragraphs.regularity >= 0.72) signals.push("paragraph_shape_regularisation");
   if (cadenceDeviation?.threshold_flagged) signals.push("cadence_deviation_flag");
+  if (machineLanguage.score >= 0.34) signals.push("modern_machine_language_pressure");
+  if (discourseScore >= 0.34) signals.push("cross_paragraph_regularity_pressure");
+  if (machineLanguage.score >= 0.34 && discourseScore >= 0.34) signals.push("corroborated_machine_pattern_pressure");
+  const evidenceDimensions = [baseScore >= 0.34, machineLanguage.score >= 0.34, discourseScore >= 0.34].filter(Boolean).length;
+  const confidence = sentences.length >= 30 && evidenceDimensions >= 2
+    ? "high"
+    : sentences.length >= 12 && evidenceDimensions >= 1
+      ? "moderate"
+      : "limited";
   return {
     score: Number(score.toFixed(3)),
-    label: score >= 0.66 ? "high" : score >= 0.42 ? "moderate" : "low",
+    label: regularityLabel(score),
+    confidence,
+    evidence_dimension_count: evidenceDimensions,
     signals,
     components: {
       diagnostic_pattern_burden: diagnosticBurden.normalized,
@@ -270,6 +312,8 @@ function machinePatternRegularity({ sentences, diagnostics, cadenceDeviation }) 
       sentence_length_regularisation: length.regularity,
       paragraph_shape_regularisation: paragraphs.regularity,
       cadence_regularisation_signal: cadencePenalty,
+      modern_machine_language_pressure: machineLanguage.score,
+      cross_paragraph_forensic_regularisation: Number(discourseScore.toFixed(3)),
     },
     evidence: {
       diagnostic_pattern_burden: diagnosticBurden,
@@ -278,7 +322,10 @@ function machinePatternRegularity({ sentences, diagnostics, cadenceDeviation }) 
       reporting,
       sentence_lengths: length,
       paragraphs,
+      modern_machine_language: machineLanguage,
+      discourse_regularity_forensics: discourseForensics || null,
     },
+    note: "Machine-pattern pressure is a calibrated style-risk index, not the probability that AI wrote the text. Labels require recurrence and, for High, corroboration across independent diagnostic layers.",
   };
 }
 
