@@ -260,23 +260,31 @@ export function analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
 
   const semantic = semanticChanges(sourceText, revisedText);
   const countRole = (role) => roleLosses.filter((item) => item.roles.includes(role)).length + possibleLosses.filter((item) => item.roles.includes(role)).length;
-  const maintainedLengthHardFailure = preference === "maintain" && (lengthRatio < 0.90 || lengthRatio > 1.20);
+  // The selected 95-110% band is a soft diagnostic range, not a lexical
+  // preservation proxy. A candidate outside it needs review, but length alone
+  // becomes a hard failure only at an extreme departure. Otherwise a genuine
+  // reconstruction can be rejected simply because it does not reuse enough of
+  // the source sentence shells.
+  const maintainedLengthHardFailure = preference === "maintain" && (lengthRatio < 0.75 || lengthRatio > 1.50);
   const sourcePropositionsPreserved = Math.max(0, sourceRecords.length - possibleLosses.length);
   const unsupportedAdditions = semantic.filter((item) => ["comparison_or_magnitude", "causality", "direction_or_magnitude", "scope_or_generalisation"].includes(item.type));
   // Lexical matching is deliberately only supporting evidence: a deep but
   // faithful paraphrase can have modest token overlap. Escalate proposition or
   // role loss only when it is repeated/material, or when compression supplies
   // corroborating evidence. Explicit semantic-force changes remain hard fails.
-  const materialLossFloor = Math.max(2, Math.ceil(sourceRecords.length * 0.08));
-  const compressionCorroboratesLoss = lengthRatio < 0.95 || paragraphCompression.length > 0;
+  const materialLossFloor = Math.max(3, Math.ceil(sourceRecords.length * 0.12));
+  const widespreadParagraphCompression = paragraphCompression.length >= Math.max(2, Math.ceil(sourceParagraphs.length * 0.30));
+  const compressionCorroboratesLoss = lengthRatio < 0.88 || (lengthRatio < 0.92 && widespreadParagraphCompression);
   const materialPropositionLoss = possibleLosses.length > 0 && compressionCorroboratesLoss &&
     (possibleLosses.length >= materialLossFloor || lengthRatio < 0.93);
   const materialRoleLoss = roleLosses.length > 0 && (
     materialPropositionLoss ||
-    lengthRatio < 0.90 ||
-    paragraphCompression.length > 0
+    lengthRatio < 0.85 ||
+    widespreadParagraphCompression
   );
   const passed = !maintainedLengthHardFailure && !materialPropositionLoss && !materialRoleLoss && semantic.length === 0;
+  const reviewRequired = !passed || possibleLosses.length > 0 || roleLosses.length > 0 ||
+    lengthRatio < softRange[0] || lengthRatio > softRange[1] || paragraphCompression.length > 0;
   const roleChangeCounts = {
     topic_or_framing: countRole("paragraph_thesis_or_topic") + countRole("conceptual_framing"),
     transitions: countRole("geographic_or_conceptual_transition") + countRole("narrowing_transition") + countRole("temporal_transition") + countRole("link_forward"),
@@ -286,8 +294,9 @@ export function analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
   };
 
   return {
-    audit_version: "rhetorical-semantic-v1",
+    audit_version: "rhetorical-semantic-v2",
     passed,
+    review_required: reviewRequired,
     length_preference: preference,
     source_word_count: sourceWords,
     revision_word_count: revisedWords,
@@ -300,6 +309,7 @@ export function analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
     possible_proposition_losses: possibleLosses,
     material_proposition_loss: materialPropositionLoss,
     material_rhetorical_role_loss: materialRoleLoss,
+    lexical_overlap_is_supporting_evidence_only: true,
     // Marker-based role changes are corroborative evidence, not proof of loss:
     // a deep reconstruction can preserve a transition or interpretation using
     // different lexical cues. Only publish a role as "lost" when the audit's

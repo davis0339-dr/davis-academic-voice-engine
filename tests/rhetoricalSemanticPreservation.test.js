@@ -37,6 +37,22 @@ test("semantic audit rejects unsupported equality", () => {
   assert.ok(report.unsupported_additions.length > 0);
 });
 
+test("substantive reconstruction is not rejected merely for lower lexical overlap", () => {
+  const source = [
+    "Creditors assess financial condition, but they also examine the structures through which managers are monitored and information is disclosed.",
+    "Where governance mechanisms reduce perceived risk, lenders may demand a lower return, whereas weak arrangements may lead them to require compensation for uncertainty.",
+    "This relationship matters because borrowing costs influence investment, profitability and the firm's capacity to pursue long-term opportunities.",
+  ].join(" ");
+  const reconstructed = [
+    "Loan pricing depends on more than a firm's accounts. Lenders also consider managerial oversight and the credibility of disclosure when judging risk.",
+    "Effective governance may therefore support cheaper borrowing; weaker arrangements, by contrast, can leave creditors seeking compensation for uncertainty.",
+    "The consequences extend to investment choices, profitability and the resources available for longer-term opportunities.",
+  ].join(" ");
+  const report = analyseRhetoricalSemanticPreservation(source, reconstructed, { lengthPreference: "maintain" });
+  assert.equal(report.passed, true);
+  assert.equal(report.lexical_overlap_is_supporting_evidence_only, true);
+});
+
 test("role-marker changes remain review evidence when propositions and paragraph architecture survive", () => {
   const reconstructed = source
     .replace("Commercial scale, however, does not eliminate the professional-performance problem.", "Large international networks still face the professional problem of engagement performance.")
