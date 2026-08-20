@@ -121,6 +121,7 @@
     const varianceReasons = compliance.execution_variance_reasons || [];
     const drift = driftStatus(iterative);
     const finalStatus = finalDisplayStatus(verdict, iterative);
+    const rejectedPreservationWarnings = latestRewrite.rejected_preservation_failure?.preservation?.warnings || [];
     const driftReasons = iterative?.reasons || [];
     const deltas = iterative?.deltas_from_root || {};
 
@@ -171,6 +172,7 @@
           <div>${esc(safetyFallback.reason || "The source was returned unchanged because no safe edit survived the preservation safeguards.")}</div>
         </div>
       ` : ""}
+      ${rejectedPreservationWarnings.length ? `<details class="rv4-alert" open><summary>Why the generated candidate was rejected</summary>${rejectedPreservationWarnings.map((warning) => `<p><strong>${esc(title(warning.type))}:</strong> ${esc(warning.detail)}</p>`).join("")}</details>` : ""}
       ${residual ? `
         <div class="rv4-residual">
           <strong>Selective residual pass</strong>
@@ -178,6 +180,7 @@
           ${Number.isFinite(Number(sourceRisk)) ? `<span>source risk ${esc(sourceRisk)}</span>` : ""}
           ${Number.isFinite(Number(beforeRisk)) ? `<span>candidate risk ${esc(beforeRisk)}${Number.isFinite(Number(afterRisk)) ? ` → attempted ${esc(afterRisk)}` : ""}</span>` : ""}
           ${(residual.target_blocks || []).length ? `<span>target blocks: ${residual.target_blocks.map(esc).join(", ")}</span>` : ""}
+          ${residual.residual_preservation_repair?.attempted ? `<span>preservation repair: ${residual.residual_preservation_repair.passed ? "passed" : "failed"}</span>` : ""}
         </div>
         ${residual.reason ? `<div class="rv4-note">${esc(residual.reason)}</div>` : ""}
         ${beforeSignals.length ? `<details><summary>Residual signals before local rework (${beforeSignals.length})</summary><div class="rv4-chips">${beforeSignals.map((s) => `<span>${esc(s)}</span>`).join("")}</div></details>` : ""}

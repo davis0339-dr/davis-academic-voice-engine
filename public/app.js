@@ -47,6 +47,15 @@ function formatNumber(n) {
   return Number(n || 0).toLocaleString();
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function formatDuration(ms) {
   if (!Number.isFinite(ms) || ms <= 0) return "";
   const seconds = Math.max(1, Math.round(ms / 1000));
@@ -265,22 +274,71 @@ function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, 
     $("tab-changes").innerHTML;
 }
 
+function renderAdditionalInputs(additionalInputs = [], revisionPurpose = "fidelity") {
+  const target = $("tab-changes");
+  if (!target || revisionPurpose !== "collaborative") return;
+  const items = Array.isArray(additionalInputs) ? additionalInputs : [];
+  const content = items.length
+    ? items.map((item) => `
+      <article class="additional-input-card">
+        <div class="additional-input-head">
+          <strong>${escapeHtml(String(item.kind || "input").replace(/_/g, " "))}</strong>
+          <span class="additional-input-status">${escapeHtml(String(item.status || "researcher_confirmation_required").replace(/_/g, " "))}</span>
+        </div>
+        ${item.location ? `<p class="muted"><strong>Applies to:</strong> ${escapeHtml(item.location)}</p>` : ""}
+        <p>${escapeHtml(item.proposal)}</p>
+        ${item.reason ? `<p class="muted"><strong>Why it matters:</strong> ${escapeHtml(item.reason)}</p>` : ""}
+        ${item.researcher_question ? `<p><strong>Question for you:</strong> ${escapeHtml(item.researcher_question)}</p>` : ""}
+        ${item.evidence_needed ? `<p class="additional-input-evidence"><strong>Verification needed:</strong> ${escapeHtml(item.evidence_needed)}</p>` : ""}
+      </article>`).join("")
+    : '<p class="muted">No high-value additions or verification needs were identified in this revision.</p>';
+  target.insertAdjacentHTML("afterbegin", `
+    <section class="additional-inputs-panel" aria-label="Proposed additions requiring review">
+      <h3>Additional inputs — not inserted into the manuscript</h3>
+      <p class="muted">These are collaboration prompts only. Confirm the reasoning or verify the evidence before adding anything to the revised text.</p>
+      ${content}
+    </section>`);
+}
+
 function renderPreservation(preservation) {
+  const rhetorical = preservation.rhetorical_semantic_preservation || {};
   const rows = [
     ["Numbers preserved", preservation.numbers_ok],
     ["Citations preserved", preservation.citations_ok],
     ["Technical terms preserved", preservation.technical_terms_ok],
     ["Quotations unaltered", preservation.quotes_ok],
     ["Study stage / proposal tense preserved", preservation.study_stage_ok !== false],
+    ["Rhetorical & semantic architecture preserved", preservation.rhetorical_semantic_ok !== false],
     ["No new factual claims detected", !preservation.new_factual_claims_detected],
   ];
   const rowsHtml = rows
     .map(([label, ok]) => `<div class="warning-item ${ok ? "" : "bad"}">${ok ? "✓" : "✗"} ${label}</div>`)
     .join("");
-  const warnings = preservation.warnings
+  const warnings = (preservation.warnings || [])
     .map((w) => `<div class="warning-item bad">${w.type}: ${w.detail}</div>`)
     .join("");
-  $("tab-preservation").innerHTML = rowsHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
+  const rhetoricalHtml = rhetorical.audit_version ? `
+    <section class="preservation-detail-panel">
+      <h4>Rhetorical &amp; Semantic Preservation</h4>
+      <div class="warning-item">Source propositions preserved: ${escapeHtml(String(rhetorical.source_propositions_preserved ?? "n/a"))}/${escapeHtml(String(rhetorical.source_propositions_total ?? "n/a"))}</div>
+      <div class="warning-item ${rhetorical.topic_or_framing_sentences_lost ? "bad" : ""}">Topic/framing sentences lost: ${escapeHtml(rhetorical.topic_or_framing_sentences_lost || 0)}</div>
+      <div class="warning-item ${rhetorical.transitions_lost ? "bad" : ""}">Transitions lost: ${escapeHtml(rhetorical.transitions_lost || 0)}</div>
+      <div class="warning-item ${rhetorical.interpretive_statements_lost ? "bad" : ""}">Interpretive statements lost: ${escapeHtml(rhetorical.interpretive_statements_lost || 0)}</div>
+      <div class="warning-item ${rhetorical.qualifications_or_caveats_lost ? "bad" : ""}">Qualifications/caveats lost: ${escapeHtml(rhetorical.qualifications_or_caveats_lost || 0)}</div>
+      <div class="warning-item">Possible topic/framing role changes (review evidence): ${escapeHtml(rhetorical.possible_topic_or_framing_role_changes || 0)}</div>
+      <div class="warning-item">Possible transition role changes (review evidence): ${escapeHtml(rhetorical.possible_transition_role_changes || 0)}</div>
+      <div class="warning-item">Possible interpretation role changes (review evidence): ${escapeHtml(rhetorical.possible_interpretive_role_changes || 0)}</div>
+      <div class="warning-item">Possible qualification/caveat role changes (review evidence): ${escapeHtml(rhetorical.possible_qualification_or_caveat_role_changes || 0)}</div>
+      <div class="warning-item">Possible contrast/concession role changes (review evidence): ${escapeHtml(rhetorical.possible_contrast_or_concession_role_changes || 0)}</div>
+      <p class="muted">Role-marker changes are supporting evidence only. They are reported as losses above only when proposition loss or material compression independently corroborates them.</p>
+      <div class="warning-item ${(rhetorical.modality_changes || []).length ? "bad" : ""}">Modality/certainty changes: ${escapeHtml((rhetorical.modality_changes || []).length)}</div>
+      <div class="warning-item ${(rhetorical.causality_changes || []).length ? "bad" : ""}">Causality changes: ${escapeHtml((rhetorical.causality_changes || []).length)}</div>
+      <div class="warning-item ${(rhetorical.scope_or_generalisation_changes || []).length ? "bad" : ""}">Scope/generalisation changes: ${escapeHtml((rhetorical.scope_or_generalisation_changes || []).length)}</div>
+      <div class="warning-item ${(rhetorical.unsupported_additions || []).length ? "bad" : ""}">Unsupported additions: ${escapeHtml((rhetorical.unsupported_additions || []).length)}</div>
+      <div class="warning-item ${(rhetorical.paragraphs_compressed_beyond_threshold || []).length ? "bad" : ""}">Paragraphs compressed beyond threshold: ${escapeHtml((rhetorical.paragraphs_compressed_beyond_threshold || []).length)}</div>
+      <div class="warning-item ${rhetorical.length_within_soft_range === false ? "bad" : ""}">Source/revision length ratio: ${escapeHtml(rhetorical.overall_length_ratio ?? "n/a")} (${escapeHtml(rhetorical.length_preference || "auto")})</div>
+    </section>` : "";
+  $("tab-preservation").innerHTML = rowsHtml + rhetoricalHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
 }
 
 function clearBusyTimer() {
@@ -349,6 +407,7 @@ async function runAnalyseOnly() {
         grammarIntensity: $("grammarIntensity").value,
         lengthPreference: $("lengthPreference").value,
         naturalisation: $("naturalisation").value,
+        revisionPurpose: $("revisionPurpose").value,
       }),
     });
     const data = await res.json();
@@ -378,21 +437,29 @@ async function runAnalyseAndRevise() {
         grammarIntensity: $("grammarIntensity").value,
         lengthPreference: $("lengthPreference").value,
         naturalisation: $("naturalisation").value,
+        revisionPurpose: $("revisionPurpose").value,
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(`[${data.error || "ERROR"}] ${data.message || "Revision failed"}`);
+    if (!res.ok) throw new Error(`[${data.error || "ERROR"}] ${data.message || "Revision failed"}${formatProviderUsage(data.provider_usage)}`);
     revisedText.value = data.revised_text;
     updateWordCounts();
     renderDiagnostics(data.diagnostics);
     renderProfile(data.style_profile_used);
     renderPreservation(data.preservation);
     renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
-    setBusy(false, `Done. Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}`);
+    renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
+    setBusy(false, `Done. Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}${formatProviderUsage(data.provider_usage)}`);
   } catch (err) {
     setBusy(false);
     setError(err.message);
   }
+}
+
+function formatProviderUsage(usage) {
+  if (!usage) return "";
+  const cost = Number.isFinite(usage.estimated_cost_usd) ? ` · estimated $${usage.estimated_cost_usd.toFixed(4)}` : "";
+  return ` · provider ${usage.attempted_calls}/${usage.max_calls} calls · ${formatNumber(usage.input_tokens)} input + ${formatNumber(usage.output_tokens)} output tokens${cost}`;
 }
 
 function renderMethodology(data) {
@@ -642,3 +709,4 @@ loadMethodology();
 loadDetectorHealth();
 updateLimitUi();
 updateWordCounts();
+

@@ -15,6 +15,8 @@ import { auditPreservation } from "./preservation.js";
 import { analyseResidualWriting } from "./residualDiagnostics.js";
 import { splitSentences } from "./sentences.js";
 import { auditOutputAcceptance, acceptanceImproved } from "./outputAcceptance.js";
+import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
+import { repairPreservationCandidate } from "./preservationRepair.js";
 
 function preservationPassed(p) {
   return Boolean(
@@ -23,12 +25,63 @@ function preservationPassed(p) {
     p?.technical_terms_ok &&
     p?.quotes_ok &&
     p?.study_stage_ok !== false &&
+    p?.rhetorical_semantic_ok !== false &&
     !p?.new_factual_claims_detected
   );
 }
 
 function normalise(text) {
   return String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export function shouldAcceptResidualCandidate({
+  preservationOk,
+  noResidualRegression,
+  beforeScore,
+  afterScore,
+  beforeAcceptance,
+  afterAcceptance,
+}) {
+  const riskImproved = afterScore < beforeScore;
+  const riskMateriallyImproved = riskImproved && afterScore <= beforeScore - 3;
+  const acceptanceBetter = acceptanceImproved(beforeAcceptance, afterAcceptance);
+  const acceptanceCleared = afterAcceptance.status === "pass";
+  const acceptanceNotWorse = Number(afterAcceptance.score || 0) >= Number(beforeAcceptance.score || 0);
+  const beforeAcceptanceScore = Number(beforeAcceptance.score || 0);
+  const afterAcceptanceScore = Number(afterAcceptance.score || 0);
+  const veryLargeResidualGain = beforeScore >= 12 && afterScore <= Math.min(beforeScore - 15, Math.floor(beforeScore * 0.55));
+  const acceptanceNearlyStable = afterAcceptanceScore >= beforeAcceptanceScore - 2;
+  const beforeReasons = new Set(beforeAcceptance.reasons || []);
+  const afterReasons = new Set(afterAcceptance.reasons || []);
+  const newAcceptanceReasons = [...afterReasons].filter((reason) => !beforeReasons.has(reason));
+  const afterHardFailures = afterAcceptance.hard_failures || [];
+  const beforeDimensions = beforeAcceptance.dimensions || {};
+  const afterDimensions = afterAcceptance.dimensions || {};
+  const noMaterialAcceptanceRegression = (
+    Number(afterDimensions.candidate_machine_pattern || 0) <= Number(beforeDimensions.candidate_machine_pattern || 0) + 0.03 &&
+    Number(afterDimensions.candidate_machine_language || 0) <= Number(beforeDimensions.candidate_machine_language || 0) + 0.03 &&
+    Number(afterDimensions.candidate_discourse_regularity || 0) <= Number(beforeDimensions.candidate_discourse_regularity || 0) + 0.03 &&
+    Number(afterDimensions.source_dependence || 0) <= Number(beforeDimensions.source_dependence || 0) + 0.04 &&
+    Number(afterDimensions.candidate_authorial_texture || 0) >= Number(beforeDimensions.candidate_authorial_texture || 0) - 0.05
+  );
+  const largeSafeResidualGain = (
+    veryLargeResidualGain &&
+    acceptanceNearlyStable &&
+    noMaterialAcceptanceRegression &&
+    newAcceptanceReasons.length === 0 &&
+    afterHardFailures.length === 0
+  );
+
+  return Boolean(
+    preservationOk &&
+    noResidualRegression &&
+    (
+      acceptanceCleared ||
+      acceptanceBetter ||
+      (riskMateriallyImproved && acceptanceNotWorse) ||
+      largeSafeResidualGain
+    )
+  );
 }
 
 function targetSignalLabels(diagnostics, target) {
@@ -86,6 +139,10 @@ function acceptanceTargetBlockIndices(candidateText, candidateStructure, accepta
     if (index >= 0) found.push(index);
   }
   return [...new Set(found)];
+}
+
+export function prioritiseResidualBlockIndices(forensicBlockIndices = [], legacyBlockIndices = [], maxBlocks = 8) {
+  return [...new Set([...forensicBlockIndices, ...legacyBlockIndices])].slice(0, maxBlocks);
 }
 
 function machineForensicLabels(acceptance, blockIndex, candidateStructure) {
@@ -174,15 +231,25 @@ function machineForensicLabels(acceptance, blockIndex, candidateStructure) {
       action: "Rebuild the local proposition packaging without changing the researcher's meaning, evidence, qualifications, or technical decisions.",
     });
   }
+  if (reasons.includes("proposition_echo_introduced") || reasons.includes("proposition_echo_residual")) {
+    labels.push({
+      id: "reconstruction_retention_duplication",
+      interpretation: "This block is part of a sentence- or paragraph-level source-plus-reconstruction echo. The same intellectual contribution appears more than once.",
+      action: "Coordinate with the neighbouring target block so each distinct proposition, qualification, citation and rhetorical function appears once. Do not retain an original paragraph beside its reconstructed replacement.",
+    });
+  }
   return labels;
 }
 
-function buildResidualSystemPrompt() {
+export function buildResidualSystemPrompt() {
   return `You are performing a SELECTIVE COMPLETED-OUTPUT RECOVERY on an already revised academic passage.
 
 This is not a fresh rewrite. Only the paragraph blocks supplied in TARGETS may change. Every other paragraph is locked and will be reinserted verbatim by the server.
 
 Objective: reduce the specific residual writing-quality, machine-language and discourse-regularity risks supplied for each target while preserving the argument, factual relationships, authorial stance, examples, context, citations, numbers, quotations, technical terms and macro-order.
+
+MANDATORY PRESERVATION CONTRACT (higher priority than the residual style lessons below):
+${MANDATORY_REVISION_GUARDRAILS.join("\n")}
 
 The most important distinction is this: good grammar, clarity, sophistication and coherence are not sufficient. A candidate can be academically excellent and still fail because its language is visibly machine-shaped or because its paragraph choreography, evidence placement, sentence roles and closures remain too mechanically regular.
 
@@ -208,6 +275,7 @@ Important lessons from prior testing:
 - Keep source-defined taxonomies and product modes when the categories are substantive. Remove only rhetorical packaging that creates categories for neatness rather than meaning.
 - Formal academic artefacts such as purpose statements, research questions and hypotheses are not targets merely because they are formulaic.
 - Do not add facts, citations, studies, context, examples or claims that are not already present.
+- Remove reconstruction-plus-retention echoes across both sentences and adjacent paragraphs. When an original paragraph and its reconstructed replacement both survive, rebuild the two target blocks as complementary reasoning units so each distinct proposition, qualification, citation and rhetorical function appears once. Do not preserve the source paragraph beside its replacement, and do not delete a genuinely distinct contribution merely because vocabulary overlaps.
 - HARD_PROTECTED_SPANS supplied for a block must remain verbatim in that block's revised text.
 
 Return JSON only in this exact shape:
@@ -257,11 +325,12 @@ async function callResidualModel(payload) {
 export async function selectiveResidualRework({
   sourceText,
   candidateText,
-  maxBlocks = 6,
+  maxBlocks = 8,
   styleFilters = {},
   rewriteIntensity = "auto",
   naturalisation = "faithful",
   planSummary = {},
+  lengthPreference = "auto",
 }) {
   const sourceBaseline = analyseResidualWriting(sourceText);
   const before = analyseResidualWriting(candidateText);
@@ -275,13 +344,17 @@ export async function selectiveResidualRework({
     rewriteIntensity,
     naturalisation,
     planSummary,
+    lengthPreference,
   });
 
   const candidateStructure = parseTextStructure(candidateText);
   const sourceStructure = parseTextStructure(sourceText);
   const forensicBlockIndices = acceptanceTargetBlockIndices(candidateText, candidateStructure, beforeAcceptance);
   const legacyBlockIndices = before.target_blocks.map((target) => target.blockIndex);
-  const targetBlockIndices = [...new Set([...legacyBlockIndices, ...forensicBlockIndices])].slice(0, maxBlocks);
+  // Completed-output failures take priority over legacy stylistic targets. A
+  // near-copy paragraph or source-plus-reconstruction duplicate must not be
+  // displaced from the finite recovery budget by lower-value cadence signals.
+  const targetBlockIndices = prioritiseResidualBlockIndices(forensicBlockIndices, legacyBlockIndices, maxBlocks);
   const acceptanceNeedsRecovery = beforeAcceptance.status !== "pass" && forensicBlockIndices.length > 0;
   const shouldAttempt = targetBlockIndices.length > 0 && (before.should_rework || candidateWorseThanSource || acceptanceNeedsRecovery);
 
@@ -375,23 +448,57 @@ export async function selectiveResidualRework({
   }
 
   const reworkedText = replaceBlocksSequentially(candidateText, replacements, candidateStructure);
-  const preservation = auditPreservation(sourceText, reworkedText, extractProtectedSpans(sourceText));
-  const after = analyseResidualWriting(reworkedText);
+  let recoveredText = reworkedText;
+  let preservation = auditPreservation(sourceText, recoveredText, extractProtectedSpans(sourceText), { lengthPreference });
+  let residualPreservationRepair = { attempted: false, passed: false };
+
+  // An otherwise valuable residual reconstruction must not be discarded merely
+  // because the local pass displaced a citation, qualification or rhetorical
+  // function. Repair the completed residual candidate once, then subject it to
+  // the same preservation and independent acceptance gates. The original first
+  // candidate remains the fallback if repair is unsafe or unhelpful.
+  if (!preservationPassed(preservation)) {
+    try {
+      const repaired = await repairPreservationCandidate({
+        sourceText,
+        candidateResult: { revised_text: recoveredText, preservation },
+        lengthPreference,
+      });
+      residualPreservationRepair = repaired.preservation_repair || { attempted: true, passed: false };
+      if (residualPreservationRepair.passed) {
+        recoveredText = repaired.revised_text;
+        preservation = repaired.preservation;
+      }
+    } catch (error) {
+      residualPreservationRepair = {
+        attempted: true,
+        passed: false,
+        error: { code: error.code || error.healthState || "RESIDUAL_PRESERVATION_REPAIR_FAILED", message: error.message || "Residual preservation repair failed." },
+      };
+    }
+  }
+
+  const after = analyseResidualWriting(recoveredText);
   const afterScore = Number(after.metrics.total_risk_score || 0);
-  const riskImproved = afterScore < beforeScore;
   const noResidualRegression = afterScore <= Math.max(beforeScore + 1, sourceScore + 2);
   const preservationOk = preservationPassed(preservation);
   const afterAcceptance = auditOutputAcceptance({
     sourceText,
-    candidateText: reworkedText,
+    candidateText: recoveredText,
     styleFilters,
     rewriteIntensity,
     naturalisation,
     planSummary,
+    lengthPreference,
   });
-  const acceptanceBetter = acceptanceImproved(beforeAcceptance, afterAcceptance);
-  const acceptanceCleared = afterAcceptance.status === "pass";
-  const accepted = preservationOk && noResidualRegression && (acceptanceCleared || acceptanceBetter || (riskImproved && beforeAcceptance.status === "pass"));
+  const accepted = shouldAcceptResidualCandidate({
+    preservationOk,
+    noResidualRegression,
+    beforeScore,
+    afterScore,
+    beforeAcceptance,
+    afterAcceptance,
+  });
 
   return {
     attempted: true,
@@ -403,7 +510,7 @@ export async function selectiveResidualRework({
         : !noResidualRegression
           ? "Completed-output recovery was rejected because local residual risk materially regressed."
           : `Completed-output recovery did not materially improve the independent acceptance audit (${beforeAcceptance.score} → ${afterAcceptance.score}); the prior candidate was retained.`,
-    revised_text: accepted ? reworkedText : candidateText,
+    revised_text: accepted ? recoveredText : candidateText,
     source_baseline: sourceBaseline,
     source_risk_score: sourceScore,
     candidate_risk_score: beforeScore,
@@ -414,6 +521,7 @@ export async function selectiveResidualRework({
     attempted_after: after,
     preservation: accepted ? preservation : null,
     attempted_preservation: preservation,
+    residual_preservation_repair: residualPreservationRepair,
     output_acceptance_before: beforeAcceptance,
     output_acceptance_after: accepted ? afterAcceptance : beforeAcceptance,
     attempted_output_acceptance_after: afterAcceptance,
@@ -422,3 +530,4 @@ export async function selectiveResidualRework({
     diagnostics_notes: result.diagnostics_notes || "",
   };
 }
+

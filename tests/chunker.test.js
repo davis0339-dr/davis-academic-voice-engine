@@ -63,3 +63,12 @@ test("each chunk after the first carries a non-empty preceding-context tail", ()
   }
   assert.equal(chunks[0].precedingContextTail, "");
 });
+
+test("each chunk before the last carries the next chunk's opening context", () => {
+  const map = buildDocumentMap(HEADED_DOC);
+  const { chunks } = chunkDocument(HEADED_DOC, map, { targetWordsPerChunk: 5000 });
+  for (let i = 0; i < chunks.length - 1; i++) {
+    assert.ok(chunks[i].followingContextHead.length > 0);
+  }
+  assert.equal(chunks.at(-1).followingContextHead, "");
+});

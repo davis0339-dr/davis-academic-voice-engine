@@ -2,6 +2,7 @@
 // independent of the model's own self-report.
 
 import { extractProtectedSpans } from "./protect.js";
+import { analyseRhetoricalSemanticPreservation } from "./rhetoricalPreservation.js";
 
 function missingFrom(list, haystack) {
   return list.filter((item) => !haystack.includes(item));
@@ -32,6 +33,7 @@ const NARRATIVE_REFERENCE = /\b(?!(?:Because|Although|Though|While|Whereas|Since
 
 function canonicalAuthor(author) {
   return String(author || "")
+    .replace(/([A-Za-z])['’]s\b/g, "$1")
     .replace(/\[[A-Z0-9&.\-]{2,12}\]/g, " ")
     .replace(/&/g, " and ")
     .replace(/\bet\s+al\.?/gi, " et al ")
@@ -244,7 +246,7 @@ function listCountWarnings(text) {
   return warnings;
 }
 
-export function auditPreservation(sourceText, revisedText, sourceSpans) {
+export function auditPreservation(sourceText, revisedText, sourceSpans, options = {}) {
   const spans = sourceSpans || extractProtectedSpans(sourceText);
   const revisedSpans = extractProtectedSpans(revisedText);
   const warnings = [];
@@ -335,6 +337,21 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     });
   }
 
+  const rhetoricalSemantic = analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
+    lengthPreference: options.lengthPreference,
+  });
+  if (!rhetoricalSemantic.passed) {
+    warnings.push({
+      type: "rhetorical_semantic_preservation",
+      detail: `The revision may have lost propositions or intellectual functions, altered semantic force, or exceeded the selected length architecture. Preserved propositions: ${rhetoricalSemantic.source_propositions_preserved}/${rhetoricalSemantic.source_propositions_total}; length ratio: ${rhetoricalSemantic.overall_length_ratio}.`,
+    });
+  } else if (!rhetoricalSemantic.length_within_soft_range) {
+    warnings.push({
+      type: "length_range_review",
+      detail: `The source/revision length ratio is ${rhetoricalSemantic.overall_length_ratio}, outside the ${rhetoricalSemantic.length_soft_range[0]}-${rhetoricalSemantic.length_soft_range[1]} soft range. The text passed substantive preservation, but the departure should have an intellectual reason.`,
+    });
+  }
+
   const newFactualClaimsDetected =
     newCitations.length > 0 ||
     newNumbers.length > 0 ||
@@ -342,7 +359,8 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     introducedListCountWarnings.length > 0 ||
     !studyStage.ok ||
     !researcherVoice.ok ||
-    !documentStructure.ok;
+    !documentStructure.ok ||
+    rhetoricalSemantic.unsupported_additions.length > 0;
 
   return {
     numbers_ok: numbersOk,
@@ -357,7 +375,10 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     document_structure_ok: documentStructure.ok,
     document_structure: documentStructure,
     list_counts_ok: introducedListCountWarnings.length === 0,
+    rhetorical_semantic_ok: rhetoricalSemantic.passed,
+    rhetorical_semantic_preservation: rhetoricalSemantic,
     new_factual_claims_detected: newFactualClaimsDetected,
     warnings,
   };
 }
+

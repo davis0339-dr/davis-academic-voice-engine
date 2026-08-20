@@ -19,6 +19,9 @@ import {
 } from "../lib/underExecutionRecovery.js";
 import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
+import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "../lib/collaborativeRevision.js";
+import { retainSourceAfterPreservationFailure } from "../lib/finalSafetyFallback.js";
+import { repairPreservationCandidate } from "../lib/preservationRepair.js";
 
 export const rewriteRouter = Router();
 
@@ -74,6 +77,8 @@ function refreshTransformationQuality(sourceText, result, revisedText, naturalis
     ...refreshed,
     corrective_retry_used: Boolean(previous.corrective_retry_used),
     rescue_retry_used: Boolean(previous.rescue_retry_used),
+    corrective_retry_error: previous.corrective_retry_error || null,
+    rescue_retry_error: previous.rescue_retry_error || null,
     first_attempt: previous.first_attempt || null,
     pre_rescue_attempt: previous.pre_rescue_attempt || null,
     recomputed_after_residual_rework: true,
@@ -115,9 +120,10 @@ function finalCandidateStatus(
   return "accepted";
 }
 
-rewriteRouter.post("/rewrite", async (req, res) => {
+rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => {
   const requestId = randomUUID();
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, rewriteLineage } = req.body || {};
+  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage } = req.body || {};
+  const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string.", requestId });
@@ -163,6 +169,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
     grammarIntensity,
     lengthPreference,
     naturalisation: naturalisationLevel,
+    revisionPurpose: effectiveRevisionPurpose,
     rewriteLineage,
   });
 
@@ -205,6 +212,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       let surgicalRecovery = null;
       let sourceRetainedForSafety = false;
       let rejectedOverExecution = null;
+      let rejectedPreservationFailure = null;
       let firstAttemptCompliance = null;
       let selectedAttempt = "first";
       let authorialExecutionRecoveryUsed = false;
@@ -395,16 +403,33 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       if (
         !sourceRetainedForSafety &&
         !overExecutionRecoveryUsed &&
-        !executionCompliance.preservation_ok &&
-        !reconciliationRetryUsed
+        !executionCompliance.preservation_ok
       ) {
         preservationRecoveryUsed = true;
         try {
-          const recoveryResult = enrichForCompliance(await runRewrite());
-          const preferred = preferByExecutionCompliance(result, recoveryResult);
-          result = preferred.result;
-          executionCompliance = preferred.compliance;
-          selectedAttempt = preferred.selected === "second" ? "preservation-recovery" : selectedAttempt;
+          const repairedResult = await repairPreservationCandidate({
+            sourceText: text,
+            candidateResult: result,
+            revisionPurpose: effectiveRevisionPurpose,
+            lengthPreference,
+          });
+          result = {
+            ...repairedResult,
+            transformation_quality: refreshTransformationQuality(
+              text,
+              result,
+              repairedResult.revised_text,
+              modePolicy.effective_naturalisation
+            ),
+            iterative_rewrite_quality: refreshIterativeQuality(
+              text,
+              result,
+              repairedResult.revised_text,
+              rewriteLineage
+            ),
+          };
+          executionCompliance = assessExecutionCompliance(result);
+          selectedAttempt = "preservation-candidate-repair";
         } catch (retryErr) {
           preservationRecoveryError = {
             code: retryErr.code || retryErr.healthState || "PRESERVATION_RECOVERY_FAILED",
@@ -413,13 +438,38 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         }
       }
 
+      // A candidate that still fails deterministic preservation after the
+      // existing recovery attempt must never be presented as usable revised
+      // prose. Keep the diagnostics, quarantine the rejected text, and return an
+      // explicit non-edit containing the source verbatim.
+      if (!sourceRetainedForSafety && !executionCompliance.preservation_ok) {
+        rejectedPreservationFailure = {
+          compliance: executionCompliance,
+          preservation: result.preservation || null,
+          selected_attempt: selectedAttempt,
+        };
+        sourceRetainedForSafety = true;
+        result = retainSourceAfterPreservationFailure({
+          sourceText: text,
+          result,
+          rewriteLineage,
+        });
+        executionCompliance = assessExecutionCompliance(result);
+        selectedAttempt = "transparent-preservation-fallback";
+      }
+
       let residualRework = null;
       let residualStageEligible = false;
       let residualStageBlockedReason = null;
       const visibleOnlyUnder = visibleChangeOnlyUnderExecution(executionCompliance);
+      const optionalProviderFailure = Boolean(
+        result.transformation_quality?.corrective_retry_error ||
+        result.transformation_quality?.rescue_retry_error
+      );
       residualStageEligible = Boolean(
         !sourceRetainedForSafety &&
         !overExecutionRecoveryUsed &&
+        !optionalProviderFailure &&
         executionCompliance.preservation_ok &&
         !executionCompliance.over_executed &&
         (executionCompliance.execution_passed || visibleOnlyUnder) &&
@@ -429,6 +479,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
       if (!residualStageEligible) {
         if (sourceRetainedForSafety) residualStageBlockedReason = "non_edit_result";
         else if (overExecutionRecoveryUsed) residualStageBlockedReason = "surgical_recovery_is_final";
+        else if (optionalProviderFailure) residualStageBlockedReason = "provider_refinement_failed";
         else if (modePolicy.effective_naturalisation === "off") residualStageBlockedReason = "naturalisation_off";
         else if (!executionCompliance.preservation_ok) residualStageBlockedReason = "preservation_failed";
         else if (executionCompliance.over_executed) residualStageBlockedReason = "over_execution";
@@ -444,6 +495,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
             rewriteIntensity: modePolicy.effective_intensity,
             naturalisation: modePolicy.effective_naturalisation,
             planSummary: result.intervention_plan_summary || {},
+            lengthPreference,
           });
           if (residualRework.accepted) {
             const refreshedQuality = refreshTransformationQuality(
@@ -481,6 +533,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         rewriteIntensity: modePolicy.effective_intensity,
         naturalisation: modePolicy.effective_naturalisation,
         planSummary: result.intervention_plan_summary || {},
+        lengthPreference,
       });
       const outputAcceptanceEnforced = Boolean(
         ["moderate", "deep"].includes(String(modePolicy.effective_intensity || "").toLowerCase()) &&
@@ -506,6 +559,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         surgical_recovery_applied_edits: surgicalRecovery?.applied_edit_count ?? 0,
         source_retained_for_safety: sourceRetainedForSafety,
         rejected_over_execution: rejectedOverExecution,
+        rejected_preservation_failure: rejectedPreservationFailure,
         selected_attempt: sourceRetainedForSafety ? "transparent-no-edit-fallback" : selectedAttempt,
         first_attempt: firstAttemptCompliance,
         residual_stage_eligible: residualStageEligible,
@@ -546,7 +600,7 @@ rewriteRouter.post("/rewrite", async (req, res) => {
 
       let verdictNote;
       if (sourceRetainedForSafety) {
-        verdictNote = "No safe local correction survived after the broad rewrite exceeded authorial-preservation authority. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision.";
+        verdictNote = result.safety_fallback?.reason || "No safe revision survived the final safeguards. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.execution_passed && executionCompliance.preservation_ok) {
         verdictNote = "The first Deep candidate under-executed the structural plan. Automatic Deep execution recovery produced a preservation-safe candidate that now satisfies execution compliance; under-execution was treated as a generation defect, not as a safe stopping point.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.under_executed) {
@@ -591,7 +645,9 @@ rewriteRouter.post("/rewrite", async (req, res) => {
         note: verdictNote,
       };
 
-      return res.json({ ...result, requestId });
+      result.revision_purpose = effectiveRevisionPurpose;
+      result.additional_inputs = normalizeAdditionalInputs(result.additional_inputs, effectiveRevisionPurpose);
+      return res.json({ ...result, provider_usage: llmProvider.usageSnapshot(), requestId });
     } catch (err) {
       lastErr = err;
       const state = err.healthState;
@@ -607,6 +663,8 @@ rewriteRouter.post("/rewrite", async (req, res) => {
   const httpStatus =
     state === "AUTH_FAILED" ? 401 :
     state === "RATE_LIMITED" ? 429 :
+    state === "PROVIDER_CALL_BUDGET_EXCEEDED" ? 503 :
+    state === "PROVIDER_TIME_BUDGET_EXCEEDED" ? 503 :
     state === "NETWORK_TIMEOUT" ? 504 :
     state === "PROVIDER_OVERLOADED" || state === "PROVIDER_UNAVAILABLE" ? 503 :
     502;
@@ -614,6 +672,8 @@ rewriteRouter.post("/rewrite", async (req, res) => {
   res.status(httpStatus).json({
     error: lastErr?.code || state,
     message: lastErr?.message || "Rewrite failed.",
+    provider_usage: llmProvider.usageSnapshot(),
     requestId,
   });
 });
+

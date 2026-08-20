@@ -460,7 +460,7 @@ function planSentence(sentence, index, diagnostics, options) {
   }
 
   if (s.isOverloaded) {
-    reasons.push("Sentence exceeds 40 words -- candidate for split or clause redistribution.");
+    reasons.push("Sentence has exceptional clause load. Restructure or redistribute only if every contrastive, causal, concessive, comparative or parallel relationship remains explicit; sentence length alone does not authorise splitting.");
     return { level: LEVELS.SPLIT_OR_MERGE, reasons, preservationClass, decisionCode: LEVELS.SPLIT_OR_MERGE };
   }
 
@@ -648,3 +648,4 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
 }
 
 export { LEVELS };
+

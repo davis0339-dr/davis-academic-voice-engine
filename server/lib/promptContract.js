@@ -3,6 +3,37 @@
 // statistics are descriptive boundaries, not a recipe for random variation.
 
 import { texturePromptBlock } from "../data/textureExemplars.js";
+import { buildCollaborativeRevisionPromptBlock } from "./collaborativeRevision.js";
+import { DEEP_AUTHORIAL_PROTOCOL } from "./diagnosisScopedPlanner.js";
+
+// These rules are generation invariants, not optional diagnostic commentary.
+// They are inserted through their own untruncated channel so prompt-size
+// compacting cannot silently remove them behind sentence/paragraph reasons.
+export const MANDATORY_REVISION_GUARDRAILS = Object.freeze([
+  "[G01 INTELLECTUAL-JOB] Before deleting, absorbing, splitting or merging a source unit, identify the intellectual job it performs. Preserve every distinct proposition, qualification, relationship, interpretation, transition, implication and scope condition; lexical repetition is not proof of redundancy.",
+  "[G02 RHETORICAL-SEQUENCE] Preserve or defensibly reconstruct paragraph and cross-paragraph progression. Framing, funnel movement, evidence, interpretation, qualification, synthesis and transition may be reworded or redistributed, but must not silently collapse into a list of facts or clipped conclusions.",
+  "[G03 AUTHORIAL-REASONING] Citation-free reasoning is not expendable. A sentence explaining why evidence matters, distinguishing concepts, qualifying a statistic, linking jurisdictions or carrying the argument forward performs intellectual work even when neighbouring sentences retain the evidence and citations.",
+  "[G04 LOGICAL-RELATIONS] A long or complex sentence is not defective merely because it is long. Do not split contrastive, concessive, causal, comparative or balanced parallel constructions unless the resulting form preserves their logical relationship at least as explicitly and effectively.",
+  "[G05 SEMANTIC-FORCE] Preserve modality, causality, magnitude, direction, certainty, comparison, scope, temporality and generalisability. Possibility is not certainty; association is not causation; coexistence is not equality; a bounded finding is not universal.",
+  "[G06 CLAIM-EVIDENCE] Keep citations, quotations, numbers and evidence attached to the claims, qualifications and interpretations they support. Do not retain a citation while deleting the reasoning that established its relevance.",
+  "[G07 NO-INVENTION] Reconstruction may clarify and reorganise only supplied intellectual content. Do not manufacture facts, findings, mechanisms, citations, local realities or stronger propositions. Put possible additions in additional_inputs for researcher confirmation or verification.",
+  "[G08 DEEP-NOT-DELETION] Rewrite depth controls how extensively authorised expression may be rebuilt; it does not authorise deeper deletion. Deep reconstruction must change discourse and syntax where diagnosed while preserving the protected proposition/evidence/function ledger.",
+  "[G09 HUMAN-TEXTURE] Human academic texture comes from reasoning-led variation, purposeful complexity, disciplined transitions, interpretation and qualification. Never simulate it with errors, fragments, arbitrary synonyms, fake informality, random quirks or forced short sentences.",
+  "[G10 PRESERVATION-OVERRIDES] If a stylistic, cadence, concision, grammar or naturalisation instruction conflicts with rhetorical or semantic preservation, preservation wins. If the requested length is maintain/normal, brevity has no independent value.",
+  "[G11 PRESERVE-ONCE] Preserve each distinct proposition and rhetorical function once. Do not write a reconstructed version and then retain or lightly edit the source sentence beside it as a preservation precaution. Preservation protects intellectual content, not duplicate sentence realizations.",
+]);
+
+function mandatoryGuardrailBlock(plan) {
+  const deepRules = plan?.authorialAuthorityActive
+    ? DEEP_AUTHORIAL_PROTOCOL.map((rule, index) => `[D${String(index + 1).padStart(2, "0")}] ${rule}`)
+    : [];
+  return [
+    "--- MANDATORY REVISION GUARDRAILS (untruncated; higher priority than style advice) ---",
+    ...MANDATORY_REVISION_GUARDRAILS,
+    ...deepRules,
+    "--- END MANDATORY REVISION GUARDRAILS ---",
+  ].join("\n");
+}
 
 export const BASE_SYSTEM_PROMPT = `You are the revision engine for an evidence-backed academic editor.
 
@@ -118,27 +149,83 @@ const NATURALISATION_FIDELITY = {
 
 function uniqueDiagnosticRequirements(plan) {
   const reasons = [];
-  for (const item of plan.items || []) {
-    for (const reason of item.reasons || []) {
-      if (!reasons.includes(reason)) reasons.push(reason);
-    }
-  }
+  const invariantGuidance = new Set(plan.scopePrinciples || []);
+  const add = (reason) => {
+    const normalised = String(reason || "").trim();
+    if (normalised && !reasons.includes(normalised)) reasons.push(normalised);
+  };
+
+  // Paragraph/document diagnosis is more important to a reconstruction pass
+  // than repeated sentence-local wording. Invariant scope rules are delivered
+  // separately by mandatoryGuardrailBlock and must never compete for this cap.
   for (const item of plan.paragraphPlan || []) {
     for (const reason of item.reasons || []) {
-      if (!reasons.includes(reason)) reasons.push(reason);
+      add(reason);
     }
   }
   for (const guidance of plan.documentGuidance || []) {
-    if (!reasons.includes(guidance)) reasons.push(guidance);
+    if (!invariantGuidance.has(guidance)) add(guidance);
   }
-  return reasons;
+  for (const item of plan.items || []) {
+    for (const reason of item.reasons || []) add(reason);
+  }
+  return reasons.slice(0, 14).map((reason) => reason.slice(0, 360));
 }
 
-export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, precedingContext, documentGlossary, humanCadence, naturalisation }) {
+function compactReasons(reasons, limit = 2) {
+  return [...new Set((reasons || []).map((reason) => String(reason).trim()).filter(Boolean))]
+    .slice(0, limit)
+    .map((reason) => reason.slice(0, 260));
+}
+
+function compactParagraphPlan(plan) {
+  return (plan?.paragraphPlan || []).map((item) => ({
+    paragraphBlockIndex: item.paragraphBlockIndex,
+    primaryAction: item.primaryAction,
+    actions: (item.actions || []).slice(0, 4),
+    reasons: compactReasons(item.reasons, 3),
+  }));
+}
+
+function compactSentencePlan(plan) {
+  return (plan?.items || []).map((item) => [
+    item.sentenceIndex,
+    item.level,
+    item.paragraphBlockIndex,
+    item.decisionCode,
+    item.preservationClass,
+  ]);
+}
+
+function compactRhetoricalLedgerForPrompt(ledger) {
+  return (ledger || []).map((paragraph) => [
+    paragraph.paragraphIndex,
+    paragraph.rhetoricalSequence || [],
+    (paragraph.sentences || []).map((sentence) => [
+      sentence.sentenceIndex,
+      sentence.roles || [],
+      sentence.propositionAnchors || [],
+      sentence.logicalRelations?.length ? sentence.logicalRelations : null,
+      sentence.epistemicQualifiers?.length ? sentence.epistemicQualifiers : null,
+      sentence.citationAnchors?.length ? sentence.citationAnchors : null,
+      sentence.relationClauses || 0,
+    ]),
+  ]);
+}
+
+export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, lengthPreference, rhetoricalLedger, precedingContext, followingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
   const level = NATURALISATION_FIDELITY[naturalisation] !== undefined ? naturalisation : "faithful";
   const naturalisationOn = level !== "off";
   const fidelityClause = NATURALISATION_FIDELITY[level];
   const diagnosticRequirements = uniqueDiagnosticRequirements(plan);
+  const requestedLength = String(lengthPreference || "auto").toLowerCase();
+  const lengthMode = ["normal", "maintain", "preserve", "same", "same_length", "similar"].includes(requestedLength)
+    ? "maintain"
+    : ["short", "shorter", "concise"].includes(requestedLength)
+      ? "concise"
+      : ["long", "longer", "expand"].includes(requestedLength)
+        ? "expand"
+        : "auto";
 
   return [
     BASE_SYSTEM_PROMPT,
@@ -150,6 +237,19 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     `Recommended intervention: ${plan.intent?.recommended || "not supplied"}`,
     `Effective intervention: ${plan.intent?.effective || "not supplied"}`,
     `Intervention budget: ${plan.interventionBudget?.label || "not supplied"} (${plan.interventionBudget?.conceptualStructuralChangeRange || "n/a"} conceptual structural change; this is guidance, not a word-replacement quota).`,
+    [
+      `AUTHORITATIVE LENGTH CONTRACT: ${lengthMode}.`,
+      lengthMode === "maintain"
+        ? "Do not optimise for concision. Soft range: 95-110% of source length. Depart only for an intellectual reason; never delete a distinct proposition/function to shorten."
+        : lengthMode === "concise"
+          ? "Compression is authorised, but preserve argument scaffolding, qualifications, claim-evidence links and interpretation."
+          : lengthMode === "expand"
+            ? "Develop only from supplied reasoning/evidence; never invent facts, findings, citations or mechanisms."
+            : "No shortening was selected. Keep source length as the centre of gravity; do not reward brevity.",
+      "Length is diagnostic, not a padding quota; intellectual completeness outranks compactness.",
+    ].join("\n"),
+    "",
+    mandatoryGuardrailBlock(plan),
     plan.argumentativeSufficiency
       ? `Argumentative sufficiency: ${plan.argumentativeSufficiency.development_need || "n/a"} development need; score ${plan.argumentativeSufficiency.development_score ?? "n/a"}. ${plan.argumentativeSufficiency.guardrail || ""}`
       : "",
@@ -180,16 +280,27 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     `Grammar intensity: ${grammarIntensity}. Light = correct only errors that obstruct meaning. Standard = correct clear grammar problems while preserving personal cadence. Strict = apply formal academic grammar consistently. Never manufacture grammatical mistakes.`,
     "",
     "Style profile (descriptive evidence and section guidance, not an imitation target):",
-    JSON.stringify(styleProfile, null, 2),
+    JSON.stringify(styleProfile),
+    "",
+    [
+      "REGIONAL AND NON-NATIVE ACADEMIC VOICE:",
+      "- Do not silently standardise credible British, Nigerian, West African or other regional academic usage into a generic American editorial voice when the supplied profile or source supports that register.",
+      "- Preserve clear writer-owned collocations, degrees of explicitness, explanatory pacing and locally conventional academic phrasing when they carry meaning or voice.",
+      "- Human academic texture may include uneven emphasis, delayed synthesis, direct exposition, long explanatory sentences beside shorter statements, and recurring discipline terms. These are not defects merely because a generic style model would smooth them.",
+      "- Do not stereotype any region or imitate an accent. Do not manufacture errors, broken grammar or artificial roughness. Improve genuine clarity problems while allowing defensible variation to remain.",
+    ].join("\n"),
     "",
     "Protected spans -- these exact strings must still be present, verbatim, somewhere in the revised text unless the source itself is flagged for author clarification:",
-    JSON.stringify(protectedSpans, null, 2),
+    JSON.stringify(protectedSpans),
     "",
     precedingContext
       ? `This passage is one chunk of a longer document. The text immediately before it (already revised and final) ends with:\n"${precedingContext}"\nUse this only to make the opening flow naturally. Do not repeat or revise that context.`
       : "",
+    followingContext
+      ? `The next source chunk begins with:\n"${followingContext}"\nUse this only to preserve the present chunk's outgoing transition, unresolved tension or forward link. Do not rewrite, preview mechanically or copy that future text.`
+      : "",
     documentGlossary && Object.keys(documentGlossary).length > 0
-      ? `Document-wide glossary established elsewhere in the document. Keep abbreviation use consistent if these terms occur in this chunk:\n${JSON.stringify(documentGlossary, null, 2)}`
+      ? `Document-wide glossary established elsewhere in the document. Keep abbreviation use consistent if these terms occur in this chunk:\n${JSON.stringify(documentGlossary)}`
       : "",
     diagnosticRequirements.length
       ? [
@@ -198,28 +309,27 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
         ].join("\n")
       : "",
     "",
-    "PARAGRAPH / DISCOURSE PLAN. Execute this before sentence-level polishing. Multiple actions may apply to one block; primaryAction is the dominant instruction. KEEP_PARAGRAPH means preserve its reasoning structure, not necessarily freeze every sentence. PRESERVE_AUTHORIAL_PASSAGE means do not rewrite the passage itself. REBUILD_DISCOURSE means preserve propositions/evidence while changing how the paragraph develops. DEVELOP_EVIDENCE means give cited findings enough explanatory space where the source/context supports that development. QUALIFY_EVIDENCE means make a conditional or bounded finding clear without strengthening it. EXPLAIN_MECHANISM means explain a relationship only where the mechanism already exists in supplied material. DISTINGUISH_MEASURES means clarify why related outcomes/proxies are not interchangeable. CONTEXTUALISE_SETTING and TEMPORALISE_EVIDENCE develop institutional or time-setting implications from supplied evidence only. BUILD_GAP develops the research need from the accumulated evidence rather than announcing a generic gap. REDUCE_SIGNPOSTING and REMOVE_REDUNDANT_CLOSURE target global rhetorical regularity without deleting substantive content. Paragraph actions govern the reasoning unit and must not be converted mechanically into a requirement to rewrite every source sentence.",
-    JSON.stringify(plan.paragraphPlan || [], null, 2),
+    [
+      "RHETORICAL/SEMANTIC PRESERVATION:",
+      "Preserve each proposition and intellectual job: framing, funnel, evidence, qualification, interpretation, contrast/concession, cause, synthesis, transition, caveat, implication and forward link. Remove only semantic-and-functional duplicates.",
+      "Deep changes syntax/discourse, not intellectual content. Preserve sequence: FRAME -> EXPLAIN -> EVIDENCE -> INTERPRET -> QUALIFY -> SYNTHESISE -> TRANSITION.",
+      "Preserve modality, causality, magnitude, direction, certainty, comparison, scope, time and generalisability. Association != cause; possibility != certainty; coexistence != equality. Uncited reasoning is not redundant.",
+      rhetoricalLedger?.length
+        ? `Source rhetorical ledger. Paragraph row = [paragraphIndex, rhetoricalSequence, sentenceRows]. Sentence row = [sourceSentenceIndex, roles, propositionAnchors, logicalRelations|null, epistemicQualifiers|null, citationAnchors|null, relationClauseCount]. Use it as a preservation map, not a rewrite quota: ${JSON.stringify(compactRhetoricalLedgerForPrompt(rhetoricalLedger))}`
+        : "",
+    ].filter(Boolean).join("\n"),
     "",
-    "SENTENCE INTERVENTION PLAN (source order). Follow the assigned level AND its reason after applying the paragraph plan:",
-    "KEEP = do not alter sentence wording. KEEP classifications explain why: KEEP_VOICE, KEEP_EVIDENCE, KEEP_QUOTE, KEEP_TECHNICAL or KEEP_NATURAL. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = rebuild sentence architecture as needed. REWRITE_PATTERN in decisionCode means the sentence may be fluent individually but contributes to a diagnosed local/global pattern requiring a concrete sentence operation. SELECTIVE_ARGUMENT_DEVELOPMENT marks a paragraph whose intellectual work needs development; do not rewrite every sentence independently. DISCOURSE_REPACKAGE = the proposition/evidence belongs to a paragraph-level reconstruction; it is NOT an obligatory standalone rewrite and may remain, move, merge, split or be recast as the paragraph's reasoning requires. SPLIT_OR_MERGE = redistribute propositions across sentence boundaries. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add reasoning using only content already present in the source/context/evidence; it does not mean add words for their own sake. COMPRESS = remove padding. FLAG_FOR_AUTHOR = leave substantively as-is and flag rather than guessing. In edit_summary, report only operations actually performed; do not count paragraph scope as one compulsory edit per source sentence.",
-    JSON.stringify(
-      (plan.items || []).map((i) => ({
-        sentenceIndex: i.sentenceIndex,
-        level: i.level,
-        decisionCode: i.decisionCode,
-        preservationClass: i.preservationClass,
-        paragraphBlockIndex: i.paragraphBlockIndex,
-        paragraphAction: i.paragraphAction,
-        reasons: i.reasons,
-        sentence: i.sentence,
-      })),
-      null,
-      2
-    ),
+    "PARAGRAPH / DISCOURSE PLAN. Execute this before sentence-level polishing. Multiple actions may apply to one block; primaryAction is the dominant instruction. KEEP_PARAGRAPH means preserve its reasoning structure, not necessarily freeze every sentence. PRESERVE_AUTHORIAL_PASSAGE means do not rewrite the passage itself. REBUILD_DISCOURSE means preserve propositions/evidence while changing how the paragraph develops. DEVELOP_EVIDENCE means give cited findings enough explanatory space where the source/context supports that development. QUALIFY_EVIDENCE means make a conditional or bounded finding clear without strengthening it. EXPLAIN_MECHANISM means explain a relationship only where the mechanism already exists in supplied material. DISTINGUISH_MEASURES means clarify why related outcomes/proxies are not interchangeable. CONTEXTUALISE_SETTING and TEMPORALISE_EVIDENCE develop institutional or time-setting implications from supplied evidence only. BUILD_GAP develops the research need from the accumulated evidence rather than announcing a generic gap. REDUCE_SIGNPOSTING and REMOVE_REDUNDANT_CLOSURE target global rhetorical regularity without deleting substantive content. Paragraph actions govern the reasoning unit and must not be converted mechanically into a requirement to rewrite every source sentence.",
+    JSON.stringify(compactParagraphPlan(plan)),
+    "",
+    "SENTENCE INTERVENTION PLAN (source order). Each compact row is [sentenceIndex, operation, paragraphBlockIndex, decisionCode, preservationClass]. Apply it after the paragraph plan:",
+    "KEEP = do not alter sentence wording. KEEP classifications explain why: KEEP_VOICE, KEEP_EVIDENCE, KEEP_QUOTE, KEEP_TECHNICAL or KEEP_NATURAL. MICRO_EDIT = local wording only, preserve structure. SENTENCE_RESTRUCTURE = rebuild sentence architecture as needed. REWRITE_PATTERN in decisionCode means the sentence may be fluent individually but contributes to a diagnosed local/global pattern requiring a concrete sentence operation. SELECTIVE_ARGUMENT_DEVELOPMENT marks a paragraph whose intellectual work needs development; do not rewrite every sentence independently. DISCOURSE_REPACKAGE = the proposition/evidence belongs to a paragraph-level reconstruction; it is NOT an obligatory standalone rewrite and may remain, move, merge, split or be recast as the paragraph's reasoning requires. SPLIT_OR_MERGE = redistribute propositions across sentence boundaries only when the resulting form makes every contrastive, causal, concessive, comparative or parallel relationship at least as explicit; a long sentence is not a defect by itself. CLARIFY_OR_EXPAND_FROM_EXISTING_CONTENT = add reasoning using only content already present in the source/context/evidence; it does not mean add words for their own sake. COMPRESS = remove semantically empty padding only, never unique rhetorical scaffolding. FLAG_FOR_AUTHOR = leave substantively as-is and flag rather than guessing. In edit_summary, report only operations actually performed; do not count paragraph scope as one compulsory edit per source sentence.",
+    JSON.stringify(compactSentencePlan(plan)),
     plan.paragraphReorderSuggested
       ? "\nDocument-level note: a paragraph-level structural pattern was actually diagnosed. You may restructure sentence grouping or local paragraph order only as needed to resolve that pattern. Preserve the section's macro-argument sequence, claim-to-citation relationships and transitions between rhetorical stages. Do not move ideas merely to create novelty."
       : "\nDocument-level note: no paragraph reorder was diagnosed. Preserve the existing macro-argument and paragraph sequence; perform any authorised reconstruction or development within that logical order.",
+    "",
+    buildCollaborativeRevisionPromptBlock(revisionPurpose),
     "",
     "--- RESPONSE FORMAT ---",
     "Return a single JSON object matching exactly this shape, and nothing else:",
@@ -234,6 +344,18 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
           paragraph_reorders: 0,
           flags_for_author: ["string reasons, empty array if none"],
         },
+        additional_inputs: [
+          {
+            id: "additional-input-1",
+            kind: "idea|evidence|depth|clarification|mechanism|qualification|counterargument|researcher_question",
+            location: "the passage, paragraph or claim this applies to",
+            proposal: "the possible addition or intellectual need; never silently insert it into revised_text",
+            reason: "why this would strengthen clarity, evidence or argument development",
+            status: "researcher_confirmation_required|verification_required",
+            researcher_question: "a direct question when researcher reasoning is needed, otherwise empty",
+            evidence_needed: "what must be verified or supplied, otherwise empty",
+          },
+        ],
         diagnostics_notes: "string, 1-3 sentences on what kind of revision was applied and why",
       },
       null,
@@ -243,3 +365,4 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
     .filter(Boolean)
     .join("\n");
 }
+

@@ -6,6 +6,7 @@ import { diagnose } from "./diagnostics.js";
 import { buildDiagnosisScopedPlan } from "./diagnosisScopedPlanner.js";
 import { resolveProfile } from "./styleProfileStore.js";
 import { buildSystemPrompt } from "./promptContract.js";
+import { buildRhetoricalLedger } from "./rhetoricalPreservation.js";
 import { auditPreservation } from "./preservation.js";
 import { llmProvider } from "./llmProvider.js";
 import { assessCadenceDeviation } from "./cadenceDeviation.js";
@@ -14,6 +15,7 @@ import { measureLanguageFingerprint } from "./languageFingerprint.js";
 import { assessLanguageDeviation } from "./languageFamilyEngine.js";
 import { getBuildInfo } from "./buildInfo.js";
 import { parseStructuredResponseText, buildJsonRepairSystemPrompt } from "./modelResponse.js";
+import { ensureCollaborativeReviewInputs, normalizeAdditionalInputs, normalizeRevisionPurpose } from "./collaborativeRevision.js";
 import {
   assessIterativeRegularisation,
   buildIterativeRewriteDirective,
@@ -72,6 +74,8 @@ export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarInt
       paragraph_patterns: diagnostics.paragraph_patterns,
       rhetorical_scaffolding: diagnostics.rhetorical_scaffolding,
       text_structure: diagnostics.text_structure,
+      machine_language_forensics: diagnostics.machine_language_forensics,
+      discourse_regularity_forensics: diagnostics.discourse_regularity_forensics,
       discourse_architecture: diagnostics.discourse_architecture,
       argumentative_sufficiency: diagnostics.argumentative_sufficiency,
       qualitative_human_discourse: diagnostics.qualitative_human_discourse,
@@ -116,11 +120,19 @@ function validateShape(parsed) {
   return errors;
 }
 
-async function runModelPass({ systemPrompt, sourceText }) {
+export function modelOutputTokenBudget(sourceText, revisionPurpose = "fidelity") {
+  const wordCount = String(sourceText || "").trim().split(/\s+/).filter(Boolean).length;
+  const metadataAllowance = normalizeRevisionPurpose(revisionPurpose) === "collaborative" ? 3200 : 1800;
+  const estimatedNeed = Math.ceil(wordCount * 2.75 + metadataAllowance);
+  const roundedNeed = Math.ceil(estimatedNeed / 1024) * 1024;
+  return Math.min(8192, Math.max(4096, roundedNeed));
+}
+
+async function runModelPass({ systemPrompt, sourceText, maxTokens = 4096 }) {
   const llmResult = await llmProvider.callAnthropic({
     system: systemPrompt,
     messages: [{ role: "user", content: sourceText }],
-    maxTokens: 4096,
+    maxTokens,
   });
 
   if (llmResult.raw?.stop_reason === "max_tokens") {
@@ -136,7 +148,7 @@ async function runModelPass({ systemPrompt, sourceText }) {
     const repairResult = await llmProvider.callAnthropic({
       system: buildJsonRepairSystemPrompt(),
       messages: [{ role: "user", content: llmResult.text }],
-      maxTokens: 4096,
+      maxTokens,
     });
     if (repairResult.raw?.stop_reason === "max_tokens") {
       const err = new Error("JSON syntax recovery was truncated before completion.");
@@ -275,12 +287,16 @@ export async function rewrite({
   grammarIntensity,
   lengthPreference,
   naturalisation,
+  revisionPurpose,
   precedingContext,
+  followingContext,
   documentGlossary,
   documentContext,
   rewriteLineage,
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
+  const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
+  const outputTokenBudget = modelOutputTokenBudget(sourceText, effectiveRevisionPurpose);
   const lineage = normaliseRewriteLineage(rewriteLineage, sourceText);
   const analysis = analyse({
     sourceText,
@@ -296,19 +312,30 @@ export async function rewrite({
   const measuredLanguageFamily = analysis.measured_language_family;
   const substantiveRatio = plannedSubstantiveRatio(analysis.plan);
   const qualityGateEnforced = naturalisationLevel === "aggressive" && substantiveRatio >= 0.30;
+  // Moderate + Aggressive already receives a full-document generation pass.
+  // Repeating that same large prompt for quality correction can consume the
+  // entire interactive request window before preservation-aware, paragraph-
+  // targeted recovery runs. Reserve whole-document retries for genuinely Deep
+  // work; ordinary developmental revision is better served by the selective
+  // residual stage after factual preservation has been established.
+  const fullDocumentQualityRecoveryAllowed = rewriteIntensity === "deep";
 
   const systemPrompt = buildSystemPrompt({
     styleProfile: analysis.style_profile_used.effective,
     protectedSpans: analysis.protectedSpans,
     plan: analysis.plan,
     grammarIntensity: grammarIntensity || "standard",
+    lengthPreference,
+    rhetoricalLedger: buildRhetoricalLedger(sourceText),
     precedingContext,
+    followingContext,
     documentGlossary,
     humanCadence,
     naturalisation: naturalisationLevel,
+    revisionPurpose: effectiveRevisionPurpose,
   }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage });
 
-  let parsed = await runModelPass({ systemPrompt, sourceText });
+  let parsed = await runModelPass({ systemPrompt, sourceText, maxTokens: outputTokenBudget });
   let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
   let iterativeQuality = assessIterativeRegularisation({
     sourceText,
@@ -317,6 +344,8 @@ export async function rewrite({
   });
   let qualityRetryUsed = false;
   let rescueRetryUsed = false;
+  let qualityRetryError = null;
+  let rescueRetryError = null;
   let responseRepairUsed = Boolean(parsed.__response_repair_used);
   let responseEnvelopeRecovered = Boolean(parsed.__response_envelope_recovered);
   let firstAttemptQuality = null;
@@ -324,33 +353,48 @@ export async function rewrite({
   let preRescueQuality = null;
   let preRescueIterativeQuality = null;
 
-  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)) {
+  if (
+    fullDocumentQualityRecoveryAllowed &&
+    qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)
+  ) {
     firstAttemptQuality = transformationQuality;
     firstAttemptIterativeQuality = iterativeQuality;
-    const corrected = await runModelPass({
-      systemPrompt: systemPrompt + qualityCorrectionBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
-      sourceText,
-    });
-    const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, qOptions);
-    const correctedIterativeQuality = assessIterativeRegularisation({
-      sourceText,
-      candidateText: corrected.revised_text,
-      rewriteLineage: lineage,
-    });
     qualityRetryUsed = true;
-    responseRepairUsed = responseRepairUsed || Boolean(corrected.__response_repair_used);
-    responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(corrected.__response_envelope_recovered);
+    try {
+      const corrected = await runModelPass({
+        systemPrompt: systemPrompt + qualityCorrectionBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
+        sourceText,
+        maxTokens: outputTokenBudget,
+      });
+      const correctedQuality = assessTransformationQuality(sourceText, corrected.revised_text, naturalisationLevel, qOptions);
+      const correctedIterativeQuality = assessIterativeRegularisation({
+        sourceText,
+        candidateText: corrected.revised_text,
+        rewriteLineage: lineage,
+      });
+      responseRepairUsed = responseRepairUsed || Boolean(corrected.__response_repair_used);
+      responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(corrected.__response_envelope_recovered);
 
-    const correctedPasses = correctedQuality.passed && !correctedIterativeQuality.blocking;
-    const correctedIsBetter = correctedPasses || candidateScore(correctedQuality, corrected.revised_text, measuredLanguageFamily, correctedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality);
-    if (correctedIsBetter) {
-      parsed = corrected;
-      transformationQuality = correctedQuality;
-      iterativeQuality = correctedIterativeQuality;
+      const correctedPasses = correctedQuality.passed && !correctedIterativeQuality.blocking;
+      const correctedIsBetter = correctedPasses || candidateScore(correctedQuality, corrected.revised_text, measuredLanguageFamily, correctedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality);
+      if (correctedIsBetter) {
+        parsed = corrected;
+        transformationQuality = correctedQuality;
+        iterativeQuality = correctedIterativeQuality;
+      }
+    } catch (err) {
+      qualityRetryError = {
+        code: err.code || err.healthState || "QUALITY_RETRY_FAILED",
+        message: err.message || "Optional quality refinement failed.",
+      };
     }
   }
 
-  if (qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)) {
+  if (
+    fullDocumentQualityRecoveryAllowed &&
+    !qualityRetryError &&
+    qualityNeedsCorrection(naturalisationLevel, transformationQuality, iterativeQuality, analysis.plan)
+  ) {
     preRescueQuality = transformationQuality;
     preRescueIterativeQuality = iterativeQuality;
     const candidateText = parsed.revised_text;
@@ -361,30 +405,37 @@ export async function rewrite({
       "CURRENT CANDIDATE REVISION (repair this prose; do not merely copy the source):",
       candidateText,
     ].join("\n");
-
-    const rescued = await runModelPass({
-      systemPrompt: systemPrompt + finalRescueBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
-      sourceText: rescuePayload,
-    });
-    const rescuedQuality = assessTransformationQuality(sourceText, rescued.revised_text, naturalisationLevel, qOptions);
-    const rescuedIterativeQuality = assessIterativeRegularisation({
-      sourceText,
-      candidateText: rescued.revised_text,
-      rewriteLineage: lineage,
-    });
     rescueRetryUsed = true;
-    responseRepairUsed = responseRepairUsed || Boolean(rescued.__response_repair_used);
-    responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(rescued.__response_envelope_recovered);
+    try {
+      const rescued = await runModelPass({
+        systemPrompt: systemPrompt + finalRescueBlock(transformationQuality) + iterativeCorrectionBlock(iterativeQuality),
+        sourceText: rescuePayload,
+        maxTokens: outputTokenBudget,
+      });
+      const rescuedQuality = assessTransformationQuality(sourceText, rescued.revised_text, naturalisationLevel, qOptions);
+      const rescuedIterativeQuality = assessIterativeRegularisation({
+        sourceText,
+        candidateText: rescued.revised_text,
+        rewriteLineage: lineage,
+      });
+      responseRepairUsed = responseRepairUsed || Boolean(rescued.__response_repair_used);
+      responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(rescued.__response_envelope_recovered);
 
-    const rescuedPasses = rescuedQuality.passed && !rescuedIterativeQuality.blocking;
-    if (rescuedPasses || candidateScore(rescuedQuality, rescued.revised_text, measuredLanguageFamily, rescuedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality)) {
-      parsed = rescued;
-      transformationQuality = rescuedQuality;
-      iterativeQuality = rescuedIterativeQuality;
+      const rescuedPasses = rescuedQuality.passed && !rescuedIterativeQuality.blocking;
+      if (rescuedPasses || candidateScore(rescuedQuality, rescued.revised_text, measuredLanguageFamily, rescuedIterativeQuality) < candidateScore(transformationQuality, parsed.revised_text, measuredLanguageFamily, iterativeQuality)) {
+        parsed = rescued;
+        transformationQuality = rescuedQuality;
+        iterativeQuality = rescuedIterativeQuality;
+      }
+    } catch (err) {
+      rescueRetryError = {
+        code: err.code || err.healthState || "RESCUE_RETRY_FAILED",
+        message: err.message || "Optional final rescue failed.",
+      };
     }
   }
 
-  const preservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans);
+  const preservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans, { lengthPreference });
   const revisedLanguageFingerprint = measureLanguageFingerprint(parsed.revised_text);
   const revisedLanguageDeviation = assessLanguageDeviation(revisedLanguageFingerprint, measuredLanguageFamily);
   const sourceAlignment = analysis.diagnostics.measured_language_deviation?.family_alignment_score;
@@ -395,6 +446,12 @@ export async function rewrite({
 
   return {
     revised_text: parsed.revised_text,
+    revision_purpose: effectiveRevisionPurpose,
+    additional_inputs: ensureCollaborativeReviewInputs({
+      sourceText,
+      revisionPurpose: effectiveRevisionPurpose,
+      modelInputs: normalizeAdditionalInputs(parsed.additional_inputs, effectiveRevisionPurpose),
+    }),
     style_profile_used: analysis.style_profile_used,
     edit_summary: parsed.edit_summary,
     intervention_plan_summary: analysis.plan.summary,
@@ -407,9 +464,13 @@ export async function rewrite({
     transformation_quality: {
       ...transformationQuality,
       enforced: qualityGateEnforced,
+      full_document_quality_recovery_allowed: fullDocumentQualityRecoveryAllowed,
+      selective_residual_recovery_preferred: !fullDocumentQualityRecoveryAllowed,
       substantive_plan_ratio: Number(substantiveRatio.toFixed(3)),
       corrective_retry_used: qualityRetryUsed,
       rescue_retry_used: rescueRetryUsed,
+      corrective_retry_error: qualityRetryError,
+      rescue_retry_error: rescueRetryError,
       first_attempt: firstAttemptQuality,
       pre_rescue_attempt: preRescueQuality,
     },
@@ -474,3 +535,4 @@ export async function rewrite({
     build: getBuildInfo(),
   };
 }
+

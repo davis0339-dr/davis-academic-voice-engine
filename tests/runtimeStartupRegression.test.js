@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const index = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const studio = readFileSync(new URL("../public/studio.html", import.meta.url), "utf8");
@@ -18,7 +19,7 @@ test("runtime guard and workspace loaders are valid browser JavaScript", () => {
     "../public/studioVoiceUI.js",
     "../public/researchCoauthoringUI.js",
   ]) {
-    const result = spawnSync(process.execPath, ["--check", new URL(rel, import.meta.url).pathname], { encoding: "utf8" });
+    const result = spawnSync(process.execPath, ["--check", fileURLToPath(new URL(rel, import.meta.url))], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr || result.stdout);
   }
 });

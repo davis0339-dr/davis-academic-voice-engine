@@ -72,6 +72,9 @@
     } else if (preference === "concise" && delta > 0) {
       respected = false;
       note = "Concise was selected, but the revision became longer. Review whether the added reasoning was necessary.";
+    } else if (preference === "maintain" && (deltaPct < -5 || deltaPct > 10)) {
+      respected = false;
+      note = "Maintain uses a 95-110% soft range. This result falls outside it, so the Rhetorical & Semantic Preservation audit must show a substantive reason rather than treating brevity as an improvement.";
     }
     return { preference, sourceWords, revisedWords, delta, deltaPct, respected, note };
   }
@@ -117,7 +120,7 @@
       <div class="argdev-grid">
         <div><span>Surface quality</span><strong>${surface ? `${esc(title(surface.label))} · ${pct(surface.score)}` : "n/a"}</strong></div>
         <div><span>Authorial texture</span><strong>${texture ? `${esc(title(authorialLabel))} · ${pct(authorialScore)}` : "analysis pending"}</strong></div>
-        <div><span>Machine-pattern regularity</span><strong>${regularity ? `${esc(title(regularity.label))} · ${pct(regularity.score)}` : "n/a"}</strong></div>
+        <div><span>Machine-pattern pressure</span><strong>${regularity ? `${esc(title(regularity.label))} · index ${esc(Math.round(Number(regularity.score) * 100))}/100` : "n/a"}</strong></div>
         <div><span>Semantic preservation</span><strong>${esc(title(semantic?.priority || "n/a"))}</strong></div>
         <div><span>Expressive preservation</span><strong>${esc(title(expressive?.priority || texture?.preservation_priority || "n/a"))}</strong></div>
         <div><span>Argument development need</span><strong>${esc(title(need))}</strong></div>
@@ -140,3 +143,4 @@
   `;
   document.head.appendChild(style);
 })();
+

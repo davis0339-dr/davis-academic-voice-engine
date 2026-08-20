@@ -33,6 +33,12 @@
     return "fail";
   }
 
+  function finalOutputNotCleared(rewrite) {
+    const finalStatus = String(rewrite?.candidate_verdict?.final_status || "").toLowerCase();
+    if (!finalStatus) return false;
+    return !["accepted", "accepted_with_execution_variance", "accepted_with_residual_risks"].includes(finalStatus);
+  }
+
   function summaryChips(obj, cls = "") {
     const entries = Object.entries(obj || {}).filter(([, value]) => Number(value) > 0);
     if (!entries.length) return '<span class="pov-muted">None</span>';
@@ -113,6 +119,8 @@
     const paragraphSummary = rewrite?.paragraph_plan_summary || plan?.paragraphSummary || {};
     const planSummary = rewrite?.intervention_plan_summary || plan?.summary || {};
     const compliance = rewrite?.execution_compliance || null;
+    const authority = rewrite?.intervention_authority || compliance?.intervention_authority || {};
+    const diagnosticBreadth = authority.breadth_enforcement === "diagnostic";
     const planned = compliance?.planned || {};
     const reported = compliance?.reported || {};
     const totalUnits = planned.total ?? sum(planSummary);
@@ -122,6 +130,8 @@
     const keepReasons = keepReasonSummary(plan);
     const rewritePatternCount = (plan?.items || []).filter((item) => item.decisionCode === "REWRITE_PATTERN").length;
     const sourceArchitecture = latestAnalysis?.diagnostics?.discourse_architecture?.signals || [];
+    const machineLanguage = latestAnalysis?.diagnostics?.machine_language_forensics || null;
+    const machineExecution = plan?.machineLanguageExecution || null;
     const postDiag = rewrite?.post_rewrite_diagnostics || rewrite?.residual_rework?.after || rewrite?.residual_rework?.before || null;
     const postArchitecture = postDiag?.discourse_architecture?.signals || [];
 
@@ -134,9 +144,10 @@
     }
 
     const status = statusLabel(compliance);
+    const outputBlocked = finalOutputNotCleared(rewrite);
     const complianceHtml = compliance ? `
-      <div class="pov-compliance ${statusClass(compliance)}">
-        <div class="pov-title-row"><strong>Execution evidence: ${esc(status)}</strong><span class="pov-score">score ${esc(compliance.execution_score ?? compliance.score ?? "n/a")}</span></div>
+      <div class="pov-compliance ${outputBlocked ? "warn" : statusClass(compliance)}">
+        <div class="pov-title-row"><strong>Plan-operation evidence: ${esc(status)}${outputBlocked ? " · FINAL OUTPUT NOT CLEARED" : ""}</strong><span class="pov-score">score ${esc(compliance.execution_score ?? compliance.score ?? "n/a")}</span></div>
         <div class="pov-grid compact">
           <div><span>Concrete planned operations</span><strong>${esc(concretePlanned)}</strong></div>
           <div><span>Discourse-repackage scope</span><strong>${esc(discourseScope)}</strong></div>
@@ -146,10 +157,10 @@
           <div><span>Structural coverage</span><strong>${pct(compliance.structural_coverage)}</strong></div>
           <div><span>Changed sentences</span><strong>${pct(compliance.changed_sentence_ratio)}</strong></div>
           <div><span>Minimum plausibility floor</span><strong>${pct(compliance.minimum_changed_sentence_ratio)}</strong></div>
-          <div><span>Maximum disturbance ceiling</span><strong>${pct(compliance.changed_sentence_ceiling)}</strong></div>
+          <div><span>${diagnosticBreadth ? "Diagnostic change reference" : "Maximum disturbance ceiling"}</span><strong>${pct(compliance.changed_sentence_ceiling)}</strong></div>
           <div><span>Residual discourse stage</span><strong>${esc(residualState(rewrite))}</strong></div>
         </div>
-        <div class="pov-boundary"><strong>Interpretation:</strong> the minimum is a plausibility safeguard, not a rewrite target. The maximum is an authorised ceiling, not a goal. DISCOURSE_REPACKAGE is paragraph-level scope and is not counted as one compulsory rewrite per source sentence.</div>
+        <div class="pov-boundary"><strong>Interpretation:</strong> the minimum is a plausibility safeguard, not a rewrite target. ${diagnosticBreadth ? "For this mode, the changed-sentence percentage is a diagnostic reference, not a rejection ceiling; high change is acceptable when preservation and structural-authority checks pass." : "The maximum is an authorised ceiling, not a goal."} DISCOURSE_REPACKAGE is paragraph-level scope and is not counted as one compulsory rewrite per source sentence.</div>
         ${(compliance.execution_reasons || compliance.reasons || []).length ? `<div class="pov-reasons"><strong>Execution issue:</strong> ${(compliance.execution_reasons || compliance.reasons).map(esc).join(" ")}</div>` : ""}
         ${(compliance.warnings || []).length ? `<div class="pov-warnings"><strong>Watch:</strong> ${compliance.warnings.map(esc).join(" ")}</div>` : ""}
       </div>` : "";
@@ -176,6 +187,8 @@
         <div><span>Effective treatment</span><strong>${esc(title(intent.effective))}</strong></div>
         <div><span>Intervention budget</span><strong>${esc(intent.budget?.label || plan?.interventionBudget?.label || "n/a")}</strong></div>
         <div><span>Source discourse signals</span><strong>${sourceArchitecture.length}</strong></div>
+        <div><span>Machine-language density</span><strong>${machineLanguage?.available ? `${esc(title(machineLanguage.label))} · ${pct(machineLanguage.score)}` : "n/a"}</strong></div>
+        <div><span>Machine-language target units</span><strong>${esc(machineExecution?.targeted_sentence_count || 0)}</strong></div>
         <div><span>Pattern-driven sentence rewrites</span><strong>${rewritePatternCount}</strong></div>
         <div><span>Planner units</span><strong>${totalUnits}</strong></div>
       </div>
@@ -184,6 +197,7 @@
       <div class="pov-section"><strong>Paragraph/discourse actions</strong><div>${summaryChips(paragraphSummary, "paragraph")}</div></div>
       ${Object.keys(keepReasons).length ? `<div class="pov-section"><strong>Why sentences were kept</strong><div>${summaryChips(keepReasons, "keep")}</div></div>` : ""}
       ${sourceArchitecture.length ? `<details class="pov-details"><summary>Source discourse signals (${sourceArchitecture.length})</summary>${sourceArchitecture.map((signal) => `<div class="pov-signal"><strong>${esc(signal.id)}</strong> · ${esc(signal.severity)}<br>${esc(signal.interpretation)}</div>`).join("")}</details>` : ""}
+      ${machineLanguage?.available ? `<details class="pov-details"><summary>Modern machine-language diagnosis (${esc(machineLanguage.metrics?.hit_sentence_count || 0)} of ${esc(machineLanguage.metrics?.sentence_count || 0)} sentences)</summary><div class="pov-boundary"><strong>Interpretation:</strong> this is recurrence-based style evidence, not an authorship probability. The selected mode determines how deeply the diagnosed targets may be reconstructed.</div>${(machineLanguage.signals || []).map((signal) => `<div class="pov-signal"><strong>${esc(signal.issue)} · ${esc(signal.severity)}</strong><br>${esc(signal.interpretation)}<br><em>Action:</em> ${esc(signal.action)}</div>`).join("") || '<div class="pov-muted">Pattern density contributed to the index, but no individual signal crossed its reporting threshold.</div>'}</details>` : ""}
       ${rewrite ? `<details class="pov-details"><summary>Post-rewrite discourse signals (${postArchitecture.length})</summary>${postArchitecture.length ? postArchitecture.map((signal) => `<div class="pov-signal"><strong>${esc(signal.id)}</strong> · ${esc(signal.severity)}<br>${esc(signal.interpretation)}</div>`).join("") : '<div class="pov-muted">No residual discourse-architecture signal was reported in the final candidate.</div>'}</details>` : ""}
       ${complianceHtml}
       ${evidenceSummary}

@@ -7,6 +7,7 @@ import { buildDocumentMap } from "./documentMap.js";
 import { chunkDocument } from "./chunker.js";
 import { rewrite } from "./pipeline.js";
 import { auditPreservation } from "./preservation.js";
+import { repairPreservationCandidate } from "./preservationRepair.js";
 import { inferSectionFromHeading } from "./sectionLanguageGuide.js";
 import {
   buildWholeDocumentBlueprint,
@@ -198,7 +199,7 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
   for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt++) {
     chunk.attempts += 1;
     try {
-      const result = await rewrite({
+      let result = await rewrite({
         sourceText: chunk.sourceText,
         styleFilters: chunkStyleFilters,
         rewriteIntensity: coverageRecovery ? "deep" : policy.effective.intensity,
@@ -206,9 +207,20 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
         lengthPreference: (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference,
         naturalisation: coverageRecovery ? "aggressive" : globalRepair ? "faithful" : policy.effective.naturalisation,
         precedingContext: previousRevisedTail(job, chunk) || chunk.precedingContextTail,
+        followingContext: chunk.followingContextHead,
         documentGlossary: job.documentMap.glossary,
         documentContext: baseDocumentContext,
       });
+
+      if (result.preservation?.rhetorical_semantic_ok === false || result.preservation?.new_factual_claims_detected) {
+        result = await repairPreservationCandidate({
+          sourceText: chunk.sourceText,
+          candidateResult: result,
+          revisionPurpose: "fidelity",
+          lengthPreference: (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference,
+        });
+        chunk.rhetoricalPreservationRepairApplied = true;
+      }
 
       if (result.transformation_quality?.enforced && !result.transformation_quality.passed) {
         const err = new Error(
@@ -221,7 +233,9 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
       const revisedText = stripLeadingRepeatedHeading(result.revised_text, chunk.heading);
       chunk.revisedText = revisedText;
       chunk.editSummary = result.edit_summary;
-      chunk.preservation = auditPreservation(chunk.sourceText, revisedText);
+      chunk.preservation = result.preservation || auditPreservation(chunk.sourceText, revisedText, undefined, {
+        lengthPreference: (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference,
+      });
       chunk.transformationQuality = result.transformation_quality || null;
       chunk.languageQuality = result.language_quality || null;
       chunk.interventionIntent = result.intervention_intent || null;
@@ -265,7 +279,9 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
 function assembleAndAudit(job) {
   const reassembledText = job.chunks.map(assembleChunkText).join("\n\n");
   job.reassembledText = reassembledText;
-  job.documentPreservation = auditPreservation(job.sourceText, reassembledText, job.documentMap.protectedSpans);
+  job.documentPreservation = auditPreservation(job.sourceText, reassembledText, job.documentMap.protectedSpans, {
+    lengthPreference: job.options.lengthPreference,
+  });
   job.transformationCoverage = auditTransformationCoverage({
     sourceText: job.sourceText,
     revisedText: reassembledText,
@@ -336,7 +352,8 @@ async function finalizeJob(job) {
   const anyFailed = job.chunks.some((c) => c.status === "failed");
   const coveragePassed = job.transformationCoverage?.passed !== false;
   const regularityPassed = job.wholeDocumentAudit?.passed !== false;
-  job.candidateStatus = coveragePassed && regularityPassed ? "accepted" : "review_required";
+  const preservationPassed = job.documentPreservation?.rhetorical_semantic_ok !== false && !job.documentPreservation?.new_factual_claims_detected;
+  job.candidateStatus = coveragePassed && regularityPassed && preservationPassed ? "accepted" : "review_required";
   job.status = anyFailed ? "completed_with_errors" : "completed";
   job.phase = job.candidateStatus === "accepted" ? "complete" : "complete_review_required";
   job.completedAt = new Date().toISOString();
@@ -575,3 +592,4 @@ export function summarizeJob(job) {
     fatalError: job.fatalError || null,
   };
 }
+

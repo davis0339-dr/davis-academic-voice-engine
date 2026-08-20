@@ -138,8 +138,124 @@ function forensicExecutionScope(plan, diagnostics, { requestedIntensity, request
   return plan;
 }
 
-function deepAuthorialProtocol() {
+function machineLanguageReason(mode) {
+  if (mode === "moderate") {
+    return [
+      "Modern machine-language forensics selected this sentence because polished editorial framing, binary qualification, abstract signposting, synthesis packaging or nominalisation pressure recurs across the passage. Moderate permits a substantive sentence/flow reconstruction here.",
+      "Rebuild around the supplied proposition and its relationship to neighbouring reasoning. Do not merely swap synonyms, and do not delete interpretation, qualification, evidence or transition functions.",
+    ];
+  }
   return [
+    "Modern machine-language forensics selected this unit as a leverage point in a recurring lexical-rhetorical pattern. Deep Authorial permits proposition-led repackaging within the existing macro-argument.",
+    "Change the information packaging that creates the repeated pattern while preserving semantic force, evidence attachment, authorial reasoning and rhetorical function.",
+  ];
+}
+
+function machineLanguageExecutionScope(plan, diagnostics, { requestedIntensity, requestedNaturalisation }) {
+  const forensic = diagnostics?.machine_language_forensics;
+  const assertiveExpression = ["aggressive", "authorial"].includes(requestedNaturalisation);
+  const eligibleIntensity = requestedIntensity === "moderate" || requestedIntensity === "deep";
+  const hitRatio = Number(forensic?.metrics?.hit_sentence_ratio || 0);
+  const material = Number(forensic?.score || 0) >= 0.20 || hitRatio >= 0.22;
+  if (!assertiveExpression || !eligibleIntensity || !forensic?.available || !material) return plan;
+
+  const sourceIndices = (forensic.target_sentence_indices || []).filter(Number.isInteger);
+  if (!sourceIndices.length) return plan;
+  const ratioCap = requestedIntensity === "deep" ? 0.70 : 0.45;
+  // The former absolute cap of 18 silently reduced a 1,500-word Deep run to
+  // surface treatment whenever machine-language recurrence was distributed
+  // across the manuscript. Scope is now proportional to the actual planner;
+  // the forensic engine still decides which units qualify, and formal artefacts
+  // remain excluded.
+  const maxTargets = Math.max(1, Math.floor((plan.items?.length || 1) * ratioCap));
+  const targetIndices = new Set(sourceIndices.slice(0, maxTargets));
+  const executedTargetIndices = [];
+  let escalated = 0;
+
+  plan.items = (plan.items || []).map((item) => {
+    if (!targetIndices.has(item.sentenceIndex) || FORMAL_KEEP_CODES.has(item.decisionCode)) return item;
+    executedTargetIndices.push(item.sentenceIndex);
+    if (requestedIntensity === "moderate") {
+      if (MODERATE_FORENSIC_LEVELS.has(item.level)) escalated += 1;
+      return {
+        ...item,
+        level: MODERATE_FORENSIC_LEVELS.has(item.level) ? "SENTENCE_RESTRUCTURE" : item.level,
+        decisionCode: item.level === "DISCOURSE_REPACKAGE" ? item.decisionCode : "MACHINE_LANGUAGE_SENTENCE_RESTRUCTURE",
+        reasons: [...(item.reasons || []), ...machineLanguageReason("moderate")],
+      };
+    }
+    const canEscalate = DEEP_FORENSIC_LEVELS.has(item.level);
+    if (canEscalate) escalated += 1;
+    return {
+      ...item,
+      level: canEscalate ? "DISCOURSE_REPACKAGE" : item.level,
+      decisionCode: canEscalate || item.level === "DISCOURSE_REPACKAGE" ? "MACHINE_LANGUAGE_DISCOURSE_SCOPE" : item.decisionCode,
+      reasons: [...(item.reasons || []), ...machineLanguageReason("deep")],
+    };
+  });
+
+  plan.summary = summarise(plan.items);
+  plan.machineLanguageExecution = {
+    available: true,
+    version: forensic.version,
+    raw_score: forensic.score,
+    hit_sentence_ratio: hitRatio,
+    source_target_sentence_count: sourceIndices.length,
+    target_cap: maxTargets,
+    targeted_sentence_count: executedTargetIndices.length,
+    newly_escalated_sentence_count: escalated,
+    targeted_sentence_indices: executedTargetIndices,
+    mode: requestedIntensity === "deep" ? "targeted_machine_language_discourse_repackage" : "targeted_machine_language_sentence_restructure",
+    principle: "Forensic recurrence determines SHOULD_CHANGE; the selected intensity remains the structural ceiling; preservation remains mandatory.",
+  };
+  return plan;
+}
+
+function moderateLocalDiscourseScope(plan, { requestedIntensity, requestedNaturalisation }) {
+  const assertiveExpression = ["aggressive", "authorial"].includes(requestedNaturalisation);
+  if (requestedIntensity !== "moderate" || !assertiveExpression) return plan;
+
+  const rebuildBlocks = (plan.paragraphPlan || [])
+    .filter((row) => row.primaryAction === "REBUILD_DISCOURSE" || (row.actions || []).includes("REBUILD_DISCOURSE"))
+    .map((row) => Number.isInteger(row.paragraphBlockIndex) ? row.paragraphBlockIndex : row.blockIndex)
+    .filter(Number.isInteger)
+    .slice(0, 3);
+  if (!rebuildBlocks.length) return plan;
+
+  const targetBlocks = new Set(rebuildBlocks);
+  const targetedSentenceIndices = [];
+  let escalated = 0;
+  plan.items = (plan.items || []).map((item) => {
+    if (!targetBlocks.has(item.paragraphBlockIndex) || FORMAL_KEEP_CODES.has(item.decisionCode)) return item;
+    targetedSentenceIndices.push(item.sentenceIndex);
+    if (item.level !== "DISCOURSE_REPACKAGE") escalated += 1;
+    return {
+      ...item,
+      level: "DISCOURSE_REPACKAGE",
+      decisionCode: "MODERATE_LOCAL_DISCOURSE_REPACKAGE",
+      reasons: [
+        ...(item.reasons || []),
+        "The paragraph was independently diagnosed for discourse reconstruction. Moderate + Aggressive permits bounded local redevelopment inside this paragraph while preserving paragraph order, macro-argument, propositions, evidence, qualifications and transitions.",
+        "Reconstruct the paragraph as one reasoning unit rather than paraphrasing its sentences independently. Do not resequence paragraphs or expand this authority to undiagnosed blocks.",
+      ],
+    };
+  });
+
+  plan.summary = summarise(plan.items);
+  plan.moderateDiscourseExecution = {
+    available: true,
+    mode: "bounded_local_discourse_reconstruction",
+    target_paragraph_blocks: rebuildBlocks,
+    targeted_sentence_count: targetedSentenceIndices.length,
+    newly_escalated_sentence_count: escalated,
+    targeted_sentence_indices: targetedSentenceIndices,
+    paragraph_reordering_authorised: false,
+    principle: "Moderate may rebuild diagnosed paragraphs locally, but it preserves paragraph order and cannot become whole-document Deep reconstruction.",
+  };
+  return plan;
+}
+
+export const DEEP_AUTHORIAL_PROTOCOL = Object.freeze([
     "DEEP AUTHORIAL V4 EXECUTION PROTOCOL: this is not a sentence-by-sentence paraphrase pass. Before drafting each authorised substantive paragraph, recover its protected proposition/evidence ledger: claim(s), evidence/citation attachment, qualification/condition, measurement distinction, mechanism, setting/time context, and rhetorical purpose. Reconstruct from that ledger rather than walking through source sentence shells in order.",
     "PRESERVE RESEARCH, NOT AUTOMATICALLY SURFACE PACKAGING: factual meaning, citations, statistics, variables, hypotheses, methods, chronology, study stage, technical terminology and epistemic strength are immutable. Sentence boundaries, grammatical subjects, clause order, local information packaging and paragraph development are available for reconstruction only where diagnosis supports intervention.",
     "NUMERIC RELATIONSHIPS ARE ATOMIC: copy protected years, year ranges, sample-size ranges, percentages, monetary values and statistical notation without changing their relationship. In particular, a range such as 2015-2024 or 10-15 must never become two comma-separated values such as 2015, 2024 or 10, 15. Preserve the exact source range string when possible.",
@@ -149,16 +265,15 @@ function deepAuthorialProtocol() {
     "ALLOW UNEVEN EMPHASIS: not every paragraph needs a closing synthesis sentence, not every evidence cluster needs an immediate takeaway, and not every sentence must be a self-contained mini-abstract. Some paragraphs may end on evidence, a limitation, a condition, a measurement distinction or an unresolved tension that the next paragraph carries forward.",
     "SUPPRESS EDITORIAL CHOREOGRAPHY: avoid repeated constructions such as 'The salient question...', 'This study/prospectus advances...', 'Prior evidence therefore...', 'In other words...', 'Taken together...', or equivalent tidy summary frames when they are not required by the actual argument. No phrase is banned absolutely; repeated editorial preference across paragraphs is the defect.",
     "MODERN MACHINE-LANGUAGE SELF-CHECK: polished academic language can still be machine-shaped. Do not repeatedly stage reasoning through 'not X but Y', 'not merely', 'more than', 'does not imply', 'the difficulty is', 'the more instructive result', 'the unresolved issue', 'becomes more evident', 'adds further complexity', or equivalent editorial pivots. Keep any such construction only when it is the clearest way to express a real distinction. Recurrence across the passage is a defect even when each sentence is individually grammatical and sophisticated.",
-    "DO NOT ANNOUNCE THE PARAGRAPH WHEN THE CONTENT CAN DO THE WORK: abstract noun-led openings about conditionality, complexity, variation, assessment, implications, context, difficulty or significance should not repeatedly tell the reader what the next paragraph will do. Where possible, begin with the relevant evidence, actor, condition, mechanism, measurement issue or contextual fact and let the interpretation emerge from the reasoning.",
-    "PREFER PROPOSITIONS TO DISCOURSE MANAGEMENT: if a sentence mainly tells the reader that a point is important, complex, conditional, instructive, useful, unresolved or more specific, ask whether it adds a substantive proposition. If not, remove it or absorb the necessary qualification into the neighbouring evidence. Do not manufacture bluntness; preserve legitimate epistemic caution.",
+    "DO NOT ANNOUNCE THE PARAGRAPH WHEN THE CONTENT CAN DO THE WORK: abstract openings should not repeatedly preview content that the paragraph itself already makes clear. But preserve or reconstruct openings that narrow the inquiry, locate a jurisdiction/time/level of analysis, frame a concept, establish contrast or connect the argument across paragraphs; those are intellectual functions, not padding.",
+    "PREFER PROPOSITIONS TO DISCOURSE MANAGEMENT: if a sentence only labels a point important, complex or unresolved without adding a relationship, it may be absorbed. A sentence that interprets evidence, explains relevance, qualifies scope, distinguishes concepts or moves the funnel adds a proposition/function and must survive in defensible wording.",
     "PREFER ACTORS AND DIRECT VERBS WHEN TECHNICALLY APPROPRIATE: firms borrow, lenders price and monitor, boards oversee, studies report, effects vary, conditions change. Do not replace valid construct names or technical abstractions simply to force directness, but avoid unnecessary noun-heavy packaging when a precise verb carries the same meaning.",
     "SECTION REGISTER MATTERS: problem statements, purpose statements, research questions, hypotheses, operational definitions and methods should remain direct and institutionally recognisable. Do not naturalise formal artefacts by rhetorical embellishment. Literature/background prose can carry more varied discourse movement because its job is argumentative rather than formularised.",
     "DEEP DOES NOT MEAN LEXICALLY GRANDER: do not inflate nominalisations, stack abstract nouns, or make every sentence denser. A stronger reconstruction may use simpler verbs, shorter evidential statements, delayed interpretation, or a longer qualified sentence where the reasoning actually requires it.",
     "CAN CHANGE IS NOT SHOULD CHANGE: Deep/Authorial supplies broad permission, not a quota. A technically clean sentence or paragraph may still be kept when its authorial texture is genuine and no discourse-regularity or argumentative diagnosis warrants intervention.",
     "FINAL SELF-CHECK BEFORE RETURNING: for paragraphs actually authorised for reconstruction, ask whether the candidate is essentially the same paragraph sequence with cleaner synonyms and recast clauses. Also ask whether the candidate has accumulated polished editorial pivots, abstract signposts or tidy synthesis sentences that were not required by the argument. If either is true, the authorised Deep Authorial operation is under-executed or over-regularised. Rebuild that authorised material from the proposition/evidence ledger while retaining all protected research content.",
     "EXTERNAL CLASSIFIERS ARE DIAGNOSTIC ONLY: do not target a detector score, insert errors, conceal machine provenance, or use tricks. The objective is defensible, heterogeneous, author-like academic discourse produced by better reasoning architecture and fidelity, not score gaming.",
-  ];
-}
+]);
 
 export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   const requestedNaturalisation = String(options.naturalisation || "faithful").toLowerCase();
@@ -183,6 +298,14 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     requestedIntensity,
     requestedNaturalisation,
   });
+  plan = machineLanguageExecutionScope(plan, diagnostics, {
+    requestedIntensity,
+    requestedNaturalisation,
+  });
+  plan = moderateLocalDiscourseScope(plan, {
+    requestedIntensity,
+    requestedNaturalisation,
+  });
 
   plan.intensity = requestedIntensity;
   plan.diagnosticIntensity = diagnosticIntensity;
@@ -196,7 +319,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   // to interpret a compatibility-string bump as a different policy contract.
   plan.scopePolicyVersion = "diagnosis-guided-authority-v3";
   plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v4.1" : null;
-  plan.scopeImplementationVersion = "diagnosis-guided-authority-v5.1";
+  plan.scopeImplementationVersion = "diagnosis-guided-authority-v5.3";
   plan.forensicScopeVersion = diagnostics?.discourse_regularity_forensics?.version || null;
   plan.machineLanguageForensicsVersion = diagnostics?.machine_language_forensics?.version || null;
 
@@ -208,13 +331,13 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     "Modern machine-language forensics examines recurrence of polished editorial pivots, abstract issue-framing, binary qualification, compressed synthesis, discourse-management wording and nominalisation pressure. It is a style diagnostic, not an authorship classifier, and no single phrase is banned in isolation.",
     "High grammar, clarity and sophistication do not override machine-language or discourse-regularity evidence. An academically polished candidate may still require reconstruction when its language repeatedly manages the reader through predictable editorial frames rather than allowing the substantive reasoning to carry the prose.",
     "Minor remains local and restrained; Moderate permits sentence/flow restructuring and selective diagnosed development; Deep permits diagnosed structural redevelopment.",
-    "Moderate + Aggressive may substantially restructure the diagnosed sentence/flow leverage points identified by discourse forensics, while still blocking silent paragraph resequencing or wholesale discourse reconstruction.",
+    "Moderate + Aggressive may substantially restructure diagnosed sentence/flow leverage points and may locally rebuild paragraphs explicitly marked REBUILD_DISCOURSE, while still blocking paragraph resequencing, undiagnosed paragraph redevelopment or wholesale document reconstruction.",
     "Deep + Aggressive/Authorial authorises paragraph-level reconstruction where paragraph/discourse diagnosis or machine-pattern regularity supports it, even if individual sentences are grammatically clean.",
     "CAN_CHANGE and SHOULD_CHANGE are separate decisions. Deep authority never creates a requirement to rewrite every clean unit.",
     "A Deep/Authorial request must not be silently collapsed into local synonym polishing where genuine reconstruction has been diagnosed.",
     "Expand develops diagnosed reasoning, evidence, qualification, context, measurement or gap work; it is not a word-growth quota.",
     "Keep decisions remain legitimate in every mode for headings, quotations, equations, technical labels, evidence, formal research artefacts, and genuinely author-specific passages that do not warrant intervention.",
-    ...(authorialAuthority ? deepAuthorialProtocol() : []),
+    ...(authorialAuthority ? DEEP_AUTHORIAL_PROTOCOL : []),
   ];
   plan.documentGuidance = [
     ...(plan.documentGuidance || []),
@@ -236,7 +359,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
           ? "Deep structural authority is available where diagnosis supports it; permission does not itself create a need to reconstruct clean material."
           : null,
       ["aggressive", "authorial"].includes(requestedNaturalisation) && requestedIntensity === "moderate"
-        ? "Aggressive/Authorial expression is permitted at the sentence/flow level. Cross-paragraph forensic leverage points may receive substantive sentence restructuring, but the Moderate ceiling blocks silent paragraph resequencing or wholesale discourse reconstruction."
+        ? "Aggressive expression is permitted at the sentence/flow level. Paragraphs explicitly diagnosed as REBUILD_DISCOURSE may receive bounded local redevelopment, but the Moderate ceiling still blocks paragraph resequencing, undiagnosed paragraph reconstruction and wholesale document redevelopment."
         : null,
       requestedLength === "expand"
         ? "Expand is permission to develop diagnosed intellectual work from available content/evidence; no global word-growth quota is created."
@@ -245,3 +368,4 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   };
   return plan;
 }
+
