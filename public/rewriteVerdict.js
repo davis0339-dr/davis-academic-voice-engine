@@ -178,6 +178,7 @@
           ${Number.isFinite(Number(sourceRisk)) ? `<span>source risk ${esc(sourceRisk)}</span>` : ""}
           ${Number.isFinite(Number(beforeRisk)) ? `<span>candidate risk ${esc(beforeRisk)}${Number.isFinite(Number(afterRisk)) ? ` → attempted ${esc(afterRisk)}` : ""}</span>` : ""}
           ${(residual.target_blocks || []).length ? `<span>target blocks: ${residual.target_blocks.map(esc).join(", ")}</span>` : ""}
+          ${residual.residual_preservation_repair?.attempted ? `<span>preservation repair: ${residual.residual_preservation_repair.passed ? "passed" : "failed"}</span>` : ""}
         </div>
         ${residual.reason ? `<div class="rv4-note">${esc(residual.reason)}</div>` : ""}
         ${beforeSignals.length ? `<details><summary>Residual signals before local rework (${beforeSignals.length})</summary><div class="rv4-chips">${beforeSignals.map((s) => `<span>${esc(s)}</span>`).join("")}</div></details>` : ""}

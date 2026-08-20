@@ -161,8 +161,13 @@ function machineLanguageExecutionScope(plan, diagnostics, { requestedIntensity, 
 
   const sourceIndices = (forensic.target_sentence_indices || []).filter(Number.isInteger);
   if (!sourceIndices.length) return plan;
-  const ratioCap = requestedIntensity === "deep" ? 0.60 : 0.40;
-  const maxTargets = Math.min(18, Math.max(1, Math.floor((plan.items?.length || 1) * ratioCap)));
+  const ratioCap = requestedIntensity === "deep" ? 0.70 : 0.45;
+  // The former absolute cap of 18 silently reduced a 1,500-word Deep run to
+  // surface treatment whenever machine-language recurrence was distributed
+  // across the manuscript. Scope is now proportional to the actual planner;
+  // the forensic engine still decides which units qualify, and formal artefacts
+  // remain excluded.
+  const maxTargets = Math.max(1, Math.floor((plan.items?.length || 1) * ratioCap));
   const targetIndices = new Set(sourceIndices.slice(0, maxTargets));
   const executedTargetIndices = [];
   let escalated = 0;

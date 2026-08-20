@@ -11,4 +11,6 @@ test("Moderate diagnostic breadth is not presented to researchers as a rejection
   assert.match(authorialUi, /High change is permitted/);
   assert.match(plannerUi, /breadth_enforcement === "diagnostic"/);
   assert.match(plannerUi, /Diagnostic change reference/);
+  assert.match(plannerUi, /FINAL OUTPUT NOT CLEARED/);
+  assert.match(plannerUi, /Plan-operation evidence/);
 });

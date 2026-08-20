@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { assessSourceBeforeRewrite } from "../server/lib/sourceAssessment.js";
 import { buildDiagnosisScopedPlan } from "../server/lib/diagnosisScopedPlanner.js";
 import { analyse } from "../server/lib/pipeline.js";
+import { diagnose } from "../server/lib/diagnostics.js";
 
 const aiBenchmark = fs.readFileSync(new URL("./fixtures/detector-benchmark/ai-sample-01-ridwan-salaudeen.txt", import.meta.url), "utf8");
 const humanBenchmark = fs.readFileSync(new URL("./fixtures/detector-benchmark/human-sample-01-corporate-governance.txt", import.meta.url), "utf8");
@@ -43,6 +44,23 @@ test("machine-language targets materially enlarge Moderate and Deep assertive ex
   assert.ok((moderate.summary?.SENTENCE_RESTRUCTURE || 0) >= moderate.machineLanguageExecution.targeted_sentence_count);
   assert.ok(deep.machineLanguageExecution?.targeted_sentence_count >= 12);
   assert.ok((deep.summary?.DISCOURSE_REPACKAGE || 0) >= deep.machineLanguageExecution.targeted_sentence_count);
+});
+
+test("Deep machine-language scope is proportional rather than silently capped at eighteen units", () => {
+  const text = Array.from({ length: 32 }, (_, index) =>
+    `This analytical issue ${index + 1} is important because governance mechanisms do not merely influence monitoring but also shape the broader conditions through which creditors evaluate risk.`
+  ).join(" ");
+  const diagnostics = diagnose(text);
+  diagnostics.machine_language_forensics = {
+    available: true,
+    version: "test-forensics",
+    score: 0.8,
+    metrics: { hit_sentence_ratio: 1 },
+    target_sentence_indices: Array.from({ length: 32 }, (_, index) => index),
+  };
+  const plan = buildDiagnosisScopedPlan(diagnostics, { rewriteIntensity: "deep", naturalisation: "authorial", lengthPreference: "maintain" });
+  assert.ok(plan.machineLanguageExecution.target_cap > 18);
+  assert.ok(plan.machineLanguageExecution.targeted_sentence_count > 18);
 });
 
 test("assertive mode does not manufacture machine-language scope for the human benchmark", () => {

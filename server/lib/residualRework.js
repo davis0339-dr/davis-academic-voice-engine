@@ -16,6 +16,7 @@ import { analyseResidualWriting } from "./residualDiagnostics.js";
 import { splitSentences } from "./sentences.js";
 import { auditOutputAcceptance, acceptanceImproved } from "./outputAcceptance.js";
 import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
+import { repairPreservationCandidate } from "./preservationRepair.js";
 
 function preservationPassed(p) {
   return Boolean(
@@ -408,14 +409,43 @@ export async function selectiveResidualRework({
   }
 
   const reworkedText = replaceBlocksSequentially(candidateText, replacements, candidateStructure);
-  const preservation = auditPreservation(sourceText, reworkedText, extractProtectedSpans(sourceText), { lengthPreference });
-  const after = analyseResidualWriting(reworkedText);
+  let recoveredText = reworkedText;
+  let preservation = auditPreservation(sourceText, recoveredText, extractProtectedSpans(sourceText), { lengthPreference });
+  let residualPreservationRepair = { attempted: false, passed: false };
+
+  // An otherwise valuable residual reconstruction must not be discarded merely
+  // because the local pass displaced a citation, qualification or rhetorical
+  // function. Repair the completed residual candidate once, then subject it to
+  // the same preservation and independent acceptance gates. The original first
+  // candidate remains the fallback if repair is unsafe or unhelpful.
+  if (!preservationPassed(preservation)) {
+    try {
+      const repaired = await repairPreservationCandidate({
+        sourceText,
+        candidateResult: { revised_text: recoveredText, preservation },
+        lengthPreference,
+      });
+      residualPreservationRepair = repaired.preservation_repair || { attempted: true, passed: false };
+      if (residualPreservationRepair.passed) {
+        recoveredText = repaired.revised_text;
+        preservation = repaired.preservation;
+      }
+    } catch (error) {
+      residualPreservationRepair = {
+        attempted: true,
+        passed: false,
+        error: { code: error.code || error.healthState || "RESIDUAL_PRESERVATION_REPAIR_FAILED", message: error.message || "Residual preservation repair failed." },
+      };
+    }
+  }
+
+  const after = analyseResidualWriting(recoveredText);
   const afterScore = Number(after.metrics.total_risk_score || 0);
   const noResidualRegression = afterScore <= Math.max(beforeScore + 1, sourceScore + 2);
   const preservationOk = preservationPassed(preservation);
   const afterAcceptance = auditOutputAcceptance({
     sourceText,
-    candidateText: reworkedText,
+    candidateText: recoveredText,
     styleFilters,
     rewriteIntensity,
     naturalisation,
@@ -441,7 +471,7 @@ export async function selectiveResidualRework({
         : !noResidualRegression
           ? "Completed-output recovery was rejected because local residual risk materially regressed."
           : `Completed-output recovery did not materially improve the independent acceptance audit (${beforeAcceptance.score} → ${afterAcceptance.score}); the prior candidate was retained.`,
-    revised_text: accepted ? reworkedText : candidateText,
+    revised_text: accepted ? recoveredText : candidateText,
     source_baseline: sourceBaseline,
     source_risk_score: sourceScore,
     candidate_risk_score: beforeScore,
@@ -452,6 +482,7 @@ export async function selectiveResidualRework({
     attempted_after: after,
     preservation: accepted ? preservation : null,
     attempted_preservation: preservation,
+    residual_preservation_repair: residualPreservationRepair,
     output_acceptance_before: beforeAcceptance,
     output_acceptance_after: accepted ? afterAcceptance : beforeAcceptance,
     attempted_output_acceptance_after: afterAcceptance,

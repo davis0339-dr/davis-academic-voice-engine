@@ -36,6 +36,9 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
   const intensity = ["auto", "minor", "moderate", "deep"].includes(requestedIntensity) ? requestedIntensity : "auto";
   const explicitMinor = intensity === "minor";
   const explicitModerate = intensity === "moderate";
+  const assertiveNaturalisation = ["aggressive", "authorial"].includes(String(requestedNaturalisation || "").toLowerCase());
+  const machinePatternPressure = Number(authorialTexture?.machine_pattern_regularity?.score || 0);
+  const materialMachinePattern = machinePatternPressure >= 0.34;
   const selectiveDevelopment = effectiveIntent === "context_scholarly_strengthening";
   const authorialMode = requestedNaturalisation === "authorial" && intensity === "deep";
   const authorialDiscourseMode = authorialMode && effectiveIntent === "discourse_reconstruction";
@@ -70,6 +73,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
   }
 
   if (explicitModerate) {
+    const preserveSourceExpression = !(assertiveNaturalisation && materialMachinePattern);
     const developmentCeiling = selectiveDevelopment
       ? Number(clamp(Math.max(interventionRatio + 0.28, substantiveRatio + 0.20), 0.25, 0.75).toFixed(3))
       : Number(clamp(interventionRatio + 0.20, 0.15, 0.60).toFixed(3));
@@ -80,8 +84,8 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     return {
       version: "intervention-authority-v8",
       preservation_priority: priority,
-      preservation_basis: "surface_and_semantic_fidelity",
-      surface_preservation_required: true,
+      preservation_basis: preserveSourceExpression ? "surface_and_semantic_fidelity" : "semantic_evidential_fidelity",
+      surface_preservation_required: preserveSourceExpression,
       discourse_development_permission: selectiveDevelopment ? "selective_paragraph_development_without_resequence" : "sentence_flow_only",
       breadth: selectiveDevelopment ? "author_selected_moderate_developmental" : "author_selected_moderate",
       authorial_mode: false,
@@ -97,11 +101,15 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
       planned_discourse_repackage_ratio: Number(discourseRatio.toFixed(3)),
       max_changed_sentence_ratio: developmentCeiling,
       max_substantive_operation_ratio: substantiveCeiling,
-      min_changed_sentence_ratio: 0,
-      minimum_basis: "no_change_quota_for_moderate_edit",
+      min_changed_sentence_ratio: assertiveNaturalisation && materialMachinePattern
+        ? Number(clamp(Math.max(0.22, substantiveRatio * 0.35), 0.22, 0.45).toFixed(3))
+        : 0,
+      minimum_basis: assertiveNaturalisation && materialMachinePattern
+        ? "machine_pattern_execution_plausibility_floor"
+        : "no_change_quota_for_moderate_edit",
       effective_intent: effectiveIntent || null,
       rule: selectiveDevelopment
-        ? "Moderate may change a high proportion of sentences when machine-patterned expression is distributed across the source. Change percentage is diagnostic, not a failure condition. The hard boundaries are preservation of meaning, evidence, citations, study stage and argument, plus no paragraph resequencing or unsupported expansion; word-count growth is never a target."
+        ? `Moderate may change a high proportion of sentences when machine-patterned expression is distributed across the source. ${preserveSourceExpression ? "Source expression remains protected for this run." : "Because assertive naturalisation was selected and machine-pattern pressure is material, source wording and sentence shells are not preservation targets; meaning, evidence, citations, study stage and argument remain protected."} Change percentage is diagnostic, not a target. Paragraph resequencing, unsupported claims and factual or argumentative drift remain prohibited, and word-count growth is never a target.`
         : "Moderate may restructure sentences broadly where clarity, cadence or machine-patterned expression requires it. Change percentage is diagnostic rather than a rejection rule; paragraph resequencing, unsupported claims and factual or argumentative drift remain prohibited, and word-count growth is never a target.",
     };
   }

@@ -33,6 +33,12 @@
     return "fail";
   }
 
+  function finalOutputNotCleared(rewrite) {
+    const finalStatus = String(rewrite?.candidate_verdict?.final_status || "").toLowerCase();
+    if (!finalStatus) return false;
+    return !["accepted", "accepted_with_execution_variance", "accepted_with_residual_risks"].includes(finalStatus);
+  }
+
   function summaryChips(obj, cls = "") {
     const entries = Object.entries(obj || {}).filter(([, value]) => Number(value) > 0);
     if (!entries.length) return '<span class="pov-muted">None</span>';
@@ -138,9 +144,10 @@
     }
 
     const status = statusLabel(compliance);
+    const outputBlocked = finalOutputNotCleared(rewrite);
     const complianceHtml = compliance ? `
-      <div class="pov-compliance ${statusClass(compliance)}">
-        <div class="pov-title-row"><strong>Execution evidence: ${esc(status)}</strong><span class="pov-score">score ${esc(compliance.execution_score ?? compliance.score ?? "n/a")}</span></div>
+      <div class="pov-compliance ${outputBlocked ? "warn" : statusClass(compliance)}">
+        <div class="pov-title-row"><strong>Plan-operation evidence: ${esc(status)}${outputBlocked ? " · FINAL OUTPUT NOT CLEARED" : ""}</strong><span class="pov-score">score ${esc(compliance.execution_score ?? compliance.score ?? "n/a")}</span></div>
         <div class="pov-grid compact">
           <div><span>Concrete planned operations</span><strong>${esc(concretePlanned)}</strong></div>
           <div><span>Discourse-repackage scope</span><strong>${esc(discourseScope)}</strong></div>
