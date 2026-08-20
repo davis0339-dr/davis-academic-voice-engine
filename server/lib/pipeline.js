@@ -74,6 +74,8 @@ export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarInt
       paragraph_patterns: diagnostics.paragraph_patterns,
       rhetorical_scaffolding: diagnostics.rhetorical_scaffolding,
       text_structure: diagnostics.text_structure,
+      machine_language_forensics: diagnostics.machine_language_forensics,
+      discourse_regularity_forensics: diagnostics.discourse_regularity_forensics,
       discourse_architecture: diagnostics.discourse_architecture,
       argumentative_sufficiency: diagnostics.argumentative_sufficiency,
       qualitative_human_discourse: diagnostics.qualitative_human_discourse,

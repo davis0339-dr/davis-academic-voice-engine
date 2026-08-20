@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { assessSourceBeforeRewrite } from "../server/lib/sourceAssessment.js";
 import { buildDiagnosisScopedPlan } from "../server/lib/diagnosisScopedPlanner.js";
+import { analyse } from "../server/lib/pipeline.js";
 
 const aiBenchmark = fs.readFileSync(new URL("./fixtures/detector-benchmark/ai-sample-01-ridwan-salaudeen.txt", import.meta.url), "utf8");
 const humanBenchmark = fs.readFileSync(new URL("./fixtures/detector-benchmark/human-sample-01-corporate-governance.txt", import.meta.url), "utf8");
@@ -62,4 +63,18 @@ test("the interface names the measure as pressure and explicitly rejects an AI-p
   assert.match(ui, /index.*\/100/);
   assert.match(plannerUi, /Machine-language target units/);
   assert.match(plannerUi, /recurrence-based style evidence, not an authorship probability/);
+});
+
+test("the public analysis payload retains the machine-language evidence used by the planner", () => {
+  const result = analyse({
+    sourceText: machineDraft,
+    styleFilters: {},
+    rewriteIntensity: "moderate",
+    grammarIntensity: "standard",
+    lengthPreference: "maintain",
+    naturalisation: "aggressive",
+  });
+  assert.equal(result.diagnostics.machine_language_forensics?.available, true);
+  assert.ok(result.diagnostics.machine_language_forensics.metrics?.hit_sentence_count > 0);
+  assert.ok(result.plan.machineLanguageExecution?.targeted_sentence_count > 0);
 });
