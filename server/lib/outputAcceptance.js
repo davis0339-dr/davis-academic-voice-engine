@@ -229,10 +229,36 @@ function sourceDependence(sourceText, candidateText) {
   const candidateSentences = splitSentences(candidateText).map(normalise).filter(Boolean);
   const unchanged = candidateSentences.filter((sentence) => sourceSentences.has(sentence)).length;
   const exact = candidateSentences.length ? unchanged / candidateSentences.length : 0;
+  const paragraphRows = narrativeView(candidateText)
+    .map((row) => {
+      const paragraphGrams = ngramSet(row.text, 5);
+      let paragraphOverlap = 0;
+      paragraphGrams.forEach((gram) => { if (source.has(gram)) paragraphOverlap += 1; });
+      const fiveGramOverlap = paragraphGrams.size ? paragraphOverlap / paragraphGrams.size : 0;
+      const sentences = splitSentences(row.text).map(normalise).filter(Boolean);
+      const exactSentenceCount = sentences.filter((sentence) => sourceSentences.has(sentence)).length;
+      const exactSentenceRatio = sentences.length ? exactSentenceCount / sentences.length : 0;
+      const score = clamp01(fiveGramOverlap * 0.72 + exactSentenceRatio * 0.28);
+      return {
+        paragraph_index: row.index,
+        word_count: words(row.text).length,
+        five_gram_overlap: Number(fiveGramOverlap.toFixed(3)),
+        exact_sentence_retention_ratio: Number(exactSentenceRatio.toFixed(3)),
+        score: Number(score.toFixed(3)),
+      };
+    })
+    .filter((row) => row.word_count >= 20);
+  const targetParagraphIndices = paragraphRows
+    .filter((row) => row.score >= 0.72 || row.exact_sentence_retention_ratio >= 0.34)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map((row) => row.paragraph_index);
   return {
     five_gram_overlap: Number(fiveGram.toFixed(3)),
     exact_sentence_retention_ratio: Number(exact.toFixed(3)),
     score: Number(clamp01(fiveGram * 0.72 + exact * 0.28).toFixed(3)),
+    paragraph_rows: paragraphRows,
+    target_paragraph_indices: targetParagraphIndices,
   };
 }
 
@@ -444,6 +470,7 @@ export function auditOutputAcceptance({
   else if (uniqueReasons.length) status = "review_required";
 
   const targetParagraphIndices = [...new Set([
+    ...(dependence.target_paragraph_indices || []),
     ...(candidateMachine.choreography.target_paragraph_indices || []),
     ...(candidateMachine.machine_language?.target_paragraph_indices || []),
     ...calibratedTargetParagraphs(candidateMachine.discourse_regularity),

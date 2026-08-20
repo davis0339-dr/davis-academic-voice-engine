@@ -92,6 +92,18 @@ test("completed-output audit does not clear polished paragraph choreography mere
   assert.equal(audit.release_gate.external_detector_check_recommended, false);
 });
 
+test("near-copy paragraph locations are routed into completed-output repair", () => {
+  const nearCopyCandidate = patternedSource.replace(
+    "Corporate debt is a central source of financing for U.S. businesses, but creditors also consider governance.",
+    "Creditors consider governance alongside the firm's financial position when pricing corporate debt."
+  );
+  const audit = aggressiveAudit(patternedSource, nearCopyCandidate);
+  assert.ok(audit.source_dependence.target_paragraph_indices.length > 0);
+  assert.ok(audit.target_paragraph_indices.some((index) => audit.source_dependence.target_paragraph_indices.includes(index)));
+  const retainedRows = audit.source_dependence.paragraph_rows.filter((row) => row.exact_sentence_retention_ratio >= 0.34 || row.score >= 0.72);
+  assert.ok(retainedRows.length > 0);
+});
+
 test("argument-governed asymmetry materially improves the independent acceptance profile", () => {
   const bad = aggressiveAudit(patternedSource, polishedButChoreographed);
   const improved = aggressiveAudit(patternedSource, asymmetricCandidate);

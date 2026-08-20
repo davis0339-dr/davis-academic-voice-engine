@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shouldAcceptResidualCandidate } from "../server/lib/residualRework.js";
+import { prioritiseResidualBlockIndices, shouldAcceptResidualCandidate } from "../server/lib/residualRework.js";
+
+test("completed-output near-copy and duplication targets receive the finite repair budget first", () => {
+  assert.deepEqual(
+    prioritiseResidualBlockIndices([9, 4, 8], [1, 2, 3, 4, 5], 4),
+    [9, 4, 8, 1]
+  );
+});
 
 test("accepts a preservation-safe residual candidate when machine risk falls materially and the independent audit does not worsen", () => {
   const accepted = shouldAcceptResidualCandidate({

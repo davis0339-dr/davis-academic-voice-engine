@@ -72,12 +72,39 @@ export function analysePropositionEcho(text) {
     });
   }
 
+  const paragraphPairs = [];
+  for (let i = 0; i < rows.length - 1; i += 1) {
+    const left = rows[i];
+    const right = rows[i + 1];
+    const leftTokens = tokenSet(left.text);
+    const rightTokens = tokenSet(right.text);
+    if (leftTokens.size < 18 || rightTokens.size < 18) continue;
+    const score = similarity(leftTokens, rightTokens);
+    if (score.containment < 0.72 || score.jaccard < 0.50) continue;
+    paragraphPairs.push({
+      first_paragraph_index: left.paragraphIndex,
+      second_paragraph_index: right.paragraphIndex,
+      containment: Number(score.containment.toFixed(3)),
+      jaccard: Number(score.jaccard.toFixed(3)),
+      first_excerpt: left.text.slice(0, 320),
+      second_excerpt: right.text.slice(0, 320),
+    });
+  }
+
+  const targetParagraphIndices = [...new Set([
+    ...pairs.map((pair) => pair.paragraph_index),
+    ...paragraphPairs.flatMap((pair) => [pair.first_paragraph_index, pair.second_paragraph_index]),
+  ])];
+
   return {
-    version: "proposition-echo-v1",
-    count: pairs.length,
+    version: "proposition-echo-v2",
+    count: pairs.length + paragraphPairs.length,
+    sentence_pair_count: pairs.length,
+    paragraph_pair_count: paragraphPairs.length,
     pairs,
+    paragraph_pairs: paragraphPairs,
     sentence_indices: [...new Set(pairs.flatMap((pair) => [pair.first_sentence_index, pair.second_sentence_index]))],
-    target_paragraph_indices: [...new Set(pairs.map((pair) => pair.paragraph_index))],
-    note: "Local proposition echoes indicate likely reconstruction-plus-retention duplication. The measure uses conservative lexical-semantic containment and does not treat normal construct repetition as redundancy.",
+    target_paragraph_indices: targetParagraphIndices,
+    note: "Local sentence or adjacent-paragraph proposition echoes indicate likely reconstruction-plus-retention duplication. The measure uses conservative lexical-semantic containment and does not treat normal construct repetition as redundancy.",
   };
 }

@@ -141,6 +141,10 @@ function acceptanceTargetBlockIndices(candidateText, candidateStructure, accepta
   return [...new Set(found)];
 }
 
+export function prioritiseResidualBlockIndices(forensicBlockIndices = [], legacyBlockIndices = [], maxBlocks = 8) {
+  return [...new Set([...forensicBlockIndices, ...legacyBlockIndices])].slice(0, maxBlocks);
+}
+
 function machineForensicLabels(acceptance, blockIndex, candidateStructure) {
   const block = candidateStructure.blocks[blockIndex];
   if (!block) return [];
@@ -227,6 +231,13 @@ function machineForensicLabels(acceptance, blockIndex, candidateStructure) {
       action: "Rebuild the local proposition packaging without changing the researcher's meaning, evidence, qualifications, or technical decisions.",
     });
   }
+  if (reasons.includes("proposition_echo_introduced") || reasons.includes("proposition_echo_residual")) {
+    labels.push({
+      id: "reconstruction_retention_duplication",
+      interpretation: "This block is part of a sentence- or paragraph-level source-plus-reconstruction echo. The same intellectual contribution appears more than once.",
+      action: "Coordinate with the neighbouring target block so each distinct proposition, qualification, citation and rhetorical function appears once. Do not retain an original paragraph beside its reconstructed replacement.",
+    });
+  }
   return labels;
 }
 
@@ -264,7 +275,7 @@ Important lessons from prior testing:
 - Keep source-defined taxonomies and product modes when the categories are substantive. Remove only rhetorical packaging that creates categories for neatness rather than meaning.
 - Formal academic artefacts such as purpose statements, research questions and hypotheses are not targets merely because they are formulaic.
 - Do not add facts, citations, studies, context, examples or claims that are not already present.
-- Remove reconstruction-plus-retention echoes: when two neighbouring sentences perform the same intellectual job and express the same proposition, integrate that content once. Do not delete a genuinely distinct qualification, relationship, interpretation or implication merely because vocabulary overlaps.
+- Remove reconstruction-plus-retention echoes across both sentences and adjacent paragraphs. When an original paragraph and its reconstructed replacement both survive, rebuild the two target blocks as complementary reasoning units so each distinct proposition, qualification, citation and rhetorical function appears once. Do not preserve the source paragraph beside its replacement, and do not delete a genuinely distinct contribution merely because vocabulary overlaps.
 - HARD_PROTECTED_SPANS supplied for a block must remain verbatim in that block's revised text.
 
 Return JSON only in this exact shape:
@@ -340,7 +351,10 @@ export async function selectiveResidualRework({
   const sourceStructure = parseTextStructure(sourceText);
   const forensicBlockIndices = acceptanceTargetBlockIndices(candidateText, candidateStructure, beforeAcceptance);
   const legacyBlockIndices = before.target_blocks.map((target) => target.blockIndex);
-  const targetBlockIndices = [...new Set([...legacyBlockIndices, ...forensicBlockIndices])].slice(0, maxBlocks);
+  // Completed-output failures take priority over legacy stylistic targets. A
+  // near-copy paragraph or source-plus-reconstruction duplicate must not be
+  // displaced from the finite recovery budget by lower-value cadence signals.
+  const targetBlockIndices = prioritiseResidualBlockIndices(forensicBlockIndices, legacyBlockIndices, maxBlocks);
   const acceptanceNeedsRecovery = beforeAcceptance.status !== "pass" && forensicBlockIndices.length > 0;
   const shouldAttempt = targetBlockIndices.length > 0 && (before.should_rework || candidateWorseThanSource || acceptanceNeedsRecovery);
 
