@@ -63,6 +63,15 @@ test("Deep machine-language scope is proportional rather than silently capped at
   assert.ok(plan.machineLanguageExecution.targeted_sentence_count > 18);
 });
 
+test("Moderate aggressive can locally rebuild diagnosed paragraphs without paragraph resequencing", () => {
+  const plan = analyse({ sourceText: machineDraft, styleFilters: {}, rewriteIntensity: "moderate", grammarIntensity: "standard", naturalisation: "aggressive", lengthPreference: "maintain" }).plan;
+  assert.ok(plan.moderateDiscourseExecution?.target_paragraph_blocks?.length > 0);
+  assert.ok(plan.summary.DISCOURSE_REPACKAGE > 0);
+  assert.equal(plan.moderateDiscourseExecution.paragraph_reordering_authorised, false);
+  assert.ok(plan.items.some((item) => item.decisionCode === "MODERATE_LOCAL_DISCOURSE_REPACKAGE"));
+  assert.equal(Number(plan.summary.PARAGRAPH_REORDER || 0), 0);
+});
+
 test("assertive mode does not manufacture machine-language scope for the human benchmark", () => {
   const diagnostics = assessSourceBeforeRewrite({ text: humanBenchmark, styleFilters: {} }).diagnostics;
   const plan = buildDiagnosisScopedPlan(diagnostics, {

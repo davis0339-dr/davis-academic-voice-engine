@@ -211,6 +211,50 @@ function machineLanguageExecutionScope(plan, diagnostics, { requestedIntensity, 
   return plan;
 }
 
+function moderateLocalDiscourseScope(plan, { requestedIntensity, requestedNaturalisation }) {
+  const assertiveExpression = ["aggressive", "authorial"].includes(requestedNaturalisation);
+  if (requestedIntensity !== "moderate" || !assertiveExpression) return plan;
+
+  const rebuildBlocks = (plan.paragraphPlan || [])
+    .filter((row) => row.primaryAction === "REBUILD_DISCOURSE" || (row.actions || []).includes("REBUILD_DISCOURSE"))
+    .map((row) => Number.isInteger(row.paragraphBlockIndex) ? row.paragraphBlockIndex : row.blockIndex)
+    .filter(Number.isInteger)
+    .slice(0, 3);
+  if (!rebuildBlocks.length) return plan;
+
+  const targetBlocks = new Set(rebuildBlocks);
+  const targetedSentenceIndices = [];
+  let escalated = 0;
+  plan.items = (plan.items || []).map((item) => {
+    if (!targetBlocks.has(item.paragraphBlockIndex) || FORMAL_KEEP_CODES.has(item.decisionCode)) return item;
+    targetedSentenceIndices.push(item.sentenceIndex);
+    if (item.level !== "DISCOURSE_REPACKAGE") escalated += 1;
+    return {
+      ...item,
+      level: "DISCOURSE_REPACKAGE",
+      decisionCode: "MODERATE_LOCAL_DISCOURSE_REPACKAGE",
+      reasons: [
+        ...(item.reasons || []),
+        "The paragraph was independently diagnosed for discourse reconstruction. Moderate + Aggressive permits bounded local redevelopment inside this paragraph while preserving paragraph order, macro-argument, propositions, evidence, qualifications and transitions.",
+        "Reconstruct the paragraph as one reasoning unit rather than paraphrasing its sentences independently. Do not resequence paragraphs or expand this authority to undiagnosed blocks.",
+      ],
+    };
+  });
+
+  plan.summary = summarise(plan.items);
+  plan.moderateDiscourseExecution = {
+    available: true,
+    mode: "bounded_local_discourse_reconstruction",
+    target_paragraph_blocks: rebuildBlocks,
+    targeted_sentence_count: targetedSentenceIndices.length,
+    newly_escalated_sentence_count: escalated,
+    targeted_sentence_indices: targetedSentenceIndices,
+    paragraph_reordering_authorised: false,
+    principle: "Moderate may rebuild diagnosed paragraphs locally, but it preserves paragraph order and cannot become whole-document Deep reconstruction.",
+  };
+  return plan;
+}
+
 export const DEEP_AUTHORIAL_PROTOCOL = Object.freeze([
     "DEEP AUTHORIAL V4 EXECUTION PROTOCOL: this is not a sentence-by-sentence paraphrase pass. Before drafting each authorised substantive paragraph, recover its protected proposition/evidence ledger: claim(s), evidence/citation attachment, qualification/condition, measurement distinction, mechanism, setting/time context, and rhetorical purpose. Reconstruct from that ledger rather than walking through source sentence shells in order.",
     "PRESERVE RESEARCH, NOT AUTOMATICALLY SURFACE PACKAGING: factual meaning, citations, statistics, variables, hypotheses, methods, chronology, study stage, technical terminology and epistemic strength are immutable. Sentence boundaries, grammatical subjects, clause order, local information packaging and paragraph development are available for reconstruction only where diagnosis supports intervention.",
@@ -258,6 +302,10 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     requestedIntensity,
     requestedNaturalisation,
   });
+  plan = moderateLocalDiscourseScope(plan, {
+    requestedIntensity,
+    requestedNaturalisation,
+  });
 
   plan.intensity = requestedIntensity;
   plan.diagnosticIntensity = diagnosticIntensity;
@@ -271,7 +319,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
   // to interpret a compatibility-string bump as a different policy contract.
   plan.scopePolicyVersion = "diagnosis-guided-authority-v3";
   plan.authorialProtocolVersion = authorialAuthority ? "proposition-led-authorial-reconstruction-v4.1" : null;
-  plan.scopeImplementationVersion = "diagnosis-guided-authority-v5.2";
+  plan.scopeImplementationVersion = "diagnosis-guided-authority-v5.3";
   plan.forensicScopeVersion = diagnostics?.discourse_regularity_forensics?.version || null;
   plan.machineLanguageForensicsVersion = diagnostics?.machine_language_forensics?.version || null;
 
@@ -283,7 +331,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     "Modern machine-language forensics examines recurrence of polished editorial pivots, abstract issue-framing, binary qualification, compressed synthesis, discourse-management wording and nominalisation pressure. It is a style diagnostic, not an authorship classifier, and no single phrase is banned in isolation.",
     "High grammar, clarity and sophistication do not override machine-language or discourse-regularity evidence. An academically polished candidate may still require reconstruction when its language repeatedly manages the reader through predictable editorial frames rather than allowing the substantive reasoning to carry the prose.",
     "Minor remains local and restrained; Moderate permits sentence/flow restructuring and selective diagnosed development; Deep permits diagnosed structural redevelopment.",
-    "Moderate + Aggressive may substantially restructure the diagnosed sentence/flow leverage points identified by discourse forensics, while still blocking silent paragraph resequencing or wholesale discourse reconstruction.",
+    "Moderate + Aggressive may substantially restructure diagnosed sentence/flow leverage points and may locally rebuild paragraphs explicitly marked REBUILD_DISCOURSE, while still blocking paragraph resequencing, undiagnosed paragraph redevelopment or wholesale document reconstruction.",
     "Deep + Aggressive/Authorial authorises paragraph-level reconstruction where paragraph/discourse diagnosis or machine-pattern regularity supports it, even if individual sentences are grammatically clean.",
     "CAN_CHANGE and SHOULD_CHANGE are separate decisions. Deep authority never creates a requirement to rewrite every clean unit.",
     "A Deep/Authorial request must not be silently collapsed into local synonym polishing where genuine reconstruction has been diagnosed.",
@@ -311,7 +359,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
           ? "Deep structural authority is available where diagnosis supports it; permission does not itself create a need to reconstruct clean material."
           : null,
       ["aggressive", "authorial"].includes(requestedNaturalisation) && requestedIntensity === "moderate"
-        ? "Aggressive/Authorial expression is permitted at the sentence/flow level. Cross-paragraph forensic leverage points may receive substantive sentence restructuring, but the Moderate ceiling blocks silent paragraph resequencing or wholesale discourse reconstruction."
+        ? "Aggressive expression is permitted at the sentence/flow level. Paragraphs explicitly diagnosed as REBUILD_DISCOURSE may receive bounded local redevelopment, but the Moderate ceiling still blocks paragraph resequencing, undiagnosed paragraph reconstruction and wholesale document redevelopment."
         : null,
       requestedLength === "expand"
         ? "Expand is permission to develop diagnosed intellectual work from available content/evidence; no global word-growth quota is created."

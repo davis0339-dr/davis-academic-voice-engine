@@ -90,10 +90,10 @@ export function resolveRewriteModePolicy({ rewriteIntensity, naturalisation, aut
       universal_rewrite_authorised: false,
       adaptive_reconstruction: effectiveNat !== "off",
       authorial_reconstruction: false,
-      plan_execution_priority: "sentence_flow_and_selective_development",
+      plan_execution_priority: "sentence_flow_and_bounded_local_discourse",
       detector_targeting: false,
       depth_permission: "moderate_diagnostic_ceiling",
-      rationale: "The author explicitly selected Moderate. The engine may restructure sentences, repair flow and selectively develop diagnosed under-explained reasoning, but may not silently convert the run into wholesale discourse reconstruction or paragraph resequencing. Aggressive/Authorial treatment may alter authorised sentence-level expression, but it cannot enlarge the Moderate structural ceiling. High surface quality alone does not create an expressive-preservation veto.",
+      rationale: "The author explicitly selected Moderate. The engine may restructure sentences, repair flow, selectively develop diagnosed under-explained reasoning and locally rebuild paragraphs explicitly diagnosed for discourse reconstruction. It may not resequence paragraphs, reconstruct undiagnosed blocks or silently convert the run into whole-document Deep redevelopment. High surface quality alone does not create an expressive-preservation veto.",
     };
   }
 

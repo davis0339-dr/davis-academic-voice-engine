@@ -41,7 +41,7 @@ test("Moderate preserves the structural ceiling while honouring aggressive/autho
   assert.equal(policy.effective_intensity, "moderate");
   assert.equal(policy.authorial_reconstruction, false);
   assert.equal(policy.depth_permission, "moderate_diagnostic_ceiling");
-  assert.equal(policy.plan_execution_priority, "sentence_flow_and_selective_development");
+  assert.equal(policy.plan_execution_priority, "sentence_flow_and_bounded_local_discourse");
   assert.equal(policy.universal_rewrite_authorised, false);
 });
 
