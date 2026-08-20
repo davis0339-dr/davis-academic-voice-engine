@@ -277,6 +277,13 @@ export function analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
     paragraphCompression.length > 0
   );
   const passed = !maintainedLengthHardFailure && !materialPropositionLoss && !materialRoleLoss && semantic.length === 0;
+  const roleChangeCounts = {
+    topic_or_framing: countRole("paragraph_thesis_or_topic") + countRole("conceptual_framing"),
+    transitions: countRole("geographic_or_conceptual_transition") + countRole("narrowing_transition") + countRole("temporal_transition") + countRole("link_forward"),
+    interpretation: countRole("authorial_interpretation") + countRole("implication") + countRole("synthesis"),
+    qualification_or_caveat: countRole("evidence_qualification") + countRole("limitation_caveat") + countRole("methodological_qualification"),
+    contrast_or_concession: countRole("contrast") + countRole("concession"),
+  };
 
   return {
     audit_version: "rhetorical-semantic-v1",
@@ -293,11 +300,20 @@ export function analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
     possible_proposition_losses: possibleLosses,
     material_proposition_loss: materialPropositionLoss,
     material_rhetorical_role_loss: materialRoleLoss,
-    topic_or_framing_sentences_lost: countRole("paragraph_thesis_or_topic") + countRole("conceptual_framing"),
-    transitions_lost: countRole("geographic_or_conceptual_transition") + countRole("narrowing_transition") + countRole("temporal_transition") + countRole("link_forward"),
-    interpretive_statements_lost: countRole("authorial_interpretation") + countRole("implication") + countRole("synthesis"),
-    qualifications_or_caveats_lost: countRole("evidence_qualification") + countRole("limitation_caveat") + countRole("methodological_qualification"),
-    contrast_or_concession_lost: countRole("contrast") + countRole("concession"),
+    // Marker-based role changes are corroborative evidence, not proof of loss:
+    // a deep reconstruction can preserve a transition or interpretation using
+    // different lexical cues. Only publish a role as "lost" when the audit's
+    // independent compression/proposition evidence makes that loss material.
+    possible_topic_or_framing_role_changes: roleChangeCounts.topic_or_framing,
+    possible_transition_role_changes: roleChangeCounts.transitions,
+    possible_interpretive_role_changes: roleChangeCounts.interpretation,
+    possible_qualification_or_caveat_role_changes: roleChangeCounts.qualification_or_caveat,
+    possible_contrast_or_concession_role_changes: roleChangeCounts.contrast_or_concession,
+    topic_or_framing_sentences_lost: materialRoleLoss ? roleChangeCounts.topic_or_framing : 0,
+    transitions_lost: materialRoleLoss ? roleChangeCounts.transitions : 0,
+    interpretive_statements_lost: materialRoleLoss ? roleChangeCounts.interpretation : 0,
+    qualifications_or_caveats_lost: materialRoleLoss ? roleChangeCounts.qualification_or_caveat : 0,
+    contrast_or_concession_lost: materialRoleLoss ? roleChangeCounts.contrast_or_concession : 0,
     modality_changes: semantic.filter((item) => item.type === "modality_or_certainty"),
     causality_changes: semantic.filter((item) => item.type === "causality"),
     scope_or_generalisation_changes: semantic.filter((item) => item.type === "scope_or_generalisation"),

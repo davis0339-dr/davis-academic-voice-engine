@@ -325,6 +325,12 @@ function renderPreservation(preservation) {
       <div class="warning-item ${rhetorical.transitions_lost ? "bad" : ""}">Transitions lost: ${escapeHtml(rhetorical.transitions_lost || 0)}</div>
       <div class="warning-item ${rhetorical.interpretive_statements_lost ? "bad" : ""}">Interpretive statements lost: ${escapeHtml(rhetorical.interpretive_statements_lost || 0)}</div>
       <div class="warning-item ${rhetorical.qualifications_or_caveats_lost ? "bad" : ""}">Qualifications/caveats lost: ${escapeHtml(rhetorical.qualifications_or_caveats_lost || 0)}</div>
+      <div class="warning-item">Possible topic/framing role changes (review evidence): ${escapeHtml(rhetorical.possible_topic_or_framing_role_changes || 0)}</div>
+      <div class="warning-item">Possible transition role changes (review evidence): ${escapeHtml(rhetorical.possible_transition_role_changes || 0)}</div>
+      <div class="warning-item">Possible interpretation role changes (review evidence): ${escapeHtml(rhetorical.possible_interpretive_role_changes || 0)}</div>
+      <div class="warning-item">Possible qualification/caveat role changes (review evidence): ${escapeHtml(rhetorical.possible_qualification_or_caveat_role_changes || 0)}</div>
+      <div class="warning-item">Possible contrast/concession role changes (review evidence): ${escapeHtml(rhetorical.possible_contrast_or_concession_role_changes || 0)}</div>
+      <p class="muted">Role-marker changes are supporting evidence only. They are reported as losses above only when proposition loss or material compression independently corroborates them.</p>
       <div class="warning-item ${(rhetorical.modality_changes || []).length ? "bad" : ""}">Modality/certainty changes: ${escapeHtml((rhetorical.modality_changes || []).length)}</div>
       <div class="warning-item ${(rhetorical.causality_changes || []).length ? "bad" : ""}">Causality changes: ${escapeHtml((rhetorical.causality_changes || []).length)}</div>
       <div class="warning-item ${(rhetorical.scope_or_generalisation_changes || []).length ? "bad" : ""}">Scope/generalisation changes: ${escapeHtml((rhetorical.scope_or_generalisation_changes || []).length)}</div>

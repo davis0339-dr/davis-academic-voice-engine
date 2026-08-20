@@ -43,7 +43,9 @@ test("role-marker changes remain review evidence when propositions and paragraph
     .replace("Canada provides a complementary picture.", "The Canadian evidence extends the comparison.");
   const report = analyseRhetoricalSemanticPreservation(source, reconstructed, { lengthPreference: "maintain" });
   assert.ok(report.role_losses.length > 0);
+  assert.ok(report.possible_transition_role_changes > 0);
   assert.equal(report.material_rhetorical_role_loss, false);
+  assert.equal(report.transitions_lost, 0);
   assert.equal(report.passed, true);
 });
 
