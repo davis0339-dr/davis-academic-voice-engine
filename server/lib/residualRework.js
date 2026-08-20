@@ -47,6 +47,30 @@ export function shouldAcceptResidualCandidate({
   const acceptanceBetter = acceptanceImproved(beforeAcceptance, afterAcceptance);
   const acceptanceCleared = afterAcceptance.status === "pass";
   const acceptanceNotWorse = Number(afterAcceptance.score || 0) >= Number(beforeAcceptance.score || 0);
+  const beforeAcceptanceScore = Number(beforeAcceptance.score || 0);
+  const afterAcceptanceScore = Number(afterAcceptance.score || 0);
+  const veryLargeResidualGain = beforeScore >= 12 && afterScore <= Math.min(beforeScore - 15, Math.floor(beforeScore * 0.55));
+  const acceptanceNearlyStable = afterAcceptanceScore >= beforeAcceptanceScore - 2;
+  const beforeReasons = new Set(beforeAcceptance.reasons || []);
+  const afterReasons = new Set(afterAcceptance.reasons || []);
+  const newAcceptanceReasons = [...afterReasons].filter((reason) => !beforeReasons.has(reason));
+  const afterHardFailures = afterAcceptance.hard_failures || [];
+  const beforeDimensions = beforeAcceptance.dimensions || {};
+  const afterDimensions = afterAcceptance.dimensions || {};
+  const noMaterialAcceptanceRegression = (
+    Number(afterDimensions.candidate_machine_pattern || 0) <= Number(beforeDimensions.candidate_machine_pattern || 0) + 0.03 &&
+    Number(afterDimensions.candidate_machine_language || 0) <= Number(beforeDimensions.candidate_machine_language || 0) + 0.03 &&
+    Number(afterDimensions.candidate_discourse_regularity || 0) <= Number(beforeDimensions.candidate_discourse_regularity || 0) + 0.03 &&
+    Number(afterDimensions.source_dependence || 0) <= Number(beforeDimensions.source_dependence || 0) + 0.04 &&
+    Number(afterDimensions.candidate_authorial_texture || 0) >= Number(beforeDimensions.candidate_authorial_texture || 0) - 0.05
+  );
+  const largeSafeResidualGain = (
+    veryLargeResidualGain &&
+    acceptanceNearlyStable &&
+    noMaterialAcceptanceRegression &&
+    newAcceptanceReasons.length === 0 &&
+    afterHardFailures.length === 0
+  );
 
   return Boolean(
     preservationOk &&
@@ -54,7 +78,8 @@ export function shouldAcceptResidualCandidate({
     (
       acceptanceCleared ||
       acceptanceBetter ||
-      (riskMateriallyImproved && acceptanceNotWorse)
+      (riskMateriallyImproved && acceptanceNotWorse) ||
+      largeSafeResidualGain
     )
   );
 }
