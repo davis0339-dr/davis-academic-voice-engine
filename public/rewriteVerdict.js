@@ -121,6 +121,7 @@
     const varianceReasons = compliance.execution_variance_reasons || [];
     const drift = driftStatus(iterative);
     const finalStatus = finalDisplayStatus(verdict, iterative);
+    const rejectedPreservationWarnings = latestRewrite.rejected_preservation_failure?.preservation?.warnings || [];
     const driftReasons = iterative?.reasons || [];
     const deltas = iterative?.deltas_from_root || {};
 
@@ -171,6 +172,7 @@
           <div>${esc(safetyFallback.reason || "The source was returned unchanged because no safe edit survived the preservation safeguards.")}</div>
         </div>
       ` : ""}
+      ${rejectedPreservationWarnings.length ? `<details class="rv4-alert" open><summary>Why the generated candidate was rejected</summary>${rejectedPreservationWarnings.map((warning) => `<p><strong>${esc(title(warning.type))}:</strong> ${esc(warning.detail)}</p>`).join("")}</details>` : ""}
       ${residual ? `
         <div class="rv4-residual">
           <strong>Selective residual pass</strong>

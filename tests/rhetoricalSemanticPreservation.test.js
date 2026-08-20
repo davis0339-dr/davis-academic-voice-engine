@@ -53,6 +53,16 @@ test("substantive reconstruction is not rejected merely for lower lexical overla
   assert.equal(report.lexical_overlap_is_supporting_evidence_only, true);
 });
 
+test("semantic-force auditing is local rather than triggered by unrelated document vocabulary", () => {
+  const sourceText = "Board independence is associated with borrowing cost within this sample. A separate methodological paragraph explains that leverage can lead to estimation bias.";
+  const safeRevision = "Within this sample, borrowing cost is related to board independence. The separate methodological discussion explains that leverage can lead to estimation bias.";
+  const unsafeRevision = "Within this sample, board independence determines borrowing cost. The separate methodological discussion explains that leverage can lead to estimation bias.";
+  assert.equal(analyseRhetoricalSemanticPreservation(sourceText, safeRevision, { lengthPreference: "maintain" }).passed, true);
+  const unsafe = analyseRhetoricalSemanticPreservation(sourceText, unsafeRevision, { lengthPreference: "maintain" });
+  assert.equal(unsafe.passed, false);
+  assert.equal(unsafe.causality_changes.length, 1);
+});
+
 test("role-marker changes remain review evidence when propositions and paragraph architecture survive", () => {
   const reconstructed = source
     .replace("Commercial scale, however, does not eliminate the professional-performance problem.", "Large international networks still face the professional problem of engagement performance.")

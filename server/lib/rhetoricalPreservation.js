@@ -145,18 +145,31 @@ function collectMatches(regex, text) {
   return [...String(text || "").matchAll(regex)].map((match) => match[0].toLowerCase());
 }
 
+function hasMatch(regex, text) {
+  regex.lastIndex = 0;
+  return regex.test(String(text || ""));
+}
+
 function semanticChanges(sourceText, revisedText) {
   const changes = [];
   const sourceRecords = sentenceRecords(sourceText);
   const revisedRecords = sentenceRecords(revisedText);
-  const sourceModal = collectMatches(MODAL_RE, sourceText);
-  const revisedModal = collectMatches(MODAL_RE, revisedText);
-  const newAssertive = collectMatches(ASSERTIVE_RE, revisedText).filter((item) => !collectMatches(ASSERTIVE_RE, sourceText).includes(item));
-  if (sourceModal.length > revisedModal.length && newAssertive.length) {
-    changes.push({ type: "modality_or_certainty", detail: `Qualified source language was reduced while stronger wording appeared (${newAssertive.join(", ")}).` });
+  const localModalityStrengthening = revisedRecords.some((record) => {
+    if (!hasMatch(ASSERTIVE_RE, record.sentence) || hasMatch(MODAL_RE, record.sentence)) return false;
+    const match = bestSentenceMatch(record, sourceRecords);
+    return match.score >= 0.28 && hasMatch(MODAL_RE, match.candidate?.sentence || "") && !hasMatch(ASSERTIVE_RE, match.candidate?.sentence || "");
+  });
+  if (localModalityStrengthening) {
+    changes.push({ type: "modality_or_certainty", detail: "A locally matched qualified proposition appears to have been restated with stronger certainty." });
   }
-  if (collectMatches(ASSOCIATION_RE, sourceText).length && collectMatches(CAUSAL_RE, revisedText).length > collectMatches(CAUSAL_RE, sourceText).length) {
-    changes.push({ type: "causality", detail: "Associational language may have been strengthened into a causal proposition." });
+  const localCausalityStrengthening = revisedRecords.some((record) => {
+    if (!hasMatch(CAUSAL_RE, record.sentence)) return false;
+    const match = bestSentenceMatch(record, sourceRecords);
+    const sourceSentence = match.candidate?.sentence || "";
+    return match.score >= 0.28 && hasMatch(ASSOCIATION_RE, sourceSentence) && !hasMatch(CAUSAL_RE, sourceSentence);
+  });
+  if (localCausalityStrengthening) {
+    changes.push({ type: "causality", detail: "A locally matched associational proposition appears to have been strengthened into causality." });
   }
   const equalityIntroducedLocally = revisedRecords
     .filter((record) => /\b(?:equally|equivalent|the same as|to the same extent|identical)\b/i.test(record.sentence))
@@ -167,7 +180,13 @@ function semanticChanges(sourceText, revisedText) {
   if (equalityIntroducedLocally) {
     changes.push({ type: "comparison_or_magnitude", detail: "The revision introduced equality/equivalence that the source did not assert." });
   }
-  if (collectMatches(SCOPE_RE, sourceText).length && collectMatches(UNIVERSAL_RE, revisedText).length > collectMatches(UNIVERSAL_RE, sourceText).length) {
+  const localScopeGeneralisation = revisedRecords.some((record) => {
+    if (!hasMatch(UNIVERSAL_RE, record.sentence)) return false;
+    const match = bestSentenceMatch(record, sourceRecords);
+    const sourceSentence = match.candidate?.sentence || "";
+    return match.score >= 0.28 && hasMatch(SCOPE_RE, sourceSentence) && !hasMatch(UNIVERSAL_RE, sourceSentence);
+  });
+  if (localScopeGeneralisation) {
     changes.push({ type: "scope_or_generalisation", detail: "A bounded source proposition may have been generalised." });
   }
   const directionPolarity = (text) => ({
