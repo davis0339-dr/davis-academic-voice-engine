@@ -128,7 +128,9 @@
     const concretePlanned = planned.intervention ?? Math.max(0, totalUnits - Number(planSummary.KEEP || 0) - discourseScope);
     const materialScope = planned.materialIntervention ?? Math.max(0, totalUnits - Number(planSummary.KEEP || 0));
     const keepReasons = keepReasonSummary(plan);
-    const rewritePatternCount = (plan?.items || []).filter((item) => item.decisionCode === "REWRITE_PATTERN").length;
+    const rewritePatternCount = (plan?.items || []).filter((item) =>
+      item.decisionCode === "REWRITE_PATTERN" || String(item.decisionCode || "").startsWith("MACHINE_LANGUAGE_")
+    ).length;
     const sourceArchitecture = latestAnalysis?.diagnostics?.discourse_architecture?.signals || [];
     const machineLanguage = latestAnalysis?.diagnostics?.machine_language_forensics || null;
     const machineExecution = plan?.machineLanguageExecution || null;
@@ -190,7 +192,7 @@
         <div><span>Machine-language recurrence</span><strong>${machineLanguage?.available ? `${pct(machineLanguage.metrics?.hit_sentence_ratio)} · ${esc(machineLanguage.metrics?.hit_sentence_count || 0)}/${esc(machineLanguage.metrics?.sentence_count || 0)} sentences` : "n/a"}</strong></div>
         <div><span>Composite machine-language pressure</span><strong>${machineLanguage?.available ? `${esc(title(machineLanguage.label))} · ${pct(machineLanguage.score)}` : "n/a"}</strong></div>
         <div><span>Machine-language target units</span><strong>${esc(machineExecution?.targeted_sentence_count || 0)}</strong></div>
-        <div><span>Pattern-driven sentence rewrites</span><strong>${rewritePatternCount}</strong></div>
+        <div><span>Pattern-accountable target operations</span><strong>${rewritePatternCount}</strong></div>
         <div><span>Planner units</span><strong>${totalUnits}</strong></div>
       </div>
       ${intent.rationale?.length ? `<details class="pov-details"><summary>Why this treatment was selected</summary><ul>${intent.rationale.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></details>` : ""}

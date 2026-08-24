@@ -119,6 +119,13 @@ test("the interface names the measure as pressure and explicitly rejects an AI-p
   assert.match(plannerUi, /recurrence-based style evidence, not an authorship probability/);
 });
 
+test("planner observability counts machine-language targets as accountable operations", () => {
+  const plannerUi = fs.readFileSync(new URL("../public/plannerObservability.js", import.meta.url), "utf8");
+  assert.match(plannerUi, /startsWith\("MACHINE_LANGUAGE_"\)/);
+  assert.match(plannerUi, /Pattern-accountable target operations/);
+  assert.doesNotMatch(plannerUi, /Pattern-driven sentence rewrites/);
+});
+
 test("the public analysis payload retains the machine-language evidence used by the planner", () => {
   const result = analyse({
     sourceText: machineDraft,

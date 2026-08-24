@@ -49,6 +49,12 @@ export function shouldAcceptResidualCandidate({
   const afterReasons = new Set(afterAcceptance.reasons || []);
   const newAcceptanceReasons = [...afterReasons].filter((reason) => !beforeReasons.has(reason));
   const afterHardFailures = afterAcceptance.hard_failures || [];
+  const developmentBlockingReasons = new Set([
+    "deep_auto_developmental_compression",
+    "expand_length_contract_missed",
+  ]);
+  const developmentContractBreached = (afterAcceptance.reasons || [])
+    .some((reason) => developmentBlockingReasons.has(reason));
   const beforeDimensions = beforeAcceptance.dimensions || {};
   const afterDimensions = afterAcceptance.dimensions || {};
   const noMaterialAcceptanceRegression = (
@@ -69,6 +75,7 @@ export function shouldAcceptResidualCandidate({
   return Boolean(
     preservationOk &&
     noResidualRegression &&
+    !developmentContractBreached &&
     (
       acceptanceCleared ||
       acceptanceBetter ||
@@ -167,7 +174,7 @@ function machineForensicLabels(acceptance, blockIndex, candidateStructure) {
     labels.push({
       id: "modern_machine_language_density",
       interpretation: "The paragraph contributes to a document-level concentration of polished LLM-favoured academic language: editorial pivots, abstract issue-framing, binary qualification frames, compressed synthesis or noun-heavy discourse management.",
-      action: "Preserve the substantive judgement but make it more direct. Remove sentences that mainly announce complexity, conditionality, significance or the next move; reduce repeated 'not X but Y' staging; prefer actors, evidence and direct verbs where the technical meaning permits.",
+      action: "Preserve the substantive judgement and the sentence's intellectual function while changing repetitive packaging. Reconstruct framing, conditionality, significance, interpretation or transition in proposition-led language; reduce repeated 'not X but Y' staging and prefer actors, evidence and direct verbs where technically appropriate. Do not obtain directness by deleting explanatory reasoning.",
     });
   }
 
@@ -251,7 +258,7 @@ Important lessons from prior testing:
 - Modern machine language is often polished rather than clichéd. Look beyond phrases such as "plays a crucial role". Repair repeated editorial pivots, abstract issue-framing, compressed synthesis, noun-heavy signposting and highly curated qualification patterns.
 - Do not repeatedly stage distinctions as "not X, but Y", "not merely", "more than", "does not imply", or similarly elegant reversals when the distinction can be carried directly by evidence or explanation. Keep such constructions where they are genuinely the clearest form.
 - Do not open successive paragraphs with abstract announcements such as complexity, conditionality, variation, assessment, difficulty, significance or context merely to tell the reader what the paragraph will now do.
-- Delete or absorb sentences whose main function is to announce that something is complex, conditional, instructive, important, useful, unresolved or more specific when the surrounding argument already demonstrates that point.
+- Reconstruct repetitive announcements of complexity, conditionality, importance or the next move, but preserve their intellectual work when they frame the inquiry, qualify evidence, interpret significance, distinguish concepts or connect paragraphs. Absorb a sentence only when both proposition and rhetorical function are genuinely duplicated.
 - Prefer concrete scholarly actors and direct verbs where possible: firms borrow, creditors price, boards monitor, evidence contradicts, results vary. Do not force directness when a technical construct genuinely requires abstraction.
 - Do not make every paragraph follow claim -> evidence -> interpretation -> synthesis.
 - Do not append a polished summary/implication sentence simply to make every paragraph feel complete.
@@ -259,7 +266,8 @@ Important lessons from prior testing:
 - Preserve productive asymmetry: one important study may need two explanatory sentences while another may need only a clause; do not give every source equal rhetorical packaging.
 - Do not convert direct verbs and ordinary academic sentences into abstract noun-led formulations merely to sound scholarly.
 - Avoid nominalisation pressure such as repeated openings built around "recognition", "realisation", "development", "implementation", "conceptual evolution" or similar abstract noun phrases when a direct subject and verb are clearer.
-- Reduce discourse-management sentences that mainly announce what was learned, why a distinction matters, or what comes next without adding a substantive proposition.
+- Redevelop discourse-management sentences into substantive reasoning where the source supplies that reasoning. A sentence explaining why evidence matters, how a distinction operates or what logical step follows is not disposable merely because it is uncited.
+- In Deep/Authorial Auto or Expand work, the target replacements must not make the completed manuscript shorter. Recover explanatory space by unpacking supplied relationships, conditions, relevance and distinctions; never pad or invent evidence.
 - Reduce rhetorical valuation that repeatedly labels points as major, crucial, consequential or promising when the surrounding evidence already demonstrates their importance.
 - Do not narrate an intellectual journey as a perfectly tidy chain of breakthrough -> lesson -> next stage unless the supplied material genuinely requires that chronology.
 - Preserve useful simple sentences. A short, ordinary, content-bearing sentence is not a defect and must not be "upgraded" merely because it is simple.
@@ -411,6 +419,13 @@ export async function selectiveResidualRework({
       choreography: beforeAcceptance.candidate_machine_pattern?.choreography,
       discourse_regularity: beforeAcceptance.candidate_machine_pattern?.discourse_regularity,
       machine_language: beforeAcceptance.candidate_machine_pattern?.machine_language,
+    },
+    length_contract: {
+      preference: lengthPreference,
+      source_words: beforeAcceptance.dimensions?.source_word_count,
+      candidate_words: beforeAcceptance.dimensions?.candidate_word_count,
+      minimum_completed_ratio: beforeAcceptance.dimensions?.minimum_developmental_length_ratio,
+      instruction: "Deep/Authorial Auto is development-preserving: targeted recovery may reorganise wording but must bring the completed manuscript to at least the stated minimum ratio without filler or invented content.",
     },
     targets,
   });

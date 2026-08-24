@@ -88,3 +88,37 @@ test("large residual movement cannot conceal a new acceptance failure or materia
   assert.equal(shouldAcceptResidualCandidate({ preservationOk: true, noResidualRegression: true, beforeScore: 58, afterScore: 18, beforeAcceptance: before, afterAcceptance: after }), false);
 });
 
+test("residual risk reduction cannot win by compressing a Deep Auto manuscript", () => {
+  const before = {
+    status: "review_required",
+    score: 65,
+    reasons: ["deep_auto_developmental_compression", "machine_language_residual"],
+    hard_failures: [],
+    dimensions: { candidate_machine_pattern: 0.55, candidate_machine_language: 0.42, candidate_discourse_regularity: 0.5, source_dependence: 0.65, candidate_authorial_texture: 0.58 },
+  };
+  const after = {
+    status: "review_required",
+    score: 76,
+    reasons: ["deep_auto_developmental_compression"],
+    hard_failures: [],
+    dimensions: { candidate_machine_pattern: 0.25, candidate_machine_language: 0.15, candidate_discourse_regularity: 0.2, source_dependence: 0.4, candidate_authorial_texture: 0.62 },
+  };
+
+  assert.equal(shouldAcceptResidualCandidate({
+    preservationOk: true,
+    noResidualRegression: true,
+    beforeScore: 19,
+    afterScore: 0,
+    beforeAcceptance: before,
+    afterAcceptance: after,
+  }), false);
+});
+
+test("residual prompt protects explanatory functions from deletion-based humanisation", async () => {
+  const source = (await import("node:fs")).readFileSync(new URL("../server/lib/residualRework.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /Delete or absorb sentences whose main function/);
+  assert.doesNotMatch(source, /Remove sentences that mainly announce complexity/);
+  assert.match(source, /must not make the completed manuscript shorter/);
+  assert.match(source, /why evidence matters/);
+});
+

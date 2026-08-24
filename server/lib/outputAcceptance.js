@@ -14,10 +14,11 @@ import { assessLanguageDeviation } from "./languageFamilyEngine.js";
 import { resolveProfile } from "./styleProfileStore.js";
 import { auditPreservation } from "./preservation.js";
 import { extractProtectedSpans } from "./protect.js";
-import { splitSentences } from "./sentences.js";
+import { splitSentences, wordCount } from "./sentences.js";
 import { analyseMachineLanguageForensics } from "./machineLanguageForensics.js";
 import { analysePropositionEcho } from "./propositionEcho.js";
 import { splitTextBlocks } from "./textStructure.js";
+import { assessArgumentativeSufficiency } from "./argumentativeSufficiency.js";
 
 const FORMAL_SECTION_RE = /^(?:purpose statement|research questions?(?: and hypotheses)?|hypotheses|hypothesis development|research question\s*\d*|operational definitions?|definitions of terms|assumptions|limitations|delimitations|references|appendix|table\s+\d+|figure\s+\d+)\s*:?[\s]*$/i;
 const NARRATIVE_SECTION_RE = /^(?:introduction|background(?: of the problem| to the study)?|statement of the problem|problem statement|literature review|conceptual review|theoretical review|empirical review|discussion|conclusion|research gap)\s*:?[\s]*$/i;
@@ -381,10 +382,27 @@ export function auditOutputAcceptance({
   const assertiveMode = natural === "aggressive" || natural === "authorial";
   const deepMode = intensity === "deep";
   const moderateOrDeeper = intensity === "moderate" || deepMode;
+  const requestedLength = String(lengthPreference || "auto").toLowerCase();
+  const sourceWordCount = wordCount(source);
+  const candidateWordCount = wordCount(candidate);
+  const lengthRatio = sourceWordCount ? candidateWordCount / sourceWordCount : 1;
+  const deepDevelopmentalAuto = deepMode && assertiveMode && requestedLength === "auto";
+  const minimumDevelopmentalLengthRatio = deepDevelopmentalAuto ? 0.98 : requestedLength === "expand" ? 1 : null;
+  const candidateDevelopment = assessArgumentativeSufficiency(candidate);
+  const developmentTargetParagraphIndices = (candidateDevelopment.signals || [])
+    .filter((signal) => signal.severity === "high" || signal.severity === "medium")
+    .map((signal) => signal.blockIndex)
+    .filter(Number.isInteger);
 
   const reasons = [];
   const hardFailures = [];
   if (!preservationOk) hardFailures.push("semantic_preservation_failed");
+  if (deepDevelopmentalAuto && lengthRatio < minimumDevelopmentalLengthRatio) {
+    reasons.push("deep_auto_developmental_compression");
+  }
+  if (requestedLength === "expand" && lengthRatio < 1) {
+    reasons.push("expand_length_contract_missed");
+  }
 
   // Universal regression guard: no mode is permitted to make narrative prose
   // materially more machine-regular merely because the output looks polished.
@@ -474,6 +492,7 @@ export function auditOutputAcceptance({
     ...(candidateMachine.machine_language?.target_paragraph_indices || []),
     ...calibratedTargetParagraphs(candidateMachine.discourse_regularity),
     ...(candidateEcho.target_paragraph_indices || []),
+    ...((deepDevelopmentalAuto && lengthRatio < minimumDevelopmentalLengthRatio) ? developmentTargetParagraphIndices : []),
   ])].slice(0, 8);
 
   return {
@@ -500,6 +519,12 @@ export function auditOutputAcceptance({
       substantive_plan_ratio: Number(substantive.toFixed(3)),
       source_proposition_echo_count: sourceEcho.count,
       candidate_proposition_echo_count: candidateEcho.count,
+      source_word_count: sourceWordCount,
+      candidate_word_count: candidateWordCount,
+      source_revision_length_ratio: Number(lengthRatio.toFixed(3)),
+      minimum_developmental_length_ratio: minimumDevelopmentalLengthRatio,
+      candidate_argumentative_development_score: candidateDevelopment.development_score,
+      candidate_argumentative_development_signal_count: (candidateDevelopment.signals || []).length,
     },
     source_machine_pattern: sourceMachine,
     candidate_machine_pattern: candidateMachine,

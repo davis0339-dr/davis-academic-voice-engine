@@ -153,3 +153,24 @@ test("acceptance report exposes the dimensions needed to separate good writing f
   }
   assert.match(audit.note, /not an AI-authorship classifier/i);
 });
+
+test("Deep Authorial Auto blocks the live 1458-to-1354 compression pattern", () => {
+  const sourceText = Array.from({ length: 729 }, (_, index) => `concept${index} explanation`).join(" ");
+  const candidateText = sourceText.split(/\s+/).slice(0, 1354).join(" ");
+  const audit = auditOutputAcceptance({
+    sourceText,
+    candidateText,
+    styleFilters,
+    rewriteIntensity: "deep",
+    naturalisation: "aggressive",
+    lengthPreference: "auto",
+    planSummary: { DISCOURSE_REPACKAGE: 49, SENTENCE_RESTRUCTURE: 1 },
+  });
+
+  assert.equal(audit.dimensions.source_word_count, 1458);
+  assert.equal(audit.dimensions.candidate_word_count, 1354);
+  assert.equal(audit.dimensions.source_revision_length_ratio, 0.929);
+  assert.ok(audit.reasons.includes("deep_auto_developmental_compression"));
+  assert.notEqual(audit.status, "pass");
+  assert.equal(audit.release_gate.external_detector_check_recommended, false);
+});
