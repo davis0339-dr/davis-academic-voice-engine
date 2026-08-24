@@ -40,7 +40,7 @@ export function validateDetectorScreenshotPayload({ mimeType, imageBase64 } = {}
 }
 
 export function detectorScreenshotPrompt() {
-  return `You are reading ONE screenshot of an external AI-writing detector result for research logging and source-versus-revision analysis.\n\nExtract only information visibly supported by the screenshot. Do not infer missing scores, do not claim authorship, and do not offer instructions for evading a detector. The purpose is to save a frustrated researcher from manually transcribing a detector summary.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  "detector": string|null,\n  "version": string|null,\n  "classification": "ai"|"ai_paraphrased"|"mixed"|"human"|"uncertain"|null,\n  "aiScore": number|null,\n  "humanScore": number|null,\n  "paraphrasedScore": number|null,\n  "flaggedSentenceIndices": number[],\n  "visibleSummary": string,\n  "confidence": "high"|"medium"|"low",\n  "warnings": string[]\n}\n\nRules:\n- Scores are percentages from 0 to 100 only when visibly shown.\n- flaggedSentenceIndices must be zero-based and included only when the screenshot explicitly numbers sentences; otherwise return [].\n- If the screenshot uses a label such as AI, Mixed, Human, AI paraphrased, or uncertain, map it conservatively.\n- Do not count highlighted words or estimate percentages from coloured areas.\n- visibleSummary should briefly state exactly what the screenshot visibly reports.\n- If text is ambiguous, use null and explain in warnings.`;
+  return `You are reading ONE screenshot of an external AI-writing detector result for research logging and source-versus-revision analysis.\n\nExtract only information visibly supported by the screenshot. Do not infer missing scores and do not claim authorship. The purpose is to save a frustrated researcher from manually transcribing detector evidence.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  "detector": string|null,\n  "version": string|null,\n  "classification": "ai"|"ai_paraphrased"|"mixed"|"human"|"uncertain"|null,\n  "aiScore": number|null,\n  "humanScore": number|null,\n  "paraphrasedScore": number|null,\n  "flaggedSentenceIndices": number[],\n  "flaggedExcerpts": string[],\n  "visibleSummary": string,\n  "confidence": "high"|"medium"|"low",\n  "warnings": string[]\n}\n\nRules:\n- Scores are percentages from 0 to 100 only when visibly shown.\n- flaggedSentenceIndices must be zero-based and included only when the screenshot explicitly numbers sentences; otherwise return [].\n- flaggedExcerpts may contain short verbatim excerpts only when the screenshot visibly highlights or distinctly classifies those words. Return [] when no highlighted passage is legible. Do not infer missing text.\n- If the screenshot uses a label such as AI, Mixed, Human, AI paraphrased, or uncertain, map it conservatively.\n- Do not count highlighted words or estimate percentages from coloured areas.\n- visibleSummary should briefly state exactly what the screenshot visibly reports.\n- If text is ambiguous, use null and explain in warnings.`;
 }
 
 function extractJson(text) {
@@ -61,6 +61,9 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
   const flaggedSentenceIndices = Array.isArray(parsed.flaggedSentenceIndices)
     ? [...new Set(parsed.flaggedSentenceIndices.map(Number).filter((n) => Number.isInteger(n) && n >= 0))].slice(0, 1000)
     : [];
+  const flaggedExcerpts = Array.isArray(parsed.flaggedExcerpts)
+    ? [...new Set(parsed.flaggedExcerpts.map((value) => cleanString(value, 500)).filter(Boolean))].slice(0, 100)
+    : [];
   return {
     detector: cleanString(parsed.detector, 80) || "Other",
     version: cleanString(parsed.version, 80),
@@ -69,6 +72,7 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
     humanScore: clampScore(parsed.humanScore),
     paraphrasedScore: clampScore(parsed.paraphrasedScore),
     flaggedSentenceIndices,
+    flaggedExcerpts,
     visibleSummary: cleanString(parsed.visibleSummary, 1000) || "Detector screenshot analysed; no additional visible summary was returned.",
     confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
     warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map((x) => cleanString(x, 500)).filter(Boolean).slice(0, 10) : [],

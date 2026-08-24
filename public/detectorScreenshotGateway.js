@@ -70,6 +70,7 @@
       humanScore: Number.isFinite(Number(observation.humanScore)) ? Number(observation.humanScore) : null,
       paraphrasedScore: Number.isFinite(Number(observation.paraphrasedScore)) ? Number(observation.paraphrasedScore) : null,
       flaggedSentenceIndices: Array.isArray(observation.flaggedSentenceIndices) ? observation.flaggedSentenceIndices : [],
+      flaggedExcerpts: Array.isArray(observation.flaggedExcerpts) ? observation.flaggedExcerpts : [],
       notes: observation.notes || null,
       recordedAt: new Date().toISOString(),
       evidenceSource: "uploaded_detector_screenshot",

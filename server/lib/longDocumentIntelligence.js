@@ -121,7 +121,8 @@ Rules:
 - Identify development opportunities only when the whole document reveals a real argumentative or discourse need.
 - Do not recommend expansion merely because a section is short.
 - Distinguish preservation of research meaning from preservation of sentence architecture.
-- Keep the response compact: at most 24 argument-arc entries and 12 evidence needs.`;
+- Keep the response genuinely compact: at most 16 argument-arc entries and 8 evidence needs.
+- Each role, downstream dependency and rationale must be one sentence. Use at most 4 must_preserve items and 3 development_opportunities per arc entry. Do not repeat manuscript prose.`;
 }
 
 function normaliseBlueprint(parsed, fallback) {
@@ -161,7 +162,7 @@ export async function buildWholeDocumentBlueprint({ fullText, documentMap }) {
     const result = await llmProvider.callAnthropic({
       system: blueprintSystemPrompt(),
       messages: [{ role: "user", content: fullText }],
-      maxTokens: 2600,
+      maxTokens: 3200,
     });
     if (result.raw?.stop_reason === "max_tokens") {
       return { ...fallback, planning_warning: "Whole-document blueprint response was truncated; deterministic fallback used." };

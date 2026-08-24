@@ -81,7 +81,7 @@
   };
 
   function normalise(text) {
-    return String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+    return String(text || "").normalize("NFKC").replace(/[\u2010-\u2015\u2212]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
   }
 
   function splitSentences(text) {
@@ -109,29 +109,6 @@
     };
   }
 
-  function structuralArtifacts(source) {
-    const lines = String(source || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const artifacts = [];
-    const seen = new Set();
-    for (const line of lines) {
-      const formal = /^(section|chapter|research question|purpose statement|problem statement|nature of the study|qualitative strand|quantitative strand|references|appendix)\b/i.test(line)
-        || /^(h0|h1)\d*[a-z]?[.:\s]/i.test(line)
-        || /\b(doctor of|master of|bachelor of|ph\.?d\.?|dba|m\.?sc\.?|mba|programme|program)\b/i.test(line)
-        || (/^[A-Z0-9][A-Z0-9 &,:()'\-/]{12,}$/.test(line) && line.split(/\s+/).length >= 3);
-      if (!formal) continue;
-      const key = normalise(line);
-      if (!seen.has(key)) { seen.add(key); artifacts.push(line); }
-    }
-    return artifacts.slice(0, 120);
-  }
-
-  function auditStructure(source, candidate) {
-    const artifacts = structuralArtifacts(source);
-    const candidateNormalised = normalise(candidate);
-    const missing = artifacts.filter((item) => !candidateNormalised.includes(normalise(item)));
-    return { artifact_count: artifacts.length, missing_artifacts: missing, passed: missing.length === 0 };
-  }
-
   function preservationPassed(p) {
     if (!p) return false;
     return Boolean(p.numbers_ok && p.citations_ok && p.technical_terms_ok && p.study_stage_ok !== false && !p.new_factual_claims_detected);
@@ -141,7 +118,7 @@
     const source = $("longdocSource")?.value || "";
     const candidate = job?.reassembledText || "";
     const coverage = retention(source, candidate);
-    const structure = auditStructure(source, candidate);
+    const structure = job?.structureAudit || { artifact_count: 0, missing_artifacts: [], possible_substantive_passage_losses: [], passed: false, note: "Server structure audit unavailable for this older job." };
     const options = readJson(OPTIONS_KEY, {})[job.id] || selectedOptions();
     const explicitDeep = options.rewriteIntensity === "deep" && ["aggressive", "authorial"].includes(options.naturalisation);
     const underTransformed = explicitDeep && (
@@ -150,10 +127,12 @@
     );
     const internalRegularityPassed = job?.wholeDocumentAudit?.passed !== false;
     const preservationOk = preservationPassed(job?.documentPreservation);
-    const passed = internalRegularityPassed && preservationOk && structure.passed && !underTransformed;
+    const complete = job?.candidateStatus !== "incomplete" && Number(job?.progress?.failedCount || 0) === 0;
+    const passed = complete && internalRegularityPassed && preservationOk && structure.passed && !underTransformed;
     return {
-      version: "longdoc-vnext-browser-audit-v2",
+      version: "longdoc-vnext-browser-audit-v3",
       passed,
+      complete,
       explicit_deep_authorial_request: explicitDeep,
       under_transformed_for_selected_mode: underTransformed,
       transformation_coverage: coverage,
@@ -232,10 +211,12 @@
     const options = readJson(OPTIONS_KEY, {})[job.id] || selectedOptions();
     const coverage = audit.transformation_coverage;
     const missing = audit.structural_artifacts.missing_artifacts;
+    const possibleLosses = audit.structural_artifacts.possible_substantive_passage_losses || [];
     const evidenceNeeds = job?.wholeDocumentBlueprint?.evidence_needs || [];
     panel.className = `longdoc-vnext-panel ${audit.passed ? "passed" : "review"}`;
     panel.innerHTML = `
       <div class="longdoc-vnext-head"><strong>vNext acceptance and evidence gate</strong><span>${audit.passed ? "PASSED" : "REVIEW REQUIRED"}</span></div>
+      ${!audit.complete ? `<p class="longdoc-incomplete"><strong>INCOMPLETE CANDIDATE:</strong> ${Number(job?.progress?.failedCount || 0)} chunk(s) failed. Original text is shown with explicit markers, but this document cannot be accepted or sent to evidence enhancement until those chunks are successfully retried.</p>` : ""}
       <div class="longdoc-vnext-grid">
         <div><span>Exact sentence retention</span><strong>${pct(coverage.exact_sentence_retention_ratio)}</strong></div>
         <div><span>Wholly unchanged paragraphs</span><strong>${pct(coverage.exact_paragraph_retention_ratio)}</strong></div>
@@ -245,11 +226,12 @@
         <div><span>Selected-mode execution</span><strong>${audit.under_transformed_for_selected_mode ? "under-transformed" : "consistent"}</strong></div>
       </div>
       ${missing.length ? `<details open><summary>Missing structural artefacts (${missing.length})</summary><ul>${missing.slice(0, 20).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}
+      ${possibleLosses.length ? `<details><summary>Possible substantive passage losses (${possibleLosses.length})</summary><p class="muted">These are conservative review signals, not automatic failures. A deep rewrite may legitimately use different vocabulary.</p><ul>${possibleLosses.slice(0, 20).map((x) => `<li>${esc(x.excerpt)} <small>(token recall ${pct(x.best_token_recall)})</small></li>`).join("")}</ul></details>` : ""}
       <p class="muted">${esc(audit.note)}</p>
       <section class="longdoc-evidence-next">
         <h4>Evidence improvement</h4>
         <p>${options.includeEvidence ? `External evidence is authorised (${esc(options.evidenceDepth)}). Davis identified ${evidenceNeeds.length} evidence need(s). The Research Studio will work on this <strong>reworked candidate</strong>, not restart from the original manuscript.` : "External evidence is OFF for this job. No new external factual material should be added."}</p>
-        ${options.includeEvidence ? `<button id="longdocImproveWithEvidence" type="button" class="primary">Improve this reworked version with approved evidence</button>` : ""}
+        ${options.includeEvidence && audit.complete ? `<button id="longdocImproveWithEvidence" type="button" class="primary">Improve this reworked version with approved evidence</button>` : ""}
       </section>
       <details class="longdoc-external-result"><summary><strong>Attach external detector result to this candidate version</strong></summary>
         <p class="muted">Stored as evaluation evidence for this exact version. It is not proof of authorship and is not used as an automatic generation target.</p>
@@ -270,7 +252,7 @@
 
   const style = document.createElement("style");
   style.textContent = `
-    .longdoc-vnext-controls,.longdoc-vnext-panel{margin:.85rem 0;padding:1rem;border:1px solid #466078;border-radius:10px;background:rgba(18,29,42,.52)}
+    .longdoc-vnext-controls,.longdoc-vnext-panel{margin:.85rem 0;padding:1rem;border:1px solid #466078;border-radius:10px;background:rgba(18,29,42,.52)}.longdoc-incomplete{padding:.75rem;border-left:4px solid #d2675c;background:rgba(126,35,35,.22)}
     .longdoc-vnext-panel.passed{border-color:#2f7b63}.longdoc-vnext-panel.review{border-color:#a56c39}.longdoc-vnext-head{display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap}.longdoc-vnext-head span{opacity:.72}.longdoc-check{display:flex!important;align-items:flex-start!important;gap:.6rem;margin:.7rem 0}.longdoc-check input{width:auto!important;margin-top:.2rem}.longdoc-check span{display:grid;gap:.2rem}.longdoc-check small{opacity:.7}.longdoc-vnext-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:.55rem;margin:.8rem 0}.longdoc-vnext-grid>div{padding:.55rem;background:rgba(5,12,20,.35);border-radius:7px}.longdoc-vnext-grid span{display:block;opacity:.7;font-size:.82em}.longdoc-vnext-grid strong{display:block;margin-top:.2rem}.longdoc-evidence-next{padding:.75rem 0}.longdoc-detector-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:.55rem;margin:.7rem 0}.longdoc-detector-notes{grid-column:1/-1}.longdoc-benchmark-row{display:grid;grid-template-columns:1.1fr 1fr .7fr .7fr 1.2fr;gap:.4rem;padding:.45rem 0;border-bottom:1px solid #33495e;font-size:.9em}@media(max-width:760px){.longdoc-benchmark-row{grid-template-columns:1fr 1fr}.longdoc-benchmark-row small{grid-column:1/-1}}
   `;
   document.head.appendChild(style);

@@ -174,3 +174,26 @@ test("nominal broad Deep reconstruction treats low visible change as concrete un
   assert.equal(compliance.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"), false);
   assert.ok(compliance.under_execution_codes.includes("BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED"));
 });
+
+test("independent 91 percent change and preservation evidence override an under-reported edit summary", () => {
+  const plan = { DISCOURSE_REPACKAGE: 1, SENTENCE_RESTRUCTURE: 14, MICRO_EDIT: 32, SPLIT_OR_MERGE: 12 };
+  const authority = deriveInterventionAuthority({
+    planSummary: plan,
+    authorialTexture: strongTexture,
+    requestedIntensity: "deep",
+    requestedNaturalisation: "aggressive",
+    effectiveIntent: "discourse_reconstruction",
+  });
+  const compliance = assessExecutionCompliance({
+    intervention_plan_summary: plan,
+    intervention_intent: { effective: "discourse_reconstruction" },
+    intervention_authority: authority,
+    edit_summary: { kept: 0, micro_edits: 3, sentence_restructures: 2, split_or_merge: 0, paragraph_reorders: 0 },
+    transformation_quality: { unchanged_sentence_ratio: 0.09, passed: true },
+    preservation: preservationPassed(),
+  });
+  assert.equal(compliance.execution_passed, true);
+  assert.equal(compliance.under_executed, false);
+  assert.ok(compliance.execution_variance_codes.includes("MODEL_EDIT_SUMMARY_UNDERREPORTING"));
+  assert.equal(compliance.independent_execution_evidence.materially_executed, true);
+});

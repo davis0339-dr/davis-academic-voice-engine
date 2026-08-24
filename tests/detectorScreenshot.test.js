@@ -34,6 +34,7 @@ test("normalises visible detector screenshot observations without inventing scor
     humanScore: 0,
     paraphrasedScore: null,
     flaggedSentenceIndices: [],
+    flaggedExcerpts: ["highlighted academic passage"],
     visibleSummary: "AI 100%, Mixed 0%, Human 0% visibly reported.",
     confidence: "high",
     warnings: [],
@@ -43,4 +44,5 @@ test("normalises visible detector screenshot observations without inventing scor
   assert.equal(parsed.humanScore, 0);
   assert.equal(parsed.paraphrasedScore, null);
   assert.deepEqual(parsed.flaggedSentenceIndices, []);
+  assert.deepEqual(parsed.flaggedExcerpts, ["highlighted academic passage"]);
 });

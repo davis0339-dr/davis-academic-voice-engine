@@ -138,6 +138,19 @@
     }).join("");
   }
 
+  function structuralTextureRows(source, candidate, opening) {
+    const rows = [
+      ["Sentence-length bin entropy", "sentence_length_bin_entropy"],
+      ["Local sentence-length movement", "local_sentence_length_movement"],
+      ["Sentence-architecture entropy", "architecture_template_entropy"],
+      ["Architecture-template concentration", "architecture_template_concentration"],
+      ["Paragraph-opening concentration", "paragraph_opening_concentration"],
+      ["Citation-placement concentration", "citation_placement_concentration"],
+      ["Repeated trigram share", "repeated_trigram_share"],
+    ];
+    return rows.map(([label, key]) => `<tr><td>${escapeHtml(label)}</td><td>${metric(source?.structural_texture?.[key], 3)}</td><td>${metric(candidate?.structural_texture?.[key], 3)}</td><td>${metric(opening?.structural_texture?.[key], 3)}</td></tr>`).join("");
+  }
+
   function renderResearch(report) {
     const target = $("detectorResearchResults");
     if (!target || !report) return;
@@ -153,6 +166,7 @@
         <div><span>Flagged sentence share</span><strong>${pct(flagged.flagged_share)}</strong></div>
         <div><span>Opening 2 prose paragraphs flagged</span><strong>${pct(flagged.opening_two_paragraphs?.flagged_share)}</strong></div>
         <div><span>Remainder flagged</span><strong>${pct(flagged.remainder?.flagged_share)}</strong></div>
+        <div><span>Screenshot excerpts mapped</span><strong>${escapeHtml(flagged.excerpt_matched_sentence_count ?? 0)}</strong></div>
       </div>` : `<p class="muted">${escapeHtml(flagged.reason || "No sentence-level highlights supplied.")}</p>`;
 
     target.innerHTML = `
@@ -173,6 +187,9 @@
         ${adequacyBlock(opening, "First two substantive prose paragraphs")}
         <p class="muted">Headings, section labels, stand-alone quotations and list items are excluded from the “opening two paragraphs” sample. Low-sample cells are deliberately not interpreted.</p>
         <table class="research-table"><thead><tr><th>Metric</th><th>Source</th><th>Revised</th><th>Revised opening 2 prose paragraphs</th></tr></thead><tbody>${profileRows(source, candidate, opening)}</tbody></table>
+        <h4>Structural texture and local regularity</h4>
+        <p class="muted">These transparent measures identify concentration and repetition patterns for comparison across test runs. They are not an authorship classifier and should be interpreted alongside preservation and writing quality.</p>
+        <table class="research-table"><thead><tr><th>Metric</th><th>Source</th><th>Revised</th><th>Revised opening 2 prose paragraphs</th></tr></thead><tbody>${structuralTextureRows(source, candidate, opening)}</tbody></table>
         <h4>Corpus-relative cadence reference</h4>
         <p class="muted">${escapeHtml(reference.message || "No reference family available.")} These values are descriptive reference statistics, not quality cut-offs or rewrite targets.</p>
         <table class="research-table"><thead><tr><th>Metric</th><th>Revised</th><th>Corpus median</th><th>Corpus IQR</th><th>Position</th></tr></thead><tbody>${referenceRows(reference)}</tbody></table>

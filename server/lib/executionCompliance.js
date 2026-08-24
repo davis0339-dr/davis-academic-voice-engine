@@ -234,6 +234,7 @@ export function assessExecutionCompliance(result) {
   const changedSentenceRatio = unchangedSentenceRatio === null ? null : clamp01(1 - unchangedSentenceRatio);
   const reportedSubstantiveRatio = planned.total ? reported.substantive / planned.total : 0;
   const diagnosticBreadth = authority.breadth_enforcement === "diagnostic";
+  const preservation = preservationAssessment(result);
 
   const underReasons = [];
   const underCodes = [];
@@ -358,6 +359,37 @@ export function assessExecutionCompliance(result) {
     }
   }
 
+  // In broad discourse reconstruction, deterministic source/revision distance
+  // outranks the model's own edit-count narration. A candidate that materially
+  // cleared the independently measured floor, passed the transformation gate,
+  // and preserved the source cannot be rejected solely because the model
+  // under-counted its edits. The discrepancy remains visible as variance.
+  const independentlyMaterialExecution = effectiveIntent === "discourse_reconstruction"
+    && changedSentenceRatio !== null
+    && changedSentenceRatio >= Math.max(0.55, minChangedSentenceRatio)
+    && quality.passed !== false
+    && preservation.passed;
+  if (independentlyMaterialExecution && underCodes.length > 0) {
+    const summaryCoverageCodes = new Set([
+      "PLAN_INTERVENTION_COVERAGE",
+      "PLAN_STRUCTURAL_COVERAGE",
+      "DISCOURSE_CONCRETE_COVERAGE",
+    ]);
+    let moved = false;
+    for (let index = underCodes.length - 1; index >= 0; index -= 1) {
+      if (!summaryCoverageCodes.has(underCodes[index])) continue;
+      underCodes.splice(index, 1);
+      underReasons.splice(index, 1);
+      moved = true;
+    }
+    if (moved && !varianceCodes.includes("MODEL_EDIT_SUMMARY_UNDERREPORTING")) {
+      addVariance(
+        "MODEL_EDIT_SUMMARY_UNDERREPORTING",
+        `The model's edit summary under-reports execution: independent comparison found ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, the transformation-quality gate passed, and factual preservation passed. Self-reported operation counts remain supporting evidence only.`
+      );
+    }
+  }
+
   if (planned.total > 0 && reported.total > 0) {
     const countDrift = Math.abs(reported.total - planned.total) / planned.total;
     if (countDrift > 0.35) {
@@ -365,7 +397,6 @@ export function assessExecutionCompliance(result) {
     }
   }
 
-  const preservation = preservationAssessment(result);
   const status = executionStatus(underReasons, overReasons, varianceReasons);
   const executionPassed = status === "passed" || status === "passed-with-variance";
   const hasVariance = varianceReasons.length > 0;
@@ -393,7 +424,7 @@ export function assessExecutionCompliance(result) {
   const overallScore = Number(((executionScore * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3));
 
   return {
-    version: "planner-execution-compliance-v7",
+    version: "planner-execution-compliance-v8",
     passed: executionPassed,
     execution_passed: executionPassed,
     execution_status: status,
@@ -426,6 +457,13 @@ export function assessExecutionCompliance(result) {
     changed_sentence_ceiling: Number(maxChangedSentenceRatio.toFixed(3)),
     substantive_operation_ratio: Number(reportedSubstantiveRatio.toFixed(3)),
     substantive_operation_ceiling: Number(maxSubstantiveRatio.toFixed(3)),
+    independent_execution_evidence: {
+      deterministic_changed_sentence_ratio: changedSentenceRatio === null ? null : Number(changedSentenceRatio.toFixed(3)),
+      transformation_quality_passed: quality.passed !== false,
+      preservation_passed: preservation.passed,
+      materially_executed: independentlyMaterialExecution,
+      model_edit_summary_role: "supporting_not_controlling",
+    },
     reasons: [...underReasons, ...overReasons],
     under_execution_codes: underCodes,
     over_execution_codes: overCodes,

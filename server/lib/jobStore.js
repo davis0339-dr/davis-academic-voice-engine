@@ -9,6 +9,7 @@ import { rewrite } from "./pipeline.js";
 import { auditPreservation } from "./preservation.js";
 import { repairPreservationCandidate } from "./preservationRepair.js";
 import { inferSectionFromHeading } from "./sectionLanguageGuide.js";
+import { auditLongDocumentStructure } from "./longDocumentStructure.js";
 import {
   buildWholeDocumentBlueprint,
   compactBlueprintForChunk,
@@ -222,14 +223,6 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
         chunk.rhetoricalPreservationRepairApplied = true;
       }
 
-      if (result.transformation_quality?.enforced && !result.transformation_quality.passed) {
-        const err = new Error(
-          `Diagnosed aggressive reconstruction failed the quality gate after corrective rewriting: ${(result.transformation_quality.reasons || []).join(" ")}`
-        );
-        err.code = "QUALITY_GATE_FAILED";
-        throw err;
-      }
-
       const revisedText = stripLeadingRepeatedHeading(result.revised_text, chunk.heading);
       chunk.revisedText = revisedText;
       chunk.editSummary = result.edit_summary;
@@ -237,6 +230,7 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
         lengthPreference: (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference,
       });
       chunk.transformationQuality = result.transformation_quality || null;
+      chunk.qualityReviewRequired = Boolean(result.transformation_quality?.enforced && !result.transformation_quality?.passed);
       chunk.languageQuality = result.language_quality || null;
       chunk.interventionIntent = result.intervention_intent || null;
       chunk.plannerScopePolicyVersion = result.planner_scope_policy_version || null;
@@ -294,6 +288,7 @@ function assembleAndAudit(job) {
     revisedText: reassembledText,
     chunks: job.chunks,
   });
+  job.structureAudit = auditLongDocumentStructure(job.sourceText, reassembledText);
 }
 
 async function recoverTransformationCoverage(job) {
@@ -342,6 +337,19 @@ async function finalizeJob(job) {
 
   assembleAndAudit(job);
 
+  const anyFailed = job.chunks.some((c) => c.status === "failed");
+  if (anyFailed) {
+    // Keep the transparent preview and failed-chunk markers, but do not spend
+    // additional provider calls polishing an incomplete document.
+    job.coverageRepair = { attempted: false, skipped: "failed_chunks_remain", targetChunkIndices: [], repairedChunkIndices: [] };
+    job.globalRepair = { attempted: false, skipped: "failed_chunks_remain", targetChunkIndices: [], repairedChunkIndices: [] };
+    job.candidateStatus = "incomplete";
+    job.status = "completed_with_errors";
+    job.phase = "incomplete_failed_chunks";
+    job.completedAt = new Date().toISOString();
+    return;
+  }
+
   // The previous implementation only repaired regularity. That could produce a
   // superficially safer candidate while 80%+ of substantive paragraphs remained
   // untouched. Recover selected-mode execution first, then audit/repair any new
@@ -349,12 +357,13 @@ async function finalizeJob(job) {
   await recoverTransformationCoverage(job);
   await repairWholeDocumentRegularity(job);
 
-  const anyFailed = job.chunks.some((c) => c.status === "failed");
   const coveragePassed = job.transformationCoverage?.passed !== false;
   const regularityPassed = job.wholeDocumentAudit?.passed !== false;
   const preservationPassed = job.documentPreservation?.rhetorical_semantic_ok !== false && !job.documentPreservation?.new_factual_claims_detected;
-  job.candidateStatus = coveragePassed && regularityPassed && preservationPassed ? "accepted" : "review_required";
-  job.status = anyFailed ? "completed_with_errors" : "completed";
+  const structurePassed = job.structureAudit?.passed !== false;
+  const chunkQualityPassed = job.chunks.every((chunk) => !chunk.qualityReviewRequired || chunk.transformationQuality?.passed === true);
+  job.candidateStatus = coveragePassed && regularityPassed && preservationPassed && structurePassed && chunkQualityPassed ? "accepted" : "review_required";
+  job.status = "completed";
   job.phase = job.candidateStatus === "accepted" ? "complete" : "complete_review_required";
   job.completedAt = new Date().toISOString();
 }
@@ -417,6 +426,7 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
     documentMap,
     wholeDocumentBlueprint: null,
     wholeDocumentAudit: null,
+    structureAudit: null,
     transformationCoverage: null,
     coverageRepair: null,
     globalRepair: null,
@@ -430,6 +440,7 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
       editSummary: null,
       preservation: null,
       transformationQuality: null,
+      qualityReviewRequired: false,
       languageQuality: null,
       interventionIntent: null,
       executionPolicy: null,
@@ -476,6 +487,7 @@ export function retryChunk(jobId, chunkIndex) {
   chunk.status = "queued";
   chunk.error = null;
   chunk.transformationQuality = null;
+  chunk.qualityReviewRequired = false;
   chunk.languageQuality = null;
   chunk.coverageRecoveryApplied = false;
   chunk.coverageRecoveryError = null;
@@ -492,6 +504,7 @@ export function retryChunk(jobId, chunkIndex) {
   job.transformationCoverage = null;
   job.coverageRepair = null;
   job.wholeDocumentAudit = null;
+  job.structureAudit = null;
   job.globalRepair = null;
   job.providerBlock = null;
 
@@ -561,6 +574,7 @@ export function summarizeJob(job) {
     transformationCoverage: job.transformationCoverage,
     coverageRepair: job.coverageRepair,
     wholeDocumentAudit: job.wholeDocumentAudit,
+    structureAudit: job.structureAudit,
     globalRepair: job.globalRepair,
     chunks: job.chunks.map((c) => ({
       index: c.index,
@@ -577,6 +591,7 @@ export function summarizeJob(job) {
       editSummary: c.editSummary,
       preservation: c.preservation,
       transformationQuality: c.transformationQuality,
+      qualityReviewRequired: Boolean(c.qualityReviewRequired),
       languageQuality: c.languageQuality,
       interventionIntent: c.interventionIntent,
       executionPolicy: c.executionPolicy,

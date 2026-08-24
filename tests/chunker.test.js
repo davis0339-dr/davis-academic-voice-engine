@@ -72,3 +72,24 @@ test("each chunk before the last carries the next chunk's opening context", () =
   }
   assert.equal(chunks.at(-1).followingContextHead, "");
 });
+
+test("formal research questions, hypotheses and objectives are preserved as passthrough sections", () => {
+  const text = `1 Background\n\nOrdinary background prose that should be rewritten.\n\n2 Objectives of the Study\n\nTo examine the relationship between governance and debt cost.\n\n3 Research Questions\n\nRQ1: What relationship exists between governance and debt cost?\n\n4 Research Hypotheses\n\nH01: Governance has no significant effect on debt cost.`;
+  const map = buildDocumentMap(text);
+  const { chunks } = chunkDocument(text, map, { targetWordsPerChunk: 500 });
+  for (const heading of ["Objectives of the Study", "Research Questions", "Research Hypotheses"]) {
+    const chunk = chunks.find((item) => item.heading?.includes(heading));
+    assert.ok(chunk, `${heading} should be detected`);
+    assert.equal(chunk.rewriteMode, "passthrough");
+  }
+});
+
+test("an embedded hypothesis label does not freeze a substantive hypothesis-development section", () => {
+  const body = `${"The theoretical argument develops the relationship between governance mechanisms and financing outcomes. ".repeat(80)}\n\nH01: Governance has no significant effect on debt cost.\n\n${"Prior evidence also identifies important boundary conditions that require interpretation. ".repeat(80)}`;
+  const text = `1 Background\n\nShort context.\n\n2 Hypothesis Development\n\n${body}\n\n3 Conclusion\n\nShort conclusion.`;
+  const map = buildDocumentMap(text);
+  const { chunks } = chunkDocument(text, map, { targetWordsPerChunk: 200 });
+  const development = chunks.filter((item) => item.heading?.includes("Hypothesis Development"));
+  assert.ok(development.length > 1, "the long substantive section should be chunked");
+  assert.ok(development.every((item) => item.rewriteMode === "rewrite"), "embedded H01 text must not freeze the whole section");
+});

@@ -59,6 +59,58 @@ function sentenceOpening(sentence) {
   return tokens.slice(start, start + 2).join(" ");
 }
 
+function entropy(values) {
+  if (!values.length) return 0;
+  const counts = new Map();
+  values.forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
+  let result = 0;
+  for (const count of counts.values()) {
+    const p = count / values.length;
+    result -= p * Math.log2(p);
+  }
+  return result;
+}
+
+function concentration(values) {
+  if (!values.length) return 0;
+  const counts = new Map();
+  values.forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
+  return Math.max(...counts.values()) / values.length;
+}
+
+function lengthBin(n) {
+  if (n <= 11) return "short";
+  if (n <= 19) return "medium";
+  if (n <= 29) return "long";
+  return "extended";
+}
+
+function sentenceArchitectureTemplate(sentence) {
+  const wc = wordCount(sentence);
+  const clause = (sentence.match(CLAUSE_RE) || ["none"])[0].toLowerCase();
+  const punctuation = `${sentence.includes(";") ? "s" : ""}${sentence.includes(":") ? "c" : ""}${sentence.includes(",") ? "m" : ""}` || "plain";
+  const cited = new RegExp(CITATION_RE.source, CITATION_RE.flags).test(sentence) ? "cite" : "nocite";
+  return `${lengthBin(wc)}:${clause}:${punctuation}:${cited}`;
+}
+
+function repeatedNgramShare(tokenList, n = 3) {
+  if (tokenList.length < n) return 0;
+  const counts = new Map();
+  for (let i = 0; i <= tokenList.length - n; i += 1) {
+    const key = tokenList.slice(i, i + n).join(" ");
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const repeated = [...counts.values()].filter((count) => count > 1).reduce((sum, count) => sum + count, 0);
+  return ratio(repeated, tokenList.length - n + 1);
+}
+
+function citationPlacement(sentence) {
+  const match = sentence.match(new RegExp(CITATION_RE.source, CITATION_RE.flags));
+  if (!match) return "none";
+  const position = ratio(sentence.indexOf(match[0]), Math.max(1, sentence.length));
+  return position < 0.34 ? "opening" : position < 0.67 ? "middle" : "closing";
+}
+
 function punctuationProfile(text, wc) {
   const chars = String(text || "");
   const per100 = (count) => round(ratio(count * 100, wc), 3);
@@ -112,6 +164,11 @@ export function linguisticProfile(text) {
   const sentenceSd = sd(sentenceLengths);
   const paragraphMean = mean(paragraphLengths);
   const paragraphSd = sd(paragraphLengths);
+  const architectureTemplates = sentenceList.map(sentenceArchitectureTemplate);
+  const lengthBins = sentenceLengths.map(lengthBin);
+  const citationPlacements = sentenceList.map(citationPlacement).filter((value) => value !== "none");
+  const paragraphOpenings = paragraphBlocks.map((block) => sentenceOpening(block.text)).filter(Boolean);
+  const adjacentLengthMovement = sentenceLengths.slice(1).map((value, index) => Math.abs(value - sentenceLengths[index]));
 
   return {
     word_count: wc,
@@ -137,6 +194,17 @@ export function linguisticProfile(text) {
     technical_token_density_per_100_words: round(ratio(countMatches(text, TECHNICAL_RE) * 100, wc), 3),
     repeated_sentence_opening_share: round(ratio(repeatedOpenings, sentenceList.length), 3),
     punctuation: punctuationProfile(text, wc),
+    structural_texture: {
+      sentence_length_bin_entropy: round(entropy(lengthBins), 3),
+      local_sentence_length_movement: round(ratio(mean(adjacentLengthMovement), sentenceMean), 3),
+      architecture_template_entropy: round(entropy(architectureTemplates), 3),
+      architecture_template_concentration: round(concentration(architectureTemplates), 3),
+      paragraph_opening_concentration: round(concentration(paragraphOpenings), 3),
+      citation_placement_entropy: round(entropy(citationPlacements), 3),
+      citation_placement_concentration: round(concentration(citationPlacements), 3),
+      repeated_trigram_share: round(repeatedNgramShare(tokenList, 3), 3),
+      note: "These are transparent structural proxies for regularity and local repetition, not an AI-authorship classifier or a detector-score predictor.",
+    },
   };
 }
 
@@ -192,6 +260,9 @@ function normalizeObservation(observation = {}) {
     flagged_sentence_indices: Array.isArray(observation.flaggedSentenceIndices)
       ? observation.flaggedSentenceIndices.map(Number).filter((n) => Number.isInteger(n) && n >= 0).slice(0, 1000)
       : [],
+    flagged_excerpts: Array.isArray(observation.flaggedExcerpts)
+      ? observation.flaggedExcerpts.map((value) => String(value || "").trim().slice(0, 500)).filter(Boolean).slice(0, 100)
+      : [],
     notes: observation.notes ? String(observation.notes).slice(0, 1000) : null,
   };
 }
@@ -225,7 +296,23 @@ function openingSentenceIndices(text) {
 
 function flaggedSentenceAnalysis(text, consensus) {
   const sentences = splitSentences(text);
-  const allFlagged = [...new Set(consensus.observations.flatMap((o) => o.flagged_sentence_indices || []))]
+  const excerptMatches = consensus.observations.flatMap((observation) => (observation.flagged_excerpts || []).map((excerpt) => {
+    const wanted = new Set(words(excerpt).filter((token) => token.length >= 3));
+    let bestIndex = -1;
+    let bestScore = 0;
+    sentences.forEach((sentence, index) => {
+      const available = new Set(words(sentence).filter((token) => token.length >= 3));
+      let shared = 0;
+      for (const token of wanted) if (available.has(token)) shared += 1;
+      const score = ratio(shared, Math.max(1, Math.min(wanted.size, available.size)));
+      if (score > bestScore) { bestScore = score; bestIndex = index; }
+    });
+    return bestScore >= 0.55 ? bestIndex : -1;
+  }));
+  const allFlagged = [...new Set([
+    ...consensus.observations.flatMap((o) => o.flagged_sentence_indices || []),
+    ...excerptMatches,
+  ])]
     .filter((i) => i >= 0 && i < sentences.length).sort((a, b) => a - b);
   if (!allFlagged.length) return { available: false, reason: "No sentence-level detector highlights were recorded for this candidate.", flagged_sentence_indices: [] };
   const flaggedSet = new Set(allFlagged);
@@ -239,6 +326,7 @@ function flaggedSentenceAnalysis(text, consensus) {
     available: true,
     sentence_count: sentences.length,
     flagged_sentence_indices: allFlagged,
+    excerpt_matched_sentence_count: [...new Set(excerptMatches.filter((i) => i >= 0))].length,
     flagged_share: round(ratio(allFlagged.length, sentences.length), 3),
     flagged_profile: aggregateSentenceSubset(sentences, allFlagged),
     unflagged_profile: aggregateSentenceSubset(sentences, unflagged),
@@ -328,7 +416,7 @@ export function buildDetectorResearchReport({ sourceText = "", candidateText = "
   const family = compileFamily(styleFilters || {});
   const corpusInterpretation = buildCorpusInterpretation(candidateProfiles.whole_document, family);
   return {
-    version: "detector-research-v3",
+    version: "detector-research-v4",
     purpose: "Measure linguistic, positional and sentence-highlight features associated with external detector outcomes while preserving detector disagreement, sample adequacy and academic-content constraints. This is an observational research layer, not proof of authorship.",
     source_profiles: sourceProfiles,
     candidate_profiles: candidateProfiles,
