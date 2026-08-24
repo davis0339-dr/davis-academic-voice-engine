@@ -124,6 +124,7 @@
     const drift = driftStatus(iterative);
     const finalStatus = finalDisplayStatus(verdict, iterative);
     const rejectedPreservationWarnings = latestRewrite.rejected_preservation_failure?.preservation?.warnings || [];
+    const candidateHistory = latestRewrite.candidate_history || null;
     const driftReasons = iterative?.reasons || [];
     const deltas = iterative?.deltas_from_root || {};
 
@@ -175,6 +176,7 @@
         </div>
       ` : ""}
       ${rejectedPreservationWarnings.length ? `<details class="rv4-alert" open><summary>Why the generated candidate was rejected</summary>${rejectedPreservationWarnings.map((warning) => `<p><strong>${esc(title(warning.type))}:</strong> ${esc(warning.detail)}</p>`).join("")}</details>` : ""}
+      ${candidateHistory?.exact_historical_duplicate ? `<div class="rv4-alert"><strong>Historical candidate repetition:</strong> this candidate is textually identical to an earlier result for the same source and mode. It is blocked from final clearance and no external detector check is recommended.</div>` : ""}
       ${residual ? `
         <div class="rv4-residual">
           <strong>Selective residual pass</strong>

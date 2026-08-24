@@ -18,17 +18,10 @@ import { auditOutputAcceptance, acceptanceImproved } from "./outputAcceptance.js
 import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
 import { repairPreservationCandidate } from "./preservationRepair.js";
 import { splitTextBlocks } from "./textStructure.js";
+import { classifyPreservationRelease } from "./preservationRelease.js";
 
 function preservationPassed(p) {
-  return Boolean(
-    p?.numbers_ok &&
-    p?.citations_ok &&
-    p?.technical_terms_ok &&
-    p?.quotes_ok &&
-    p?.study_stage_ok !== false &&
-    p?.rhetorical_semantic_ok !== false &&
-    !p?.new_factual_claims_detected
-  );
+  return !classifyPreservationRelease(p).hard_failure;
 }
 
 function normalise(text) {
@@ -140,7 +133,7 @@ function acceptanceTargetBlockIndices(candidateText, candidateStructure, accepta
   return [...new Set(found)];
 }
 
-export function prioritiseResidualBlockIndices(forensicBlockIndices = [], legacyBlockIndices = [], maxBlocks = 8) {
+export function prioritiseResidualBlockIndices(forensicBlockIndices = [], legacyBlockIndices = [], maxBlocks = 4) {
   return [...new Set([...forensicBlockIndices, ...legacyBlockIndices])].slice(0, maxBlocks);
 }
 
@@ -324,7 +317,7 @@ async function callResidualModel(payload) {
 export async function selectiveResidualRework({
   sourceText,
   candidateText,
-  maxBlocks = 8,
+  maxBlocks = 4,
   styleFilters = {},
   rewriteIntensity = "auto",
   naturalisation = "faithful",
@@ -456,7 +449,7 @@ export async function selectiveResidualRework({
   // function. Repair the completed residual candidate once, then subject it to
   // the same preservation and independent acceptance gates. The original first
   // candidate remains the fallback if repair is unsafe or unhelpful.
-  if (!preservationPassed(preservation)) {
+  if (classifyPreservationRelease(preservation).hard_failure) {
     try {
       const repaired = await repairPreservationCandidate({
         sourceText,

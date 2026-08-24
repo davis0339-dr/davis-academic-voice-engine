@@ -187,7 +187,8 @@
         <div><span>Effective treatment</span><strong>${esc(title(intent.effective))}</strong></div>
         <div><span>Intervention budget</span><strong>${esc(intent.budget?.label || plan?.interventionBudget?.label || "n/a")}</strong></div>
         <div><span>Source discourse signals</span><strong>${sourceArchitecture.length}</strong></div>
-        <div><span>Machine-language density</span><strong>${machineLanguage?.available ? `${esc(title(machineLanguage.label))} · ${pct(machineLanguage.score)}` : "n/a"}</strong></div>
+        <div><span>Machine-language recurrence</span><strong>${machineLanguage?.available ? `${pct(machineLanguage.metrics?.hit_sentence_ratio)} · ${esc(machineLanguage.metrics?.hit_sentence_count || 0)}/${esc(machineLanguage.metrics?.sentence_count || 0)} sentences` : "n/a"}</strong></div>
+        <div><span>Composite machine-language pressure</span><strong>${machineLanguage?.available ? `${esc(title(machineLanguage.label))} · ${pct(machineLanguage.score)}` : "n/a"}</strong></div>
         <div><span>Machine-language target units</span><strong>${esc(machineExecution?.targeted_sentence_count || 0)}</strong></div>
         <div><span>Pattern-driven sentence rewrites</span><strong>${rewritePatternCount}</strong></div>
         <div><span>Planner units</span><strong>${totalUnits}</strong></div>

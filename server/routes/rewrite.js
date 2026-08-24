@@ -23,6 +23,7 @@ import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "../lib/coll
 import { retainSourceAfterPreservationFailure } from "../lib/finalSafetyFallback.js";
 import { repairPreservationCandidate } from "../lib/preservationRepair.js";
 import { classifyPreservationRelease } from "../lib/preservationRelease.js";
+import { candidateHistoryFor, isHistoricalDuplicate, rememberCandidate } from "../lib/candidateHistory.js";
 
 export const rewriteRouter = Router();
 
@@ -51,11 +52,6 @@ function planUnitCount(result) {
 
 function underExecutionCodes(compliance) {
   return Array.isArray(compliance?.under_execution_codes) ? compliance.under_execution_codes : [];
-}
-
-function visibleChangeOnlyUnderExecution(compliance) {
-  const codes = underExecutionCodes(compliance);
-  return Boolean(compliance?.under_executed && codes.length > 0 && codes.every((code) => code === "VISIBLE_CHANGE_FLOOR"));
 }
 
 function hasConcreteUnderExecution(compliance) {
@@ -160,6 +156,12 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     naturalisation,
     authorialTexture: sourceAssessment.authorial_texture,
   });
+  const priorCandidateHistory = candidateHistoryFor({
+    sourceText: text,
+    rewriteIntensity: modePolicy.effective_intensity,
+    naturalisation: modePolicy.effective_naturalisation,
+    lengthPreference,
+  });
 
   const runRewriteWith = ({
     intensity = modePolicy.effective_intensity,
@@ -173,6 +175,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     naturalisation: naturalisationLevel,
     revisionPurpose: effectiveRevisionPurpose,
     rewriteLineage,
+    priorCandidateHistory,
   });
 
   const runRewrite = () => runRewriteWith();
@@ -220,12 +223,19 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       let authorialExecutionRecoveryUsed = false;
       const authorialExecutionRecoveryAttempts = [];
       const authorialExecutionRecoveryErrors = [];
+      // Full-manuscript regeneration repeatedly converged on the same fluent local
+      // optimum while multiplying latency and provider cost. Execution defects are
+      // now handed to the bounded paragraph-level residual pass below.
+      const fullDocumentExecutionRecoveryAllowed = false;
 
       // Explicit Deep structural modes treat concrete under-execution as a
       // recoverable generation failure. The loop is independent of the internal
       // cadence/quality retries so a linguistically fluent but structurally shallow
       // candidate is not accepted merely because it preserved facts.
-      if (shouldAttemptAuthorialExecutionRecovery({ modePolicy, compliance: executionCompliance })) {
+      if (
+        fullDocumentExecutionRecoveryAllowed &&
+        shouldAttemptAuthorialExecutionRecovery({ modePolicy, compliance: executionCompliance })
+      ) {
         firstAttemptCompliance = executionCompliance;
         for (
           let recoveryAttempt = 1;
@@ -378,6 +388,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       // Deep structural modes use the dedicated recovery loop above and are never
       // suppressed merely because the internal quality pipeline already ran.
       if (
+        fullDocumentExecutionRecoveryAllowed &&
         !authorialExecutionRecoveryUsed &&
         !sourceRetainedForSafety &&
         !overExecutionRecoveryUsed &&
@@ -472,7 +483,6 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       let residualRework = null;
       let residualStageEligible = false;
       let residualStageBlockedReason = null;
-      const visibleOnlyUnder = visibleChangeOnlyUnderExecution(executionCompliance);
       const optionalProviderFailure = Boolean(
         result.transformation_quality?.corrective_retry_error ||
         result.transformation_quality?.rescue_retry_error
@@ -483,7 +493,6 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         !optionalProviderFailure &&
         executionCompliance.preservation_ok &&
         !executionCompliance.over_executed &&
-        (executionCompliance.execution_passed || visibleOnlyUnder) &&
         modePolicy.effective_naturalisation !== "off"
       );
 
@@ -537,7 +546,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         }
       }
 
-      const completedOutputAcceptance = auditOutputAcceptance({
+      const baseOutputAcceptance = auditOutputAcceptance({
         sourceText: text,
         candidateText: result.revised_text,
         styleFilters: styleFilters || {},
@@ -546,6 +555,16 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         planSummary: result.intervention_plan_summary || {},
         lengthPreference,
       });
+      const historicalDuplicate = !sourceRetainedForSafety && isHistoricalDuplicate(result.revised_text, priorCandidateHistory);
+      const completedOutputAcceptance = historicalDuplicate ? {
+        ...baseOutputAcceptance,
+        status: "review_required",
+        reasons: [...new Set([...(baseOutputAcceptance.reasons || []), "historical_candidate_repetition"])],
+        release_gate: {
+          ...(baseOutputAcceptance.release_gate || {}),
+          external_detector_check_recommended: false,
+        },
+      } : baseOutputAcceptance;
       const outputAcceptanceEnforced = Boolean(
         ["moderate", "deep"].includes(String(modePolicy.effective_intensity || "").toLowerCase()) &&
         ["aggressive", "authorial"].includes(String(modePolicy.effective_naturalisation || "").toLowerCase())
@@ -553,6 +572,11 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       result.output_acceptance = {
         ...completedOutputAcceptance,
         enforced_for_final_release: outputAcceptanceEnforced,
+      };
+      result.candidate_history = {
+        prior_candidate_count: priorCandidateHistory.candidates.length,
+        exact_historical_duplicate: historicalDuplicate,
+        repetition_blocking: historicalDuplicate,
       };
 
       result.execution_compliance = {
@@ -575,8 +599,10 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         first_attempt: firstAttemptCompliance,
         residual_stage_eligible: residualStageEligible,
         residual_stage_blocked_reason: residualStageBlockedReason,
-        max_authorial_execution_recovery_retries: AUTHORIAL_EXECUTION_RECOVERY_LIMIT,
-        max_reconciliation_retries: 1,
+        full_document_execution_recovery_allowed: fullDocumentExecutionRecoveryAllowed,
+        execution_repair_deferred_to_selective_residual: true,
+        max_authorial_execution_recovery_retries: 0,
+        max_reconciliation_retries: 0,
         max_preservation_recovery_retries: 1,
         max_over_execution_recovery_retries: 1,
       };
@@ -661,6 +687,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
 
       result.revision_purpose = effectiveRevisionPurpose;
       result.additional_inputs = normalizeAdditionalInputs(result.additional_inputs, effectiveRevisionPurpose);
+      if (!sourceRetainedForSafety) rememberCandidate(result.revised_text, priorCandidateHistory);
       return res.json({ ...result, provider_usage: llmProvider.usageSnapshot(), requestId });
     } catch (err) {
       lastErr = err;

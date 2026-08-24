@@ -156,10 +156,18 @@ function machineLanguageExecutionScope(plan, diagnostics, { requestedIntensity, 
   const assertiveExpression = ["aggressive", "authorial"].includes(requestedNaturalisation);
   const eligibleIntensity = requestedIntensity === "moderate" || requestedIntensity === "deep";
   const hitRatio = Number(forensic?.metrics?.hit_sentence_ratio || 0);
-  const material = Number(forensic?.score || 0) >= 0.20 || hitRatio >= 0.22;
+  const sentenceCount = Number(forensic?.metrics?.sentence_count || plan.items?.length || 0);
+  const sourceIndices = (forensic?.target_sentence_indices || []).filter(Number.isInteger);
+  // Do not erase a distributed diagnosis merely because two separately scaled
+  // summary measures sit just below their display thresholds. The live
+  // governance benchmark contained 12 flagged sentences (about 21% of the
+  // manuscript), yet score=0.09 and the former 0.22 ratio threshold produced
+  // zero planner targets. Recurring evidence across at least 15% of a document
+  // is material execution scope in assertive Moderate/Deep modes.
+  const distributedRecurrence = sourceIndices.length >= Math.max(4, Math.ceil(sentenceCount * 0.15));
+  const material = Number(forensic?.score || 0) >= 0.20 || hitRatio >= 0.16 || distributedRecurrence;
   if (!assertiveExpression || !eligibleIntensity || !forensic?.available || !material) return plan;
 
-  const sourceIndices = (forensic.target_sentence_indices || []).filter(Number.isInteger);
   if (!sourceIndices.length) return plan;
   const ratioCap = requestedIntensity === "deep" ? 0.70 : 0.45;
   // The former absolute cap of 18 silently reduced a 1,500-word Deep run to
@@ -200,6 +208,7 @@ function machineLanguageExecutionScope(plan, diagnostics, { requestedIntensity, 
     version: forensic.version,
     raw_score: forensic.score,
     hit_sentence_ratio: hitRatio,
+    distributed_recurrence_material: distributedRecurrence,
     source_target_sentence_count: sourceIndices.length,
     target_cap: maxTargets,
     targeted_sentence_count: executedTargetIndices.length,

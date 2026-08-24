@@ -63,6 +63,18 @@ test("semantic-force auditing is local rather than triggered by unrelated docume
   assert.equal(unsafe.causality_changes.length, 1);
 });
 
+test("associational language cannot become influence or prediction without author permission", () => {
+  const sourceText = "Within this sample, board oversight is linked to financing outcomes.";
+  for (const revisedText of [
+    "Within this sample, board oversight influences financing outcomes.",
+    "Within this sample, board oversight predicts financing outcomes.",
+  ]) {
+    const report = analyseRhetoricalSemanticPreservation(sourceText, revisedText, { lengthPreference: "maintain" });
+    assert.equal(report.passed, false);
+    assert.equal(report.causality_changes.length, 1);
+  }
+});
+
 test("role-marker changes remain review evidence when propositions and paragraph architecture survive", () => {
   const reconstructed = source
     .replace("Commercial scale, however, does not eliminate the professional-performance problem.", "Large international networks still face the professional problem of engagement performance.")

@@ -63,6 +63,31 @@ test("Deep machine-language scope is proportional rather than silently capped at
   assert.ok(plan.machineLanguageExecution.targeted_sentence_count > 18);
 });
 
+test("distributed 12-of-58 recurrence cannot collapse to zero targets when the composite score is low", () => {
+  const text = Array.from({ length: 58 }, (_, index) =>
+    `Governance sentence ${index + 1} explains how lenders evaluate monitoring, reporting quality and corporate risk under changing financial conditions.`
+  ).join(" ");
+  const diagnostics = diagnose(text);
+  diagnostics.machine_language_forensics = {
+    available: true,
+    version: "live-governance-threshold-regression",
+    score: 0.09,
+    label: "low",
+    metrics: { sentence_count: 58, hit_sentence_count: 12, hit_sentence_ratio: 12 / 58 },
+    target_sentence_indices: Array.from({ length: 12 }, (_, index) => index),
+  };
+
+  const plan = buildDiagnosisScopedPlan(diagnostics, {
+    rewriteIntensity: "deep",
+    naturalisation: "authorial",
+    lengthPreference: "auto",
+  });
+
+  assert.equal(plan.machineLanguageExecution.targeted_sentence_count, 12);
+  assert.equal(plan.machineLanguageExecution.distributed_recurrence_material, true);
+  assert.ok((plan.summary?.DISCOURSE_REPACKAGE || 0) >= 12);
+});
+
 test("Moderate aggressive can locally rebuild diagnosed paragraphs without paragraph resequencing", () => {
   const plan = analyse({ sourceText: machineDraft, styleFilters: {}, rewriteIntensity: "moderate", grammarIntensity: "standard", naturalisation: "aggressive", lengthPreference: "maintain" }).plan;
   assert.ok(plan.moderateDiscourseExecution?.target_paragraph_blocks?.length > 0);
@@ -89,6 +114,8 @@ test("the interface names the measure as pressure and explicitly rejects an AI-p
   assert.match(ui, /not the percentage probability that AI wrote the text/);
   assert.match(ui, /index.*\/100/);
   assert.match(plannerUi, /Machine-language target units/);
+  assert.match(plannerUi, /Machine-language recurrence/);
+  assert.match(plannerUi, /Composite machine-language pressure/);
   assert.match(plannerUi, /recurrence-based style evidence, not an authorship probability/);
 });
 

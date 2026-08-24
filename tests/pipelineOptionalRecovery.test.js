@@ -5,7 +5,7 @@ import { llmProvider, HealthState } from "../server/lib/llmProvider.js";
 
 const source = `Corporate governance is important for the cost of debt because governance is important to creditors. This demonstrates the importance of governance for creditors. Board independence is important because independent boards monitor management. This further demonstrates the importance of board independence for creditors. Audit committee independence is important because audit committees monitor reporting. This demonstrates the importance of audit committees for creditors. Disclosure quality is important because disclosure reduces information problems. This further demonstrates the importance of disclosure for the cost of debt.`;
 
-test("an optional quality-refinement timeout retains the completed candidate instead of restarting the whole rewrite", async () => {
+test("Deep uses one full-document pass and does not spend on repeated whole-document refinements", async () => {
   const originalCall = llmProvider.callAnthropic;
   let calls = 0;
   llmProvider.callAnthropic = async () => {
@@ -44,9 +44,12 @@ test("an optional quality-refinement timeout retains the completed candidate ins
       revisionPurpose: "collaborative",
     });
 
-    assert.equal(calls, 2, "a failed optional refinement must not trigger another optional provider pass");
+    assert.equal(calls, 1, "Deep must not repeat the whole manuscript before targeted residual recovery");
     assert.equal(result.revised_text, source);
-    assert.equal(result.transformation_quality.corrective_retry_error.code, HealthState.NETWORK_TIMEOUT);
+    assert.equal(result.transformation_quality.corrective_retry_used, false);
+    assert.equal(result.transformation_quality.rescue_retry_used, false);
+    assert.equal(result.transformation_quality.full_document_quality_recovery_allowed, false);
+    assert.equal(result.transformation_quality.selective_residual_recovery_preferred, true);
   } finally {
     llmProvider.callAnthropic = originalCall;
   }

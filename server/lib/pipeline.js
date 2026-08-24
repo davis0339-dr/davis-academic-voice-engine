@@ -23,6 +23,7 @@ import {
   iterativeRegularisationPenalty,
   normaliseRewriteLineage,
 } from "./iterativeRewriteGuard.js";
+import { candidateHistoryPromptBlock } from "./candidateHistory.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
 const SUBSTANTIVE_PLAN_LEVELS = new Set([
@@ -300,6 +301,7 @@ export async function rewrite({
   documentGlossary,
   documentContext,
   rewriteLineage,
+  priorCandidateHistory,
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
@@ -319,13 +321,11 @@ export async function rewrite({
   const measuredLanguageFamily = analysis.measured_language_family;
   const substantiveRatio = plannedSubstantiveRatio(analysis.plan);
   const qualityGateEnforced = naturalisationLevel === "aggressive" && substantiveRatio >= 0.30;
-  // Moderate + Aggressive already receives a full-document generation pass.
-  // Repeating that same large prompt for quality correction can consume the
-  // entire interactive request window before preservation-aware, paragraph-
-  // targeted recovery runs. Reserve whole-document retries for genuinely Deep
-  // work; ordinary developmental revision is better served by the selective
-  // residual stage after factual preservation has been established.
-  const fullDocumentQualityRecoveryAllowed = rewriteIntensity === "deep";
+  // One interactive request gets one full-manuscript generation. Repeating the
+  // same large Deep prompt produced the same historical local optimum while
+  // multiplying latency and cost. Completed-output defects are handled later by
+  // the paragraph-targeted residual stage, where unaffected prose stays locked.
+  const fullDocumentQualityRecoveryAllowed = false;
 
   const systemPrompt = buildSystemPrompt({
     styleProfile: analysis.style_profile_used.effective,
@@ -340,7 +340,7 @@ export async function rewrite({
     humanCadence,
     naturalisation: naturalisationLevel,
     revisionPurpose: effectiveRevisionPurpose,
-  }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage });
+  }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage }) + candidateHistoryPromptBlock(priorCandidateHistory);
 
   let parsed = await runModelPass({ systemPrompt, sourceText, maxTokens: outputTokenBudget });
   let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
@@ -472,7 +472,7 @@ export async function rewrite({
       ...transformationQuality,
       enforced: qualityGateEnforced,
       full_document_quality_recovery_allowed: fullDocumentQualityRecoveryAllowed,
-      selective_residual_recovery_preferred: !fullDocumentQualityRecoveryAllowed,
+      selective_residual_recovery_preferred: true,
       substantive_plan_ratio: Number(substantiveRatio.toFixed(3)),
       corrective_retry_used: qualityRetryUsed,
       rescue_retry_used: rescueRetryUsed,

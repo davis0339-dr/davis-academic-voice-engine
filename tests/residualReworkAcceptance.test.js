@@ -9,6 +9,12 @@ test("completed-output near-copy and duplication targets receive the finite repa
   );
 });
 
+test("selective residual recovery defaults to four blocks rather than rewriting most of a manuscript", async () => {
+  const source = (await import("node:fs")).readFileSync(new URL("../server/lib/residualRework.js", import.meta.url), "utf8");
+  assert.match(source, /maxBlocks = 4/);
+  assert.doesNotMatch(source, /maxBlocks = 8/);
+});
+
 test("accepts a preservation-safe residual candidate when machine risk falls materially and the independent audit does not worsen", () => {
   const accepted = shouldAcceptResidualCandidate({
     preservationOk: true,
