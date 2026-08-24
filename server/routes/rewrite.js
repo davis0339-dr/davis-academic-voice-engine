@@ -501,10 +501,12 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         result.transformation_quality?.corrective_retry_error ||
         result.transformation_quality?.rescue_retry_error
       );
+      const bindingExpansionCandidate = result.length_contract?.mode === "expand";
       residualStageEligible = Boolean(
         !sourceRetainedForSafety &&
         !overExecutionRecoveryUsed &&
         !optionalProviderFailure &&
+        !bindingExpansionCandidate &&
         executionCompliance.preservation_ok &&
         !executionCompliance.over_executed &&
         modePolicy.effective_naturalisation !== "off"
@@ -514,6 +516,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         if (sourceRetainedForSafety) residualStageBlockedReason = "non_edit_result";
         else if (overExecutionRecoveryUsed) residualStageBlockedReason = "surgical_recovery_is_final";
         else if (optionalProviderFailure) residualStageBlockedReason = "provider_refinement_failed";
+        else if (bindingExpansionCandidate) residualStageBlockedReason = "binding_expansion_candidate_is_final";
         else if (modePolicy.effective_naturalisation === "off") residualStageBlockedReason = "naturalisation_off";
         else if (!executionCompliance.preservation_ok) residualStageBlockedReason = "preservation_failed";
         else if (executionCompliance.over_executed) residualStageBlockedReason = "over_execution";

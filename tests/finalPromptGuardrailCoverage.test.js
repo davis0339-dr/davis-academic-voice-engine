@@ -7,7 +7,7 @@ import { DEEP_AUTHORIAL_PROTOCOL } from "../server/lib/diagnosisScopedPlanner.js
 import { buildRhetoricalLedger } from "../server/lib/rhetoricalPreservation.js";
 import { buildResidualSystemPrompt } from "../server/lib/residualRework.js";
 import { repairPrompt } from "../server/lib/preservationRepair.js";
-import { wordCount } from "../server/lib/sentences.js";
+import { manuscriptWordCount } from "../server/lib/lengthContract.js";
 
 const sourceText = fs.readFileSync(
   new URL("./fixtures/rhetorical-preservation/audit-firm-architecture.txt", import.meta.url),
@@ -95,7 +95,7 @@ test("Expand prompt states the exact binding source-plus-200 minimum", () => {
     lengthPreference: "expand",
     naturalisation: "aggressive",
   });
-  const sourceWords = wordCount(sourceText);
+  const sourceWords = manuscriptWordCount(sourceText);
   const prompt = buildSystemPrompt({
     sourceText,
     styleProfile: analysis.style_profile_used.effective,

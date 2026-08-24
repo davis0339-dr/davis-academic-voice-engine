@@ -24,7 +24,7 @@ import {
   normaliseRewriteLineage,
 } from "./iterativeRewriteGuard.js";
 import { candidateHistoryPromptBlock } from "./candidateHistory.js";
-import { buildLengthContract, lengthContractSatisfied } from "./lengthContract.js";
+import { buildLengthContract, lengthContractSatisfied, manuscriptWordCount } from "./lengthContract.js";
 import { classifyPreservationRelease } from "./preservationRelease.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
@@ -208,8 +208,8 @@ export function buildExpansionCompletionPrompt(contract) {
 async function completeExpansionContract({ sourceText, candidate, contract, maxTokens }) {
   let selected = candidate;
   const attempts = [];
-  for (let attempt = 1; attempt <= 2 && !lengthContractSatisfied(selected.revised_text, contract); attempt += 1) {
-    const currentWords = String(selected.revised_text || "").trim().split(/\s+/).filter(Boolean).length;
+  for (let attempt = 1; attempt <= 1 && !lengthContractSatisfied(selected.revised_text, contract); attempt += 1) {
+    const currentWords = manuscriptWordCount(selected.revised_text);
     const deficit = Math.max(0, contract.minimum_candidate_words - currentWords);
     const payload = [
       `CURRENT WORD COUNT: ${currentWords}`,
@@ -228,19 +228,17 @@ async function completeExpansionContract({ sourceText, candidate, contract, maxT
       maxTokens,
     });
     const recoveredPreservation = auditPreservation(sourceText, recovered.revised_text, extractProtectedSpans(sourceText), { lengthPreference: "expand" });
-    const recoveredWords = String(recovered.revised_text || "").trim().split(/\s+/).filter(Boolean).length;
+    const recoveredWords = manuscriptWordCount(recovered.revised_text);
     const hardFailure = classifyPreservationRelease(recoveredPreservation).hard_failure;
     const improved = !hardFailure && recoveredWords > currentWords;
     attempts.push({ attempt, current_words: currentWords, recovered_words: recoveredWords, preservation_hard_failure: hardFailure, selected: improved });
     if (improved) selected = recovered;
   }
-  if (!lengthContractSatisfied(selected.revised_text, contract)) {
-    const error = new Error(`Expand could not produce the required preservation-safe minimum of ${contract.minimum_candidate_words} words after two targeted development attempts.`);
-    error.code = "EXPANSION_CONTRACT_UNMET";
-    error.expansion = { contract, attempts };
-    throw error;
-  }
-  return { candidate: selected, attempts };
+  return {
+    candidate: selected,
+    attempts,
+    satisfied: lengthContractSatisfied(selected.revised_text, contract),
+  };
 }
 
 function nearSourceExamples(quality) {
@@ -477,7 +475,9 @@ export async function rewrite({
       attempted: true,
       attempts: completed.attempts,
       contract: lengthContract,
-      completed: true,
+      completed: completed.satisfied,
+      best_complete_candidate_retained: true,
+      exhausted_without_empty_result: !completed.satisfied,
     };
   }
 

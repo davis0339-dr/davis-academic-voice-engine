@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildLengthContract, lengthContractSatisfied } from "../server/lib/lengthContract.js";
+import { buildLengthContract, lengthContractSatisfied, manuscriptWordCount } from "../server/lib/lengthContract.js";
 import { auditOutputAcceptance } from "../server/lib/outputAcceptance.js";
 import { allocateLongDocumentExpansion } from "../server/lib/jobStore.js";
 
@@ -14,6 +14,14 @@ test("single-editor Expand requires at least 200 net additional words", () => {
   assert.equal(contract.minimum_candidate_words, 1658);
   assert.equal(lengthContractSatisfied(words(1657), contract), false);
   assert.equal(lengthContractSatisfied(words(1658), contract), true);
+});
+
+test("Expand uses the editor-visible manuscript count for punctuation-rich academic prose", () => {
+  const source = "U.S.-listed firms in the S&P 1500 use accounting-based debt-cost measures (Board et al., n.d.-a).";
+  assert.equal(manuscriptWordCount(source), 14);
+  const contract = buildLengthContract({ sourceText: source, preference: "expand" });
+  assert.equal(contract.source_words, 14);
+  assert.equal(contract.minimum_candidate_words, 214);
 });
 
 test("completed-output audit rejects an Expand candidate that is not 200 words longer", () => {

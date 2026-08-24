@@ -140,7 +140,7 @@ test("Expand completes a preservation-safe source-plus-200 contract before retur
   }
 });
 
-test("Expand never labels an under-length candidate as completed after two recovery attempts", async () => {
+test("Expand returns the best complete candidate after one bounded recovery instead of charging again and returning nothing", async () => {
   const originalCall = llmProvider.callAnthropic;
   let calls = 0;
   llmProvider.callAnthropic = async () => {
@@ -157,19 +157,21 @@ test("Expand never labels an under-length candidate as completed after two recov
   };
 
   try {
-    await assert.rejects(
-      rewrite({
-        sourceText: source,
-        styleFilters: {},
-        rewriteIntensity: "deep",
-        grammarIntensity: "standard",
-        lengthPreference: "expand",
-        naturalisation: "aggressive",
-        revisionPurpose: "fidelity",
-      }),
-      (error) => error?.code === "EXPANSION_CONTRACT_UNMET"
-    );
-    assert.equal(calls, 3, "one primary pass plus two bounded development recoveries");
+    const result = await rewrite({
+      sourceText: source,
+      styleFilters: {},
+      rewriteIntensity: "deep",
+      grammarIntensity: "standard",
+      lengthPreference: "expand",
+      naturalisation: "aggressive",
+      revisionPurpose: "fidelity",
+    });
+    assert.equal(calls, 2, "one primary pass plus one bounded development recovery");
+    assert.equal(result.revised_text, source);
+    assert.equal(result.length_contract.satisfied, false);
+    assert.equal(result.length_contract.recovery.completed, false);
+    assert.equal(result.length_contract.recovery.best_complete_candidate_retained, true);
+    assert.equal(result.length_contract.recovery.exhausted_without_empty_result, true);
   } finally {
     llmProvider.callAnthropic = originalCall;
   }

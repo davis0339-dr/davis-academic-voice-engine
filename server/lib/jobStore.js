@@ -19,8 +19,7 @@ import {
   coverageRecoveryContext,
   globalRepairContext,
 } from "./longDocumentIntelligence.js";
-import { wordCount } from "./sentences.js";
-import { buildLengthContract, DEFAULT_EXPAND_MIN_ADDITION_WORDS, lengthContractSatisfied } from "./lengthContract.js";
+import { buildLengthContract, DEFAULT_EXPAND_MIN_ADDITION_WORDS, lengthContractSatisfied, manuscriptWordCount } from "./lengthContract.js";
 
 const jobs = new Map();
 const MAX_TRANSIENT_ATTEMPTS = 4;
@@ -46,12 +45,12 @@ const JOB_TTL_MS = intEnv("LONGDOC_JOB_TTL_MINUTES", 120, 15, 1440) * 60 * 1000;
 const COMPLETED_JOB_TTL_MS = intEnv("COMPLETED_JOB_TTL_MINUTES", 30, 5, 240) * 60 * 1000;
 
 export function allocateLongDocumentExpansion(chunks = [], totalAdditionWords = DEFAULT_EXPAND_MIN_ADDITION_WORDS) {
-  const eligible = chunks.filter((chunk) => chunk?.rewriteMode !== "passthrough" && wordCount(chunk?.sourceText || "") > 0);
-  const totalWords = eligible.reduce((sum, chunk) => sum + wordCount(chunk.sourceText), 0);
+  const eligible = chunks.filter((chunk) => chunk?.rewriteMode !== "passthrough" && manuscriptWordCount(chunk?.sourceText || "") > 0);
+  const totalWords = eligible.reduce((sum, chunk) => sum + manuscriptWordCount(chunk.sourceText), 0);
   const target = Math.max(0, Math.round(Number(totalAdditionWords) || 0));
   if (!eligible.length || !totalWords || !target) return new Map();
   const rows = eligible.map((chunk) => {
-    const exact = target * (wordCount(chunk.sourceText) / totalWords);
+    const exact = target * (manuscriptWordCount(chunk.sourceText) / totalWords);
     return { index: chunk.index, floor: Math.floor(exact), fraction: exact - Math.floor(exact) };
   });
   let remainder = target - rows.reduce((sum, row) => sum + row.floor, 0);
@@ -313,8 +312,8 @@ function assembleAndAudit(job) {
     minimumExpansionWords: DEFAULT_EXPAND_MIN_ADDITION_WORDS,
   });
   job.documentLengthContract.satisfied = lengthContractSatisfied(reassembledText, job.documentLengthContract);
-  job.documentLengthContract.candidate_words = wordCount(reassembledText);
-  job.documentLengthContract.actual_addition_words = wordCount(reassembledText) - wordCount(job.sourceText);
+  job.documentLengthContract.candidate_words = manuscriptWordCount(reassembledText);
+  job.documentLengthContract.actual_addition_words = manuscriptWordCount(reassembledText) - manuscriptWordCount(job.sourceText);
   job.documentPreservation = auditPreservation(job.sourceText, reassembledText, job.documentMap.protectedSpans, {
     lengthPreference: job.options.lengthPreference,
   });
