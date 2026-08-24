@@ -22,6 +22,7 @@ import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js"
 import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "../lib/collaborativeRevision.js";
 import { retainSourceAfterPreservationFailure } from "../lib/finalSafetyFallback.js";
 import { repairPreservationCandidate } from "../lib/preservationRepair.js";
+import { classifyPreservationRelease } from "../lib/preservationRelease.js";
 
 export const rewriteRouter = Router();
 
@@ -104,9 +105,11 @@ function finalCandidateStatus(
   residual,
   outputAcceptance,
   outputAcceptanceEnforced = false,
-  sourceRetainedForSafety = false
+  sourceRetainedForSafety = false,
+  preservationRelease = null
 ) {
   if (sourceRetainedForSafety) return "no_safe_edit_available";
+  if (preservationRelease?.review_required) return "preservation_review_required";
   if (!compliance?.execution_passed && !compliance?.preservation_ok) return "execution_and_preservation_failed";
   if (!compliance?.execution_passed) {
     if (compliance?.execution_status === "over-executed") return "execution_over";
@@ -437,11 +440,13 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         }
       }
 
-      // A candidate that still fails deterministic preservation after the
-      // existing recovery attempt must never be presented as usable revised
-      // prose. Keep the diagnostics, quarantine the rejected text, and return an
-      // explicit non-edit containing the source verbatim.
-      if (!sourceRetainedForSafety && !executionCompliance.preservation_ok) {
+      // Separate release-blocking invariants from review-only rhetorical
+      // heuristics. Hard failures remain quarantined. A complete candidate that
+      // preserved hard evidence invariants stays visible for researcher review
+      // rather than being silently replaced by the source.
+      let preservationRelease = classifyPreservationRelease(result.preservation);
+      if (!sourceRetainedForSafety && !executionCompliance.preservation_ok && preservationRelease.hard_failure) {
+        const rejectedRelease = preservationRelease;
         rejectedPreservationFailure = {
           compliance: executionCompliance,
           preservation: result.preservation || null,
@@ -455,7 +460,14 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         });
         executionCompliance = assessExecutionCompliance(result);
         selectedAttempt = "transparent-preservation-fallback";
+        preservationRelease = {
+          ...rejectedRelease,
+          candidate_quarantined: true,
+        };
+      } else {
+        preservationRelease = classifyPreservationRelease(result.preservation);
       }
+      result.preservation_release = preservationRelease;
 
       let residualRework = null;
       let residualStageEligible = false;
@@ -600,6 +612,8 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       let verdictNote;
       if (sourceRetainedForSafety) {
         verdictNote = result.safety_fallback?.reason || "No safe revision survived the final safeguards. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision.";
+      } else if (preservationRelease.review_required) {
+        verdictNote = "The candidate preserved hard evidence invariants but the rhetorical/semantic heuristic still found possible proposition or discourse-function loss. The candidate is shown for direct researcher review and is not labelled as a successful final revision.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.execution_passed && executionCompliance.preservation_ok) {
         verdictNote = "The first Deep candidate under-executed the structural plan. Automatic Deep execution recovery produced a preservation-safe candidate that now satisfies execution compliance; under-execution was treated as a generation defect, not as a safe stopping point.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.under_executed) {
@@ -622,7 +636,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         execution: sourceRetainedForSafety
           ? "no-safe-edit-available"
           : executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
-        preservation: sourceRetainedForSafety ? "source-preserved" : executionCompliance.preservation_ok ? "passed" : "failed",
+        preservation: sourceRetainedForSafety ? "source-preserved" : preservationRelease.review_required ? "review-required" : executionCompliance.preservation_ok ? "passed" : "failed",
         residual: residualVerdict,
         rewrite_chain: result.iterative_rewrite_quality?.available
           ? (result.iterative_rewrite_quality.blocking ? "regularisation-risk" : "within-root-register-band")
@@ -639,7 +653,8 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
           residualRework,
           completedOutputAcceptance,
           outputAcceptanceEnforced,
-          sourceRetainedForSafety
+          sourceRetainedForSafety,
+          preservationRelease
         ),
         note: verdictNote,
       };

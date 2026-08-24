@@ -449,14 +449,24 @@ async function runAnalyseAndRevise() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(`[${data.error || "ERROR"}] ${data.message || "Revision failed"}${formatProviderUsage(data.provider_usage)}`);
-    revisedText.value = data.revised_text;
+    const noRevision = Boolean(data.safety_fallback?.source_retained && data.safety_fallback?.successful_revision === false);
+    revisedText.value = noRevision ? "" : data.revised_text;
     updateWordCounts();
     renderDiagnostics(data.diagnostics);
     renderProfile(data.style_profile_used);
-    renderPreservation(data.preservation);
+    const rejectedPreservation = data.execution_compliance?.rejected_preservation_failure?.preservation;
+    renderPreservation(noRevision && rejectedPreservation ? rejectedPreservation : data.preservation);
     renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
     renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
-    setBusy(false, `Done. Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}${formatProviderUsage(data.provider_usage)}`);
+    const outcome = noRevision
+      ? "No revision produced: every generated candidate breached a hard preservation invariant. The source remains in the Source box; nothing has been placed in Revised."
+      : data.candidate_verdict?.final_status === "accepted"
+        ? "Revision completed and internally cleared."
+        : "Candidate returned for review; it has not been internally cleared as a final revision.";
+    setBusy(false, `${outcome} Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}${formatProviderUsage(data.provider_usage)}`);
+    statusMessage.className = noRevision || data.candidate_verdict?.final_status !== "accepted"
+      ? "status-message error"
+      : "status-message";
   } catch (err) {
     setBusy(false);
     setError(err.message);

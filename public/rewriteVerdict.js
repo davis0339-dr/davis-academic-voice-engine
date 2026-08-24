@@ -39,6 +39,8 @@
       "unresolved_or_rejected",
       "execution_under",
       "source-preserved",
+      "review-required",
+      "preservation_review_required",
       "surgical_partial",
     ].includes(value)) return "warn";
     return "bad";

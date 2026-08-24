@@ -20,13 +20,18 @@ test("completed-output acceptance runs after residual recovery and before final 
   assert.ok(verdictIndex > acceptanceIndex);
 });
 
-test("preservation failure is converted to an explicit source-retained non-edit before release auditing", () => {
+test("hard preservation failure is converted to an explicit source-retained non-edit before release auditing", () => {
   const fallbackIndex = route.indexOf("retainSourceAfterPreservationFailure({");
   const acceptanceIndex = route.indexOf("const completedOutputAcceptance = auditOutputAcceptance({");
   assert.ok(fallbackIndex >= 0);
   assert.ok(acceptanceIndex > fallbackIndex);
-  assert.match(route, /if \(!sourceRetainedForSafety && !executionCompliance\.preservation_ok\)/);
+  assert.match(route, /!executionCompliance\.preservation_ok && preservationRelease\.hard_failure/);
   assert.match(route, /rejected_preservation_failure: rejectedPreservationFailure/);
+});
+
+test("review-only rhetorical evidence is visible but cannot be labelled accepted", () => {
+  assert.match(route, /if \(preservationRelease\?\.review_required\) return "preservation_review_required"/);
+  assert.match(route, /preservationRelease\.review_required \? "review-required"/);
 });
 
 test("preservation recovery repairs the completed candidate instead of regenerating the whole source", () => {
