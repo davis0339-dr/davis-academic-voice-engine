@@ -59,6 +59,8 @@
     const source = document.getElementById("sourceText")?.value || "";
     const revised = latestRewrite.revised_text || document.getElementById("revisedText")?.value || "";
     const preference = document.getElementById("lengthPreference")?.value || "auto";
+    const intensity = document.getElementById("rewriteIntensity")?.value || "auto";
+    const naturalisation = document.getElementById("naturalisation")?.value || "off";
     const sourceWords = countWords(source);
     const revisedWords = countWords(revised);
     if (!sourceWords || !revisedWords) return null;
@@ -66,7 +68,10 @@
     const deltaPct = sourceWords ? (delta / sourceWords) * 100 : 0;
     let respected = true;
     let note = "Length stayed within the selected preference's ordinary flexibility.";
-    if (preference === "expand" && delta < 0) {
+    if (preference === "auto" && intensity === "deep" && naturalisation === "authorial" && deltaPct < 0) {
+      respected = false;
+      note = "Deep Authorial + Auto uses source length or modest evidence-safe development as its ordinary centre. This candidate became shorter, so the result must demonstrate genuine reconstruction and intellectual completeness rather than receiving an automatic green length verdict.";
+    } else if (preference === "expand" && delta < 0) {
       respected = false;
       note = "Expand was selected, but the revision became shorter. The current engine should not treat this as fully compliant unless compression was explicitly necessary; a warning is shown instead of silently calling the preference satisfied.";
     } else if (preference === "concise" && delta > 0) {

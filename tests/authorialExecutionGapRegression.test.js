@@ -104,7 +104,46 @@ test("broad Deep aggressive discourse scope cannot clear at barely half-visible 
   assert.ok(compliance.under_execution_codes.includes("BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED"));
 });
 
-test("nominal deep reconstruction is rejected for concrete structural under-execution while low visible change remains a separate variance", () => {
+test("the live Deep Authorial shape cannot clear a mostly retained 41%-change candidate", () => {
+  const plan = {
+    DISCOURSE_REPACKAGE: 46,
+    MICRO_EDIT: 10,
+    SENTENCE_RESTRUCTURE: 1,
+    SPLIT_OR_MERGE: 1,
+    KEEP: 4,
+  };
+  const authority = deriveInterventionAuthority({
+    planSummary: plan,
+    authorialTexture: { preservation_priority: "medium", machine_pattern_regularity: { score: 0.42 } },
+    requestedIntensity: "deep",
+    requestedNaturalisation: "authorial",
+    effectiveIntent: "discourse_reconstruction",
+  });
+
+  assert.equal(authority.authorial_mode, true);
+  assert.equal(authority.minimum_basis, "broad_deep_discourse_execution_floor");
+  assert.ok(authority.min_changed_sentence_ratio >= 0.48);
+
+  const compliance = assessExecutionCompliance({
+    intervention_plan_summary: plan,
+    intervention_intent: { effective: "discourse_reconstruction" },
+    intervention_authority: authority,
+    edit_summary: {
+      kept: 0,
+      micro_edits: 9,
+      sentence_restructures: 1,
+      split_or_merge: 1,
+      paragraph_reorders: 0,
+    },
+    transformation_quality: { unchanged_sentence_ratio: 0.59 },
+    preservation: preservationPassed(),
+  });
+
+  assert.equal(compliance.execution_passed, false);
+  assert.ok(compliance.under_execution_codes.includes("BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED"));
+});
+
+test("nominal broad Deep reconstruction treats low visible change as concrete under-execution", () => {
   const authority = deriveInterventionAuthority({
     planSummary: discourseHeavyPlan,
     authorialTexture: strongTexture,
@@ -133,5 +172,5 @@ test("nominal deep reconstruction is rejected for concrete structural under-exec
   assert.equal(compliance.plan_fidelity_status, "under-executed");
   assert.ok(compliance.under_execution_codes.includes("PLAN_STRUCTURAL_COVERAGE"));
   assert.equal(compliance.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"), false);
-  assert.ok(compliance.execution_variance_codes.includes("VISIBLE_CHANGE_FLOOR"));
+  assert.ok(compliance.under_execution_codes.includes("BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED"));
 });

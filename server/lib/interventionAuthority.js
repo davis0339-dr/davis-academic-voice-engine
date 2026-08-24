@@ -135,7 +135,9 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     : Math.max(0, interventionRatio - minimumSlack);
   const authorialPlanDemand = clamp(substantiveRatio, 0, 1);
   const authorialMinimumChanged = authorialDiscourseMode
-    ? clamp(Math.max(0.15, authorialPlanDemand * 0.35), 0, 0.55)
+    ? broadDeepDiscoursePlan
+      ? clamp(Math.max(authorialPlanDemand * 0.35, discourseRatio * 0.66), 0, 0.72)
+      : clamp(Math.max(0.15, authorialPlanDemand * 0.35), 0, 0.55)
     : ordinaryMinimumChanged;
 
   const ordinaryChangedUpper = deepDiscourseMode && interventionRatio >= 0.85 ? 1 : 0.95;
@@ -173,7 +175,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     max_changed_sentence_ratio: Number((authorialMode ? authorialMaxChanged : ordinaryMaxChanged).toFixed(3)),
     max_substantive_operation_ratio: Number((authorialMode ? authorialMaxSubstantive : ordinaryMaxSubstantive).toFixed(3)),
     min_changed_sentence_ratio: Number((authorialMode ? authorialMinimumChanged : ordinaryMinimumChanged).toFixed(3)),
-    minimum_basis: broadDeepDiscoursePlan && !authorialMode
+    minimum_basis: broadDeepDiscoursePlan
       ? "broad_deep_discourse_execution_floor"
       : authorialDiscourseMode
         ? "plan_responsive_authorial_execution_floor"
