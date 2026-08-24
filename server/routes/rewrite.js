@@ -27,7 +27,6 @@ export const rewriteRouter = Router();
 
 const TRANSIENT_STATES = new Set([
   "RATE_LIMITED",
-  "NETWORK_TIMEOUT",
   "PROVIDER_OVERLOADED",
   "PROVIDER_UNAVAILABLE",
   "PROVIDER_ERROR",
@@ -651,6 +650,9 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     } catch (err) {
       lastErr = err;
       const state = err.healthState;
+      // A timeout on a long rewrite must not restart the complete pipeline and
+      // repeat the same large request. Provider overload/rate errors may still
+      // receive bounded retry treatment because they normally fail quickly.
       const retriable = TRANSIENT_STATES.has(state);
       if (!retriable || attempt === MAX_RETRIES) break;
       const base = state === "PROVIDER_OVERLOADED" ? 2000 : state === "RATE_LIMITED" ? 2500 : 750;

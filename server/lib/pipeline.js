@@ -129,10 +129,16 @@ export function modelOutputTokenBudget(sourceText, revisionPurpose = "fidelity")
 }
 
 async function runModelPass({ systemPrompt, sourceText, maxTokens = 4096 }) {
+  const sourceWords = String(sourceText || "").trim().split(/\s+/).filter(Boolean).length;
+  // A near-limit academic rewrite can legitimately need longer than the former
+  // fixed 90-second provider window. Give the primary pass one realistic window
+  // instead of aborting and restarting the entire expensive pipeline three times.
+  const primaryPassTimeoutMs = Math.min(150000, Math.max(90000, sourceWords * 100));
   const llmResult = await llmProvider.callAnthropic({
     system: systemPrompt,
     messages: [{ role: "user", content: sourceText }],
     maxTokens,
+    timeoutOverrideMs: primaryPassTimeoutMs,
   });
 
   if (llmResult.raw?.stop_reason === "max_tokens") {
@@ -149,6 +155,7 @@ async function runModelPass({ systemPrompt, sourceText, maxTokens = 4096 }) {
       system: buildJsonRepairSystemPrompt(),
       messages: [{ role: "user", content: llmResult.text }],
       maxTokens,
+      timeoutOverrideMs: 60000,
     });
     if (repairResult.raw?.stop_reason === "max_tokens") {
       const err = new Error("JSON syntax recovery was truncated before completion.");

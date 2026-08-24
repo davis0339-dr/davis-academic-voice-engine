@@ -359,7 +359,14 @@ function setBusy(busy, label) {
     busyBaseLabel = label || "Working…";
     const paint = () => {
       const elapsed = Math.round((Date.now() - busyStartedAt) / 1000);
-      statusMessage.textContent = `${busyBaseLabel} ${elapsed}s elapsed. Complex rewrites may need more than one model pass.`;
+      const stage = elapsed < 20
+        ? "Reading the argument and constructing the intervention plan."
+        : elapsed < 75
+          ? "The provider is composing the first complete candidate. No output has been discarded."
+          : elapsed < 150
+            ? "Still waiting for the primary reconstruction. Near-limit Deep requests can take longer; the full request will not be restarted merely because it is slow."
+            : "The primary provider call is unusually slow. If it completes safely, optional refinements will use the remaining time budget rather than restart the manuscript.";
+      statusMessage.textContent = `${busyBaseLabel} ${elapsed}s elapsed. ${stage}`;
     };
     paint();
     busyTimer = setInterval(paint, 1000);
