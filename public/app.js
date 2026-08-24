@@ -300,14 +300,22 @@ function renderAdditionalInputs(additionalInputs = [], revisionPurpose = "fideli
     </section>`);
 }
 
-function renderPreservation(preservation) {
+function renderPreservation(preservation, release = null) {
   const rhetorical = preservation.rhetorical_semantic_preservation || {};
+  const warningTypes = new Set((preservation.warnings || []).map((warning) => warning.type));
   const rows = [
     ["Numbers preserved", preservation.numbers_ok],
+    ["Numeric ranges preserved", preservation.ranges_ok !== false],
+    ["No unsupported numbers introduced", !warningTypes.has("new_numeric_value_introduced")],
     ["Citations preserved", preservation.citations_ok],
+    ["No unsupported citations introduced", !warningTypes.has("new_citation_introduced")],
     ["Technical terms preserved", preservation.technical_terms_ok],
     ["Quotations unaltered", preservation.quotes_ok],
     ["Study stage / proposal tense preserved", preservation.study_stage_ok !== false],
+    ["Researcher voice/register preserved", preservation.researcher_voice_ok !== false],
+    ["Section/chapter structure preserved", preservation.document_structure_ok !== false],
+    ["Explicit list counts remain consistent", preservation.list_counts_ok !== false],
+    ["Claim/evidence attachment has no review signal", !(preservation.claim_attachment_review || []).length],
     ["Rhetorical & semantic architecture preserved", preservation.rhetorical_semantic_ok !== false],
     ["No new factual claims detected", !preservation.new_factual_claims_detected],
   ];
@@ -338,7 +346,14 @@ function renderPreservation(preservation) {
       <div class="warning-item ${(rhetorical.paragraphs_compressed_beyond_threshold || []).length ? "bad" : ""}">Paragraphs compressed beyond threshold: ${escapeHtml((rhetorical.paragraphs_compressed_beyond_threshold || []).length)}</div>
       <div class="warning-item ${rhetorical.length_within_soft_range === false ? "bad" : ""}">Source/revision length ratio: ${escapeHtml(rhetorical.overall_length_ratio ?? "n/a")} (${escapeHtml(rhetorical.length_preference || "auto")})</div>
     </section>` : "";
-  $("tab-preservation").innerHTML = rowsHtml + rhetoricalHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
+  const releaseHtml = release ? `
+    <section class="preservation-detail-panel">
+      <h4>Release decision</h4>
+      <div class="warning-item ${release.release_status === "cleared" ? "" : "bad"}">${escapeHtml(String(release.release_status || "review_required").replace(/_/g, " "))}</div>
+      <p>${escapeHtml(release.note || "")}</p>
+      <p class="muted">Repair-required warnings: ${escapeHtml((release.repair_warning_types || []).join(", ") || "none")} · Review-only warnings: ${escapeHtml((release.review_warning_types || []).join(", ") || "none")}</p>
+    </section>` : "";
+  $("tab-preservation").innerHTML = releaseHtml + rowsHtml + rhetoricalHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
 }
 
 function clearBusyTimer() {
@@ -449,13 +464,12 @@ async function runAnalyseAndRevise() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(`[${data.error || "ERROR"}] ${data.message || "Revision failed"}${formatProviderUsage(data.provider_usage)}`);
-    const noRevision = Boolean(data.safety_fallback?.source_retained && data.safety_fallback?.successful_revision === false);
-    revisedText.value = noRevision ? "" : data.revised_text;
+    revisedText.value = data.revised_text || "";
     updateWordCounts();
     renderDiagnostics(data.diagnostics);
     renderProfile(data.style_profile_used);
     const rejectedPreservation = data.execution_compliance?.rejected_preservation_failure?.preservation;
-    renderPreservation(noRevision && rejectedPreservation ? rejectedPreservation : data.preservation);
+    renderPreservation(data.preservation || rejectedPreservation || {}, data.preservation_release);
     renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
     renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
     const acceptanceReasons = data.output_acceptance?.reasons || [];
@@ -469,15 +483,13 @@ async function runAnalyseAndRevise() {
     const expandEvidence = expandContract?.satisfied
       ? ` Expand contract met: +${formatNumber(Math.max(0, Number(candidateWords || 0) - Number(sourceWords || 0)))} words (minimum +${formatNumber(expandContract.minimum_addition_words)}).`
       : "";
-    const outcome = noRevision
-      ? "No revision produced: every generated candidate breached a hard preservation invariant. The source remains in the Source box; nothing has been placed in Revised."
-      : lengthContractMissed && data.candidate_verdict?.final_status !== "accepted"
+    const outcome = lengthContractMissed && data.candidate_verdict?.final_status !== "accepted"
         ? `Best complete preservation-safe revision returned.${lengthEvidence} Expand requested at least +${formatNumber(expandContract?.minimum_addition_words || 200)} words; the achieved increase is shown for honest researcher review. No additional paid full-document retry was launched.`
-      : data.candidate_verdict?.final_status === "accepted"
-        ? `Revision completed and internally cleared.${expandEvidence}`
-        : "Candidate returned for review; it has not been internally cleared as a final revision.";
+        : data.candidate_verdict?.final_status === "accepted"
+         ? `Revision completed and internally cleared.${expandEvidence}`
+        : `Complete candidate returned for researcher review; it has not been labelled as an internally cleared final revision.${lengthEvidence}`;
     setBusy(false, `${outcome} Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}${formatProviderUsage(data.provider_usage)}`);
-    statusMessage.className = noRevision || data.candidate_verdict?.final_status !== "accepted"
+    statusMessage.className = data.candidate_verdict?.final_status !== "accepted"
       ? "status-message error"
       : "status-message";
   } catch (err) {
@@ -596,16 +608,30 @@ function renderJobProgress(job) {
   });
 
   if (job.status === "completed" || job.status === "completed_with_errors") {
-    const p = job.documentPreservation;
-    const warnings = p.warnings.map((w) => `<div class="warning-item bad">${w.type}: ${w.detail}</div>`).join("");
+    const p = job.documentPreservation || {};
+    const release = job.documentPreservationRelease || {};
+    const warningTypes = new Set((p.warnings || []).map((warning) => warning.type));
+    const preservationRows = [
+      ["Numbers preserved", p.numbers_ok],
+      ["Numeric ranges preserved", p.ranges_ok !== false],
+      ["No unsupported numbers introduced", !warningTypes.has("new_numeric_value_introduced")],
+      ["Citations preserved", p.citations_ok],
+      ["No unsupported citations introduced", !warningTypes.has("new_citation_introduced")],
+      ["Technical terms preserved", p.technical_terms_ok],
+      ["Quotations unaltered", p.quotes_ok],
+      ["Study stage preserved", p.study_stage_ok !== false],
+      ["Researcher voice/register preserved", p.researcher_voice_ok !== false],
+      ["Section/chapter structure preserved", p.document_structure_ok !== false],
+      ["Explicit list counts remain consistent", p.list_counts_ok !== false],
+      ["Rhetorical & semantic architecture preserved", p.rhetorical_semantic_ok !== false],
+    ].map(([label, ok]) => `<div class="warning-item ${ok ? "" : "bad"}">${ok ? "✓" : "✗"} ${label}</div>`).join("");
+    const warnings = (p.warnings || []).map((w) => `<div class="warning-item bad">${w.type}: ${w.detail}</div>`).join("");
     $("longdocOutput").innerHTML = `
       <h4>Reassembled document</h4>
       <textarea id="longdocReassembled" readonly rows="12">${job.reassembledText}</textarea>
       <h4>Document-level preservation audit</h4>
-      <div class="warning-item ${p.numbers_ok ? "" : "bad"}">${p.numbers_ok ? "✓" : "✗"} Numbers preserved</div>
-      <div class="warning-item ${p.citations_ok ? "" : "bad"}">${p.citations_ok ? "✓" : "✗"} Citations preserved</div>
-      <div class="warning-item ${p.technical_terms_ok ? "" : "bad"}">${p.technical_terms_ok ? "✓" : "✗"} Technical terms preserved</div>
-      <div class="warning-item ${p.study_stage_ok !== false ? "" : "bad"}">${p.study_stage_ok !== false ? "✓" : "✗"} Study stage preserved</div>
+      <div class="warning-item ${release.release_status === "cleared" ? "" : "bad"}"><strong>${escapeHtml(String(release.release_status || "review_required").replace(/_/g, " "))}</strong> — ${escapeHtml(release.note || "Review the detailed preservation evidence below.")}</div>
+      ${preservationRows}
       ${warnings}
     `;
   } else {

@@ -111,7 +111,18 @@
 
   function preservationPassed(p) {
     if (!p) return false;
-    return Boolean(p.numbers_ok && p.citations_ok && p.technical_terms_ok && p.study_stage_ok !== false && !p.new_factual_claims_detected);
+    return Boolean(
+      p.numbers_ok &&
+      p.ranges_ok !== false &&
+      p.citations_ok &&
+      p.technical_terms_ok &&
+      p.quotes_ok &&
+      p.study_stage_ok !== false &&
+      p.document_structure_ok !== false &&
+      p.list_counts_ok !== false &&
+      p.rhetorical_semantic_ok !== false &&
+      !p.new_factual_claims_detected
+    );
   }
 
   function vNextAudit(job) {
@@ -126,7 +137,9 @@
       coverage.exact_paragraph_retention_ratio > 0.55
     );
     const internalRegularityPassed = job?.wholeDocumentAudit?.passed !== false;
-    const preservationOk = preservationPassed(job?.documentPreservation);
+    const preservationOk = job?.documentPreservationRelease
+      ? job.documentPreservationRelease.cleared === true
+      : preservationPassed(job?.documentPreservation);
     const complete = job?.candidateStatus !== "incomplete" && Number(job?.progress?.failedCount || 0) === 0;
     const passed = complete && internalRegularityPassed && preservationOk && structure.passed && !underTransformed;
     return {

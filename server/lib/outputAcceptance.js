@@ -14,6 +14,7 @@ import { assessLanguageDeviation } from "./languageFamilyEngine.js";
 import { resolveProfile } from "./styleProfileStore.js";
 import { auditPreservation } from "./preservation.js";
 import { extractProtectedSpans } from "./protect.js";
+import { classifyPreservationRelease } from "./preservationRelease.js";
 import { splitSentences, wordCount } from "./sentences.js";
 import { buildLengthContract, manuscriptWordCount } from "./lengthContract.js";
 import { analyseMachineLanguageForensics } from "./machineLanguageForensics.js";
@@ -264,10 +265,7 @@ function sourceDependence(sourceText, candidateText) {
 }
 
 function preservationPassed(result) {
-  return Boolean(
-    result?.numbers_ok && result?.citations_ok && result?.technical_terms_ok && result?.quotes_ok &&
-    result?.study_stage_ok !== false && result?.rhetorical_semantic_ok !== false && !result?.new_factual_claims_detected
-  );
+  return !classifyPreservationRelease(result).repair_required;
 }
 
 function textureAssessment(text, styleFilters = {}) {

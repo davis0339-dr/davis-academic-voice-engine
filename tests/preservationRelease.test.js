@@ -37,7 +37,7 @@ test("review-only rhetorical evidence keeps a complete candidate visible without
   assert.equal(decision.candidate_may_be_shown_for_review, true);
 });
 
-test("citation, numeric and study-stage failures remain hard blockers", () => {
+test("citation, numeric and study-stage failures require repair but keep a complete draft visible", () => {
   for (const preservation of [
     safeBase({ citations_ok: false, warnings: [{ type: "missing_citation", detail: "Smith (2022)" }] }),
     safeBase({ numbers_ok: false, warnings: [{ type: "missing_numeric_span", detail: "7%" }] }),
@@ -45,8 +45,20 @@ test("citation, numeric and study-stage failures remain hard blockers", () => {
   ]) {
     const decision = classifyPreservationRelease(preservation);
     assert.equal(decision.hard_failure, true);
-    assert.equal(decision.candidate_may_be_shown_for_review, false);
+    assert.equal(decision.repair_required, true);
+    assert.equal(decision.candidate_may_be_shown_for_review, true);
+    assert.equal(decision.candidate_may_be_labelled_accepted, false);
   }
+});
+
+test("researcher voice and rhetorical marker changes are review-only", () => {
+  const decision = classifyPreservationRelease(safeBase({
+    researcher_voice_ok: false,
+    warnings: [{ type: "researcher_voice_shift", detail: "First person introduced." }],
+  }));
+  assert.equal(decision.repair_required, false);
+  assert.equal(decision.review_required, true);
+  assert.equal(decision.candidate_may_be_shown_for_review, true);
 });
 
 test("modality, causality, scope and comparison drift remain hard blockers", () => {

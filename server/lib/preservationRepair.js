@@ -5,6 +5,7 @@ import { auditPreservation } from "./preservation.js";
 import { modelOutputTokenBudget } from "./pipeline.js";
 import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
 import { buildLengthContract, lengthContractSatisfied } from "./lengthContract.js";
+import { classifyPreservationRelease } from "./preservationRelease.js";
 
 export function repairPrompt(lengthContract = null) {
   return [
@@ -18,6 +19,8 @@ export function repairPrompt(lengthContract = null) {
     "When evidence survived but its explanation of relevance was lost, reconstruct that interpretive function from the source. When a logical connector carried a balanced relationship, keep that relationship explicit even if sentence boundaries change.",
     "This is a TARGETED MINIMUM-CHANGE repair. Use the detailed defect report and edit only the candidate location needed to correct each listed defect. Candidate sentences and paragraphs not implicated by a listed defect must remain verbatim.",
     "Restore every missing or altered protected item in its logically correct location. Remove any claim, number or citation that the candidate introduced without source support.",
+    "For an unsupported explanatory date or number, remove the value and reconstruct the sentence with source-bounded non-numeric wording unless the source itself supplies an equivalent value. Never discard an otherwise sound paragraph merely to remove one unsupported detail.",
+    "Treat the defect report by severity: concrete evidence/stage/structure and semantic-force items are repair targets; marker-based rhetorical, voice and soft-length findings are review evidence and must not provoke wholesale rewriting.",
     "Preserve proposal/future orientation exactly when the source describes planned research. Do not convert a prospectus into a completed study.",
     "Do not add new evidence, mechanisms, interpretations or references. Do not undo legitimate sentence restructuring merely to increase lexical overlap with the source. Do not replace the candidate wholesale with the source; that is a failed repair.",
     lengthContract?.mode === "expand"
@@ -81,29 +84,23 @@ export async function repairPreservationCandidate({ sourceText, candidateResult,
   }
 
   const preservation = auditPreservation(source, revisedText, protectedSpans, { lengthPreference });
-  const passed = Boolean(
-    preservation.numbers_ok &&
-    preservation.citations_ok &&
-    preservation.technical_terms_ok &&
-    preservation.quotes_ok &&
-    preservation.study_stage_ok !== false &&
-    preservation.researcher_voice_ok !== false &&
-    preservation.document_structure_ok !== false &&
-    preservation.rhetorical_semantic_ok !== false &&
-    !preservation.new_factual_claims_detected
-    && lengthContractSatisfied(revisedText, lengthContract)
-  );
+  const preservationRelease = classifyPreservationRelease(preservation);
+  const preservationCleared = !preservationRelease.repair_required;
+  const lengthSatisfied = lengthContractSatisfied(revisedText, lengthContract);
+  const passed = preservationCleared && lengthSatisfied;
 
   return {
     ...candidateResult,
     revised_text: revisedText,
     preservation,
+    preservation_release: preservationRelease,
     preservation_repair: {
       attempted: true,
       passed,
+      preservation_cleared: preservationCleared,
       source_regeneration_avoided: true,
       retained_candidate_metadata: true,
-      length_contract_satisfied: lengthContractSatisfied(revisedText, lengthContract),
+      length_contract_satisfied: lengthSatisfied,
     },
   };
 }

@@ -34,7 +34,9 @@ test("semantic audit rejects unsupported equality", () => {
   const report = analyseRhetoricalSemanticPreservation(source, drifted, { lengthPreference: "maintain" });
   assert.equal(report.passed, false);
   assert.ok(report.comparison_magnitude_or_direction_changes.length > 0);
-  assert.ok(report.unsupported_additions.length > 0);
+  // The precise comparison-strength defect is sufficient. Do not duplicate the
+  // same finding under the less informative unsupported-addition category.
+  assert.equal(report.unsupported_additions.length, 0);
 });
 
 test("substantive reconstruction is not rejected merely for lower lexical overlap", () => {

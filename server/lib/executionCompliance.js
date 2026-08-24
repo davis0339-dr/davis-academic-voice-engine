@@ -1,3 +1,5 @@
+import { classifyPreservationRelease } from "./preservationRelease.js";
+
 // Deterministic audit of whether a model response actually followed the planner's
 // requested intervention. This is not an authorship detector. Concrete plan
 // execution, paragraph-level discourse scope, visible-change plausibility,
@@ -57,15 +59,18 @@ function reportedCounts(result) {
 
 function preservationAssessment(result) {
   const p = result?.preservation || {};
+  const release = classifyPreservationRelease(p);
   const reasons = [];
-  if (!p.numbers_ok) reasons.push("Numbers or numeric relationships were not fully preserved.");
-  if (!p.citations_ok) reasons.push("One or more source citations were dropped, altered or newly introduced.");
-  if (!p.technical_terms_ok) reasons.push("Protected technical terms or acronyms were not fully preserved.");
-  if (!p.quotes_ok) reasons.push("Quoted material did not survive the revision as required.");
+  if (p.numbers_ok === false) reasons.push("Numbers or numeric relationships were not fully preserved.");
+  if (p.citations_ok === false) reasons.push("One or more source citations were dropped or altered.");
+  if (p.technical_terms_ok === false) reasons.push("Protected technical terms or acronyms were not fully preserved.");
+  if (p.quotes_ok === false) reasons.push("Quoted material did not survive the revision as required.");
   if (p.study_stage_ok === false) reasons.push("The revision changed proposal/completed-study orientation.");
-  if (p.rhetorical_semantic_ok === false) reasons.push("The revision lost rhetorical functions or propositions, altered semantic force, or breached the selected length architecture.");
-  if (p.new_factual_claims_detected) reasons.push("The preservation audit detected a new factual claim or factual drift.");
-  return { passed: reasons.length === 0, reasons };
+  if (p.document_structure_ok === false) reasons.push("The revision changed protected document structure.");
+  if (p.list_counts_ok === false) reasons.push("The revision introduced an inconsistent explicit list count.");
+  if (release.semantic_force_failure) reasons.push("The revision altered modality, causality, scope, magnitude, direction, comparison or temporality.");
+  if (release.aggregate_factual_failure && reasons.length === 0) reasons.push("The preservation audit detected a new factual claim or factual drift.");
+  return { passed: !release.repair_required, reasons, release };
 }
 
 function executionStatus(underReasons, overReasons, varianceReasons = []) {

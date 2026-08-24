@@ -286,7 +286,11 @@ export function analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
   // the source sentence shells.
   const maintainedLengthHardFailure = preference === "maintain" && (lengthRatio < 0.75 || lengthRatio > 1.50);
   const sourcePropositionsPreserved = Math.max(0, sourceRecords.length - possibleLosses.length);
-  const unsupportedAdditions = semantic.filter((item) => ["comparison_or_magnitude", "causality", "direction_or_magnitude", "scope_or_generalisation"].includes(item.type));
+  // Semantic-force changes are reported in their precise categories below.
+  // Do not duplicate the same scope/causality/comparison finding as a second
+  // generic "unsupported addition" or present one defect as two independent
+  // failures. Concrete new numbers/citations are audited separately.
+  const unsupportedAdditions = semantic.filter((item) => item.type === "unsupported_addition");
   // Lexical matching is deliberately only supporting evidence: a deep but
   // faithful paraphrase can have modest token overlap. Escalate proposition or
   // role loss only when it is repeated/material, or when compression supplies

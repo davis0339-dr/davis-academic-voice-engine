@@ -8,6 +8,8 @@ import { chunkDocument } from "./chunker.js";
 import { rewrite } from "./pipeline.js";
 import { auditPreservation } from "./preservation.js";
 import { repairPreservationCandidate } from "./preservationRepair.js";
+import { classifyPreservationRelease } from "./preservationRelease.js";
+import { selectPreservationRepairCandidate } from "./preservationLifecycle.js";
 import { inferSectionFromHeading } from "./sectionLanguageGuide.js";
 import { auditLongDocumentStructure } from "./longDocumentStructure.js";
 import {
@@ -240,20 +242,39 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
         minimumExpansionWords: chunkMinimumExpansionWords,
       });
 
-      if (result.preservation?.rhetorical_semantic_ok === false || result.preservation?.new_factual_claims_detected) {
-        result = await repairPreservationCandidate({
-          sourceText: chunk.sourceText,
-          candidateResult: result,
-          revisionPurpose: "fidelity",
-          lengthPreference: effectiveLengthPreference,
-          minimumExpansionWords: chunkMinimumExpansionWords,
-        });
-        if (!result.preservation_repair?.passed) {
-          const repairError = new Error("The long-document preservation repair failed its preservation or length contract.");
-          repairError.code = "PRESERVATION_REPAIR_REJECTED";
-          throw repairError;
+      let preservationRelease = classifyPreservationRelease(result.preservation);
+      if (preservationRelease.repair_required) {
+        const originalResult = result;
+        try {
+          const repairedResult = await repairPreservationCandidate({
+            sourceText: chunk.sourceText,
+            candidateResult: originalResult,
+            revisionPurpose: "fidelity",
+            lengthPreference: effectiveLengthPreference,
+            minimumExpansionWords: chunkMinimumExpansionWords,
+          });
+          const repairSelection = selectPreservationRepairCandidate(originalResult, repairedResult);
+          result = repairSelection.result;
+          if (repairSelection.selected !== "repaired") {
+            chunk.preservationReviewRequired = true;
+            chunk.preservationRepairRejected = true;
+          } else {
+            chunk.rhetoricalPreservationRepairApplied = true;
+            if (!repairSelection.length_contract_satisfied) chunk.preservationReviewRequired = true;
+          }
+        } catch (repairError) {
+          // Keep the complete chunk visible and mark it for review. A failed
+          // repair is not a provider failure and must not replace paid work with
+          // the source or turn an otherwise complete document into a failed job.
+          result = originalResult;
+          chunk.preservationReviewRequired = true;
+          chunk.preservationRepairRejected = true;
+          chunk.preservationRepairError = {
+            code: repairError.code || repairError.healthState || "PRESERVATION_REPAIR_FAILED",
+            message: repairError.message || "The optional preservation repair failed; the complete original candidate was retained for review.",
+          };
         }
-        chunk.rhetoricalPreservationRepairApplied = true;
+        preservationRelease = classifyPreservationRelease(result.preservation);
       }
 
       const revisedText = stripLeadingRepeatedHeading(result.revised_text, chunk.heading);
@@ -262,6 +283,8 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
       chunk.preservation = result.preservation || auditPreservation(chunk.sourceText, revisedText, undefined, {
         lengthPreference: effectiveLengthPreference,
       });
+      chunk.preservationRelease = classifyPreservationRelease(chunk.preservation);
+      chunk.preservationReviewRequired = Boolean(chunk.preservationReviewRequired || chunk.preservationRelease.review_required);
       chunk.transformationQuality = result.transformation_quality || null;
       chunk.qualityReviewRequired = Boolean(result.transformation_quality?.enforced && !result.transformation_quality?.passed);
       chunk.languageQuality = result.language_quality || null;
@@ -317,6 +340,7 @@ function assembleAndAudit(job) {
   job.documentPreservation = auditPreservation(job.sourceText, reassembledText, job.documentMap.protectedSpans, {
     lengthPreference: job.options.lengthPreference,
   });
+  job.documentPreservationRelease = classifyPreservationRelease(job.documentPreservation);
   job.transformationCoverage = auditTransformationCoverage({
     sourceText: job.sourceText,
     revisedText: reassembledText,
@@ -400,7 +424,7 @@ async function finalizeJob(job) {
 
   const coveragePassed = job.transformationCoverage?.passed !== false;
   const regularityPassed = job.wholeDocumentAudit?.passed !== false;
-  const preservationPassed = job.documentPreservation?.rhetorical_semantic_ok !== false && !job.documentPreservation?.new_factual_claims_detected;
+  const preservationPassed = job.documentPreservationRelease?.cleared === true;
   const structurePassed = job.structureAudit?.passed !== false;
   const chunkQualityPassed = job.chunks.every((chunk) => !chunk.qualityReviewRequired || chunk.transformationQuality?.passed === true);
   const lengthContractPassed = job.documentLengthContract?.satisfied !== false;
@@ -536,6 +560,9 @@ export function retryChunk(jobId, chunkIndex) {
   chunk.coverageRecoveryError = null;
   chunk.globalRepairApplied = false;
   chunk.globalRepairError = null;
+  chunk.preservationReviewRequired = false;
+  chunk.preservationRepairRejected = false;
+  chunk.preservationRepairError = null;
   chunk.startedAt = null;
   chunk.completedAt = null;
   chunk.durationMs = null;
@@ -544,6 +571,7 @@ export function retryChunk(jobId, chunkIndex) {
   job.completedAt = null;
   job.reassembledText = null;
   job.documentPreservation = null;
+  job.documentPreservationRelease = null;
   job.transformationCoverage = null;
   job.documentLengthContract = null;
   job.coverageRepair = null;
@@ -635,6 +663,10 @@ export function summarizeJob(job) {
       error: c.error,
       editSummary: c.editSummary,
       preservation: c.preservation,
+      preservationRelease: c.preservationRelease || null,
+      preservationReviewRequired: Boolean(c.preservationReviewRequired),
+      preservationRepairRejected: Boolean(c.preservationRepairRejected),
+      preservationRepairError: c.preservationRepairError || null,
       transformationQuality: c.transformationQuality,
       qualityReviewRequired: Boolean(c.qualityReviewRequired),
       languageQuality: c.languageQuality,
@@ -648,6 +680,7 @@ export function summarizeJob(job) {
     })),
     reassembledText: job.reassembledText,
     documentPreservation: job.documentPreservation,
+    documentPreservationRelease: job.documentPreservationRelease || null,
     providerBlock: job.providerBlock || null,
     fatalError: job.fatalError || null,
   };

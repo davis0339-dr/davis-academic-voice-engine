@@ -2,6 +2,7 @@ import { llmProvider } from "./llmProvider.js";
 import { parseStructuredResponseText } from "./modelResponse.js";
 import { extractProtectedSpans } from "./protect.js";
 import { auditPreservation } from "./preservation.js";
+import { classifyPreservationRelease } from "./preservationRelease.js";
 import { splitSentences } from "./sentences.js";
 
 const ALLOWED_CATEGORIES = new Set([
@@ -59,18 +60,7 @@ function tokenOverlap(source, replacement) {
 }
 
 function preservationPassed(audit) {
-  return Boolean(
-    audit &&
-    audit.numbers_ok !== false &&
-    audit.citations_ok !== false &&
-    audit.technical_terms_ok !== false &&
-    audit.quotes_ok !== false &&
-    audit.study_stage_ok !== false &&
-    audit.researcher_voice_ok !== false &&
-    audit.document_structure_ok !== false &&
-    audit.rhetorical_semantic_ok !== false &&
-    audit.new_factual_claims_detected !== true
-  );
+  return Boolean(audit && !classifyPreservationRelease(audit).repair_required);
 }
 
 function protectedValues(spans) {

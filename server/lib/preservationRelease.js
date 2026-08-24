@@ -1,4 +1,4 @@
-const HARD_WARNING_TYPES = new Set([
+const REPAIR_REQUIRED_WARNING_TYPES = new Set([
   "missing_numeric_span",
   "range_corruption",
   "missing_citation",
@@ -8,23 +8,34 @@ const HARD_WARNING_TYPES = new Set([
   "new_numeric_value_introduced",
   "list_count_mismatch",
   "study_stage_shift",
-  "researcher_voice_shift",
   "document_structure_shift",
+]);
+
+const REVIEW_ONLY_WARNING_TYPES = new Set([
+  "researcher_voice_shift",
+  "rhetorical_semantic_preservation",
+  "length_range_review",
+  "claim_attachment_review",
 ]);
 
 function count(list) {
   return Array.isArray(list) ? list.length : 0;
 }
 
-// Deterministic protected-item and semantic-force failures remain release
-// blockers. Rhetorical matching is valuable evidence, but its lexical/marker
-// heuristics must not silently destroy a complete candidate that otherwise
-// preserved citations, figures, stage and factual force. Such a candidate is
-// returned visibly as review-required, never labelled as accepted.
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+// One preservation authority for every rewrite path. Concrete evidence,
+// stage, structure and semantic-force defects receive one bounded repair and
+// prevent an accepted label. Rhetorical marker/overlap, voice and length
+// evidence remains advisory. A complete paid draft is always visible: these
+// safeguards govern clearance, not whether the result is erased.
 export function classifyPreservationRelease(preservation = {}) {
   const rhetorical = preservation.rhetorical_semantic_preservation || {};
-  const hardWarnings = (preservation.warnings || [])
-    .filter((warning) => HARD_WARNING_TYPES.has(warning?.type));
+  const warnings = Array.isArray(preservation.warnings) ? preservation.warnings : [];
+  const repairWarnings = warnings.filter((warning) => REPAIR_REQUIRED_WARNING_TYPES.has(warning?.type));
+  const reviewWarnings = warnings.filter((warning) => REVIEW_ONLY_WARNING_TYPES.has(warning?.type));
   const semanticForceChanges = [
     ...(rhetorical.modality_changes || []),
     ...(rhetorical.causality_changes || []),
@@ -33,17 +44,21 @@ export function classifyPreservationRelease(preservation = {}) {
     ...(rhetorical.temporality_changes || []),
     ...(rhetorical.unsupported_additions || []),
   ];
-  const protectedInvariantFailure = Boolean(
+  const concreteInvariantFailure = Boolean(
     preservation.numbers_ok === false ||
     preservation.citations_ok === false ||
     preservation.technical_terms_ok === false ||
     preservation.quotes_ok === false ||
     preservation.study_stage_ok === false ||
-    preservation.researcher_voice_ok === false ||
     preservation.document_structure_ok === false ||
     preservation.list_counts_ok === false
   );
-  const hardFailure = protectedInvariantFailure || hardWarnings.length > 0 || semanticForceChanges.length > 0;
+  const semanticForceFailure = semanticForceChanges.length > 0;
+  // Retain compatibility with externally constructed or older audit payloads
+  // that expose only the aggregate factual-drift flag. Current audits also
+  // provide the precise warning type used in UI and repair instructions.
+  const aggregateFactualFailure = preservation.new_factual_claims_detected === true;
+  const repairRequired = concreteInvariantFailure || repairWarnings.length > 0 || semanticForceFailure || aggregateFactualFailure;
   const rhetoricalReview = Boolean(
     preservation.rhetorical_semantic_ok === false ||
     rhetorical.review_required ||
@@ -52,17 +67,30 @@ export function classifyPreservationRelease(preservation = {}) {
     rhetorical.material_rhetorical_role_loss
   );
 
+  const voiceReview = preservation.researcher_voice_ok === false;
+  const reviewRequired = repairRequired || rhetoricalReview || voiceReview || reviewWarnings.length > 0;
+  const releaseStatus = repairRequired ? "repair_or_researcher_review_required" : reviewRequired ? "researcher_review_required" : "cleared";
+
   return {
-    hard_failure: hardFailure,
-    review_required: !hardFailure && rhetoricalReview,
-    protected_invariant_failure: protectedInvariantFailure,
-    hard_warning_types: [...new Set(hardWarnings.map((warning) => warning.type))],
+    release_status: releaseStatus,
+    cleared: !reviewRequired,
+    hard_failure: repairRequired,
+    repair_required: repairRequired,
+    review_required: reviewRequired,
+    concrete_invariant_failure: concreteInvariantFailure,
+    protected_invariant_failure: concreteInvariantFailure,
+    semantic_force_failure: semanticForceFailure,
+    aggregate_factual_failure: aggregateFactualFailure,
+    repair_warning_types: unique(repairWarnings.map((warning) => warning.type)),
+    hard_warning_types: unique(repairWarnings.map((warning) => warning.type)),
+    review_warning_types: unique(reviewWarnings.map((warning) => warning.type)),
     semantic_force_change_count: semanticForceChanges.length,
-    candidate_may_be_shown_for_review: !hardFailure,
-    note: hardFailure
-      ? "The candidate breaches a protected factual, evidential, stage, structural or semantic-force invariant and must not be released."
-      : rhetoricalReview
-        ? "Hard evidence invariants passed. Rhetorical preservation heuristics require researcher review, so the candidate remains visible but is not cleared as successful."
-        : "The candidate cleared hard invariants and rhetorical preservation review.",
+    candidate_may_be_shown_for_review: true,
+    candidate_may_be_labelled_accepted: !reviewRequired,
+    note: repairRequired
+      ? "A complete draft may be shown, but it cannot be labelled accepted until its concrete evidence, stage, structure or semantic-force defect is repaired or reviewed by the researcher."
+      : reviewRequired
+        ? "Concrete evidence invariants passed. Rhetorical, voice or length evidence remains visible for researcher review and cannot suppress the draft or trigger a paid repair by itself."
+        : "The candidate cleared concrete invariants and advisory preservation review.",
   };
 }

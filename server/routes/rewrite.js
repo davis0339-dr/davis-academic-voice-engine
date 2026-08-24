@@ -1,28 +1,21 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { rewrite } from "../lib/pipeline.js";
-import { assessExecutionCompliance, preferByExecutionCompliance } from "../lib/executionCompliance.js";
+import { assessExecutionCompliance } from "../lib/executionCompliance.js";
 import { selectiveResidualRework } from "../lib/residualRework.js";
 import { auditOutputAcceptance } from "../lib/outputAcceptance.js";
 import { resolveRewriteModePolicy } from "../lib/rewriteModePolicy.js";
 import { assessSourceBeforeRewrite } from "../lib/sourceAssessment.js";
 import { deriveInterventionAuthority } from "../lib/interventionAuthority.js";
 import { extractProtectedSpans } from "../lib/protect.js";
-import { auditPreservation } from "../lib/preservation.js";
 import { assessTransformationQuality } from "../lib/transformationQuality.js";
 import { assessIterativeRegularisation } from "../lib/iterativeRewriteGuard.js";
-import { surgicalHumanEdit } from "../lib/surgicalHumanEdit.js";
-import {
-  AUTHORIAL_EXECUTION_RECOVERY_LIMIT,
-  shouldAttemptAuthorialExecutionRecovery,
-  executionRecoveryAttemptSummary,
-} from "../lib/underExecutionRecovery.js";
 import { llmProvider } from "../lib/llmProvider.js";
 import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "../lib/collaborativeRevision.js";
-import { retainSourceAfterPreservationFailure } from "../lib/finalSafetyFallback.js";
 import { repairPreservationCandidate } from "../lib/preservationRepair.js";
 import { classifyPreservationRelease } from "../lib/preservationRelease.js";
+import { preservationCandidateStatus, selectPreservationRepairCandidate } from "../lib/preservationLifecycle.js";
 import { candidateHistoryFor, isHistoricalDuplicate, rememberCandidate } from "../lib/candidateHistory.js";
 import { DEFAULT_EXPAND_MIN_ADDITION_WORDS } from "../lib/lengthContract.js";
 
@@ -38,28 +31,6 @@ const MAX_RETRIES = 2;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function qualityPipelineAlreadyRetried(result) {
-  return Boolean(
-    result?.transformation_quality?.corrective_retry_used ||
-    result?.transformation_quality?.rescue_retry_used
-  );
-}
-
-function planUnitCount(result) {
-  return Object.values(result?.intervention_plan_summary || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
-}
-
-function underExecutionCodes(compliance) {
-  return Array.isArray(compliance?.under_execution_codes) ? compliance.under_execution_codes : [];
-}
-
-function hasConcreteUnderExecution(compliance) {
-  if (!compliance?.under_executed) return false;
-  const codes = underExecutionCodes(compliance);
-  if (!codes.length) return true;
-  return codes.some((code) => code !== "VISIBLE_CHANGE_FLOOR");
 }
 
 function refreshTransformationQuality(sourceText, result, revisedText, naturalisationLevel) {
@@ -95,25 +66,6 @@ function refreshIterativeQuality(sourceText, result, revisedText, rewriteLineage
     pre_rescue_attempt: previous.pre_rescue_attempt || null,
     recomputed_after_residual_rework: true,
   };
-}
-
-function finalCandidateStatus(
-  compliance,
-  residual,
-  outputAcceptance,
-  outputAcceptanceEnforced = false,
-  sourceRetainedForSafety = false,
-  preservationRelease = null
-) {
-  if (sourceRetainedForSafety) return "no_safe_edit_available";
-  // Execution, detector-pressure, visible-change and rhetorical-marker scores are
-  // diagnostic inputs, not permission gates. Once protected facts and semantic
-  // force survive, return the revision the author requested. Only a hard
-  // preservation breach may quarantine a candidate and retain the source.
-  if (preservationRelease?.hard_failure || (!compliance?.preservation_ok && !preservationRelease?.review_required)) {
-    return "preservation_failed";
-  }
-  return "accepted";
 }
 
 rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => {
@@ -162,23 +114,18 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     lengthPreference,
   });
 
-  const runRewriteWith = ({
-    intensity = modePolicy.effective_intensity,
-    naturalisationLevel = modePolicy.effective_naturalisation,
-  } = {}) => rewrite({
+  const runRewrite = () => rewrite({
     sourceText: text,
     styleFilters: styleFilters || {},
-    rewriteIntensity: intensity,
+    rewriteIntensity: modePolicy.effective_intensity,
     grammarIntensity,
     lengthPreference,
-    naturalisation: naturalisationLevel,
+    naturalisation: modePolicy.effective_naturalisation,
     revisionPurpose: effectiveRevisionPurpose,
     rewriteLineage,
     priorCandidateHistory,
     minimumExpansionWords,
   });
-
-  const runRewrite = () => runRewriteWith();
 
   function enrichForCompliance(result) {
     const authority = deriveInterventionAuthority({
@@ -208,19 +155,19 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       let result = enrichForCompliance(await runRewrite());
       let executionCompliance = assessExecutionCompliance(result);
 
-      let reconciliationRetryUsed = false;
-      let reconciliationRetryError = null;
+      const reconciliationRetryUsed = false;
+      const reconciliationRetryError = null;
       let preservationRecoveryUsed = false;
       let preservationRecoveryError = null;
-      let overExecutionRecoveryUsed = false;
-      let overExecutionRecoveryError = null;
-      let surgicalRecovery = null;
-      let sourceRetainedForSafety = false;
-      let rejectedOverExecution = null;
+      const overExecutionRecoveryUsed = false;
+      const overExecutionRecoveryError = null;
+      const surgicalRecovery = null;
+      const sourceRetainedForSafety = false;
+      const rejectedOverExecution = null;
       let rejectedPreservationFailure = null;
-      let firstAttemptCompliance = null;
+      const firstAttemptCompliance = null;
       let selectedAttempt = "first";
-      let authorialExecutionRecoveryUsed = false;
+      const authorialExecutionRecoveryUsed = false;
       const authorialExecutionRecoveryAttempts = [];
       const authorialExecutionRecoveryErrors = [];
       // Full-manuscript regeneration repeatedly converged on the same fluent local
@@ -233,191 +180,11 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       // the release authority for facts, evidence and argumentative force.
       const overExecutionRecoveryAllowed = false;
 
-      // Explicit Deep structural modes treat concrete under-execution as a
-      // recoverable generation failure. The loop is independent of the internal
-      // cadence/quality retries so a linguistically fluent but structurally shallow
-      // candidate is not accepted merely because it preserved facts.
-      if (
-        fullDocumentExecutionRecoveryAllowed &&
-        shouldAttemptAuthorialExecutionRecovery({ modePolicy, compliance: executionCompliance })
-      ) {
-        firstAttemptCompliance = executionCompliance;
-        for (
-          let recoveryAttempt = 1;
-          recoveryAttempt <= AUTHORIAL_EXECUTION_RECOVERY_LIMIT &&
-          shouldAttemptAuthorialExecutionRecovery({ modePolicy, compliance: executionCompliance });
-          recoveryAttempt += 1
-        ) {
-          authorialExecutionRecoveryUsed = true;
-          try {
-            const recoveryResult = enrichForCompliance(await runRewriteWith({
-              intensity: "deep",
-              naturalisationLevel: "aggressive",
-            }));
-            const recoveryCompliance = assessExecutionCompliance(recoveryResult);
-
-            // A recovery candidate that damages preservation or overshoots its
-            // authorised breadth must not replace a safer candidate merely because
-            // it changed more text. Reject it and use the remaining recovery budget.
-            let preferred;
-            if (!recoveryCompliance.preservation_ok || recoveryCompliance.over_executed) {
-              preferred = { result, compliance: executionCompliance, selected: "first" };
-            } else {
-              preferred = preferByExecutionCompliance(result, recoveryResult);
-            }
-
-            const selectedRecovery = preferred.selected === "second";
-            authorialExecutionRecoveryAttempts.push(executionRecoveryAttemptSummary({
-              attempt: recoveryAttempt,
-              compliance: recoveryCompliance,
-              selected: selectedRecovery,
-            }));
-
-            result = preferred.result;
-            executionCompliance = preferred.compliance;
-            if (selectedRecovery) selectedAttempt = `authorial-execution-recovery-${recoveryAttempt}`;
-
-            if (executionCompliance.execution_passed && executionCompliance.preservation_ok) break;
-          } catch (retryErr) {
-            authorialExecutionRecoveryErrors.push({
-              attempt: recoveryAttempt,
-              code: retryErr.code || retryErr.healthState || "AUTHORIAL_EXECUTION_RECOVERY_FAILED",
-              message: retryErr.message || "The Deep structural execution recovery attempt failed.",
-            });
-          }
-        }
-      }
-
-      // High-preservation over-execution remains a separate failure mode. It is
-      // never used merely because Deep reconstruction under-executed.
-      if (
-        overExecutionRecoveryAllowed &&
-        executionCompliance.over_executed &&
-        sourceAssessment.authorial_texture?.preservation_priority === "high"
-      ) {
-        overExecutionRecoveryUsed = true;
-        const originalOverExecution = executionCompliance;
-        const attemptedSummary = result.edit_summary;
-        try {
-          surgicalRecovery = await surgicalHumanEdit({
-            sourceText: text,
-            maxChangedSentenceRatio: result.intervention_authority?.max_changed_sentence_ratio ?? 0.35,
-          });
-
-          if (surgicalRecovery.safe_change_made) {
-            const units = planUnitCount(result);
-            const affected = Math.min(units, Number(surgicalRecovery.affected_sentence_count || 0));
-            const protectedSpans = extractProtectedSpans(text);
-            result = {
-              ...result,
-              revised_text: surgicalRecovery.revised_text,
-              attempted_edit_summary: attemptedSummary,
-              edit_summary: {
-                kept: Math.max(0, units - affected),
-                micro_edits: affected,
-                sentence_restructures: 0,
-                split_or_merge: 0,
-                paragraph_reorders: 0,
-                flags_for_author: [
-                  `High-preservation surgical recovery applied ${surgicalRecovery.applied_edit_count} local correction(s) across ${affected} sentence(s); all unedited source text was preserved exactly.`,
-                ],
-              },
-              preservation: surgicalRecovery.preservation,
-              transformation_quality: assessTransformationQuality(
-                text,
-                surgicalRecovery.revised_text,
-                "off",
-                { protectedSpans }
-              ),
-              iterative_rewrite_quality: refreshIterativeQuality(text, result, surgicalRecovery.revised_text, rewriteLineage),
-              surgical_recovery: surgicalRecovery,
-              safety_fallback: null,
-            };
-            executionCompliance = assessExecutionCompliance(result);
-            selectedAttempt = "surgical-human-edit-recovery";
-          }
-
-          if (!surgicalRecovery.safe_change_made || executionCompliance.over_executed || !executionCompliance.preservation_ok) {
-            rejectedOverExecution = {
-              first_attempt: originalOverExecution,
-              surgical_attempt: surgicalRecovery,
-              surgical_compliance: surgicalRecovery.safe_change_made ? executionCompliance : null,
-            };
-          }
-        } catch (retryErr) {
-          overExecutionRecoveryError = {
-            code: retryErr.code || retryErr.healthState || "SURGICAL_RECOVERY_FAILED",
-            message: retryErr.message || "The surgical high-preservation recovery failed.",
-          };
-        }
-
-        if (
-          !surgicalRecovery?.safe_change_made ||
-          executionCompliance.over_executed ||
-          !executionCompliance.preservation_ok
-        ) {
-          sourceRetainedForSafety = true;
-          rejectedOverExecution = rejectedOverExecution || { first_attempt: originalOverExecution };
-          const units = planUnitCount(result);
-          result = {
-            ...result,
-            revised_text: text,
-            attempted_edit_summary: attemptedSummary,
-            edit_summary: {
-              kept: units,
-              micro_edits: 0,
-              sentence_restructures: 0,
-              split_or_merge: 0,
-              paragraph_reorders: 0,
-              flags_for_author: ["No safe local edit survived the high-preservation safeguard. The source was returned unchanged and is explicitly marked as a non-edit result."],
-            },
-            transformation_quality: assessTransformationQuality(
-              text,
-              text,
-              "off",
-              { protectedSpans: extractProtectedSpans(text) }
-            ),
-            iterative_rewrite_quality: refreshIterativeQuality(text, result, text, rewriteLineage),
-            preservation: auditPreservation(text, text, extractProtectedSpans(text)),
-            surgical_recovery: surgicalRecovery,
-            safety_fallback: {
-              source_retained: true,
-              successful_revision: false,
-              reason: "The broad candidate exceeded intervention authority and no safe surgical correction survived. Returning unchanged text is a transparent non-edit result, not a successful revision.",
-            },
-          };
-          executionCompliance = assessExecutionCompliance(result);
-        }
-      }
-
-      // Ordinary modes retain the existing one-shot reconciliation rule. Explicit
-      // Deep structural modes use the dedicated recovery loop above and are never
-      // suppressed merely because the internal quality pipeline already ran.
-      if (
-        fullDocumentExecutionRecoveryAllowed &&
-        !authorialExecutionRecoveryUsed &&
-        !sourceRetainedForSafety &&
-        !overExecutionRecoveryUsed &&
-        hasConcreteUnderExecution(executionCompliance) &&
-        !executionCompliance.over_executed &&
-        modePolicy.effective_naturalisation !== "off" &&
-        !qualityPipelineAlreadyRetried(result)
-      ) {
-        firstAttemptCompliance = firstAttemptCompliance || executionCompliance;
-        reconciliationRetryUsed = true;
-        try {
-          const secondResult = enrichForCompliance(await runRewrite());
-          const preferred = preferByExecutionCompliance(result, secondResult);
-          result = preferred.result;
-          executionCompliance = preferred.compliance;
-          selectedAttempt = preferred.selected;
-        } catch (retryErr) {
-          reconciliationRetryError = {
-            code: retryErr.code || retryErr.healthState || "RECONCILIATION_RETRY_FAILED",
-            message: retryErr.message || "The optional reconciliation retry failed; the first candidate was retained.",
-          };
-        }
-      }
+      // Full-document execution and over-edit recovery are intentionally absent.
+      // They previously spent extra calls, converged on near-duplicate prose and
+      // could replace a complete revision with the source. Execution diagnostics
+      // remain visible; only the bounded preservation repair below may spend one
+      // additional call, and it can never suppress the existing candidate.
 
       if (
         !sourceRetainedForSafety &&
@@ -433,28 +200,35 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
             lengthPreference,
             minimumExpansionWords,
           });
-          if (repairedResult.preservation_repair?.passed) {
+          const repairSelection = selectPreservationRepairCandidate(result, repairedResult);
+          if (repairSelection.selected === "repaired") {
             result = {
-              ...repairedResult,
+              ...repairSelection.result,
               transformation_quality: refreshTransformationQuality(
                 text,
                 result,
-                repairedResult.revised_text,
+                repairSelection.result.revised_text,
                 modePolicy.effective_naturalisation
               ),
               iterative_rewrite_quality: refreshIterativeQuality(
                 text,
                 result,
-                repairedResult.revised_text,
+                repairSelection.result.revised_text,
                 rewriteLineage
               ),
             };
             executionCompliance = assessExecutionCompliance(result);
             selectedAttempt = "preservation-candidate-repair";
+            if (!repairSelection.length_contract_satisfied) {
+              preservationRecoveryError = {
+                code: "PRESERVATION_REPAIRED_LENGTH_REVIEW_REQUIRED",
+                message: "The safer repaired candidate was retained, but it remains below the selected Expand length contract and is returned for researcher review.",
+              };
+            }
           } else {
             preservationRecoveryError = {
               code: "PRESERVATION_REPAIR_REJECTED",
-              message: "The repair candidate did not satisfy preservation and length contracts; the prior candidate was retained.",
+              message: "The repair candidate did not clear concrete preservation; the prior complete candidate was retained for researcher review.",
             };
           }
         } catch (retryErr) {
@@ -465,29 +239,22 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         }
       }
 
-      // Separate release-blocking invariants from review-only rhetorical
-      // heuristics. Hard failures remain quarantined. A complete candidate that
-      // preserved hard evidence invariants stays visible for researcher review
-      // rather than being silently replaced by the source.
+      // Preservation governs clearance, not visibility. Concrete or semantic-
+      // force defects receive one bounded repair above. If that repair cannot
+      // clear every issue, retain the complete candidate with an explicit review
+      // status instead of erasing paid work and returning an empty Revised box.
       let preservationRelease = classifyPreservationRelease(result.preservation);
       if (!sourceRetainedForSafety && !executionCompliance.preservation_ok && preservationRelease.hard_failure) {
-        const rejectedRelease = preservationRelease;
         rejectedPreservationFailure = {
           compliance: executionCompliance,
           preservation: result.preservation || null,
           selected_attempt: selectedAttempt,
+          candidate_retained_for_review: true,
         };
-        sourceRetainedForSafety = true;
-        result = retainSourceAfterPreservationFailure({
-          sourceText: text,
-          result,
-          rewriteLineage,
-        });
-        executionCompliance = assessExecutionCompliance(result);
-        selectedAttempt = "transparent-preservation-fallback";
         preservationRelease = {
-          ...rejectedRelease,
-          candidate_quarantined: true,
+          ...preservationRelease,
+          candidate_quarantined: false,
+          candidate_retained_for_review: true,
         };
       } else {
         preservationRelease = classifyPreservationRelease(result.preservation);
@@ -655,8 +422,10 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       let verdictNote;
       if (sourceRetainedForSafety) {
         verdictNote = result.safety_fallback?.reason || "No safe revision survived the final safeguards. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision.";
-      } else if (!preservationRelease.hard_failure) {
-        verdictNote = "Revision delivered. Protected facts, citations, study stage and semantic force passed the release boundary. Execution breadth, machine-pattern pressure, length movement and rhetorical-marker findings remain advisory diagnostics: they may guide improvement but cannot suppress or downgrade a semantically sound result.";
+      } else if (preservationRelease.hard_failure) {
+        verdictNote = "Revision delivered for researcher review. One bounded repair was unable to clear every concrete evidence, stage, structure or semantic-force warning. The complete draft remains visible and is not labelled accepted; inspect the Preservation panel before use.";
+      } else if (preservationRelease.review_required) {
+        verdictNote = "Revision delivered for researcher review. Concrete evidence invariants passed, while rhetorical, voice or length diagnostics remain advisory. These signals cannot suppress the complete draft or trigger another paid repair by themselves.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.execution_passed && executionCompliance.preservation_ok) {
         verdictNote = "The first Deep candidate under-executed the structural plan. Automatic Deep execution recovery produced a preservation-safe candidate that now satisfies execution compliance; under-execution was treated as a generation defect, not as a safe stopping point.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.under_executed) {
@@ -672,15 +441,13 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       } else if (result.iterative_rewrite_quality?.blocking) {
         verdictNote = "The candidate still shows cumulative rewrite-chain regularisation relative to the retained root source. It is preserved for auditability, but the result should be reviewed rather than treated as a successful authorial recovery.";
       } else {
-        verdictNote = "Final status separates concrete plan execution, preservation-aware visible-change plausibility, maximum authorised breadth, factual preservation, rewrite-chain regularisation and residual discourse risk. Strong existing authorial texture narrows ordinary modes; Deep reconstruction may materially redevelop diagnosed passages without requiring lexical inflation or uniform polish.";
+        verdictNote = "Revision delivered and internally cleared. Protected facts, citations, study stage and semantic force passed the shared release boundary. Execution breadth, rewrite-chain regularisation and machine-pattern diagnostics remain visible evidence for refinement rather than hidden vetoes.";
       }
 
       result.candidate_verdict = {
-        execution: sourceRetainedForSafety
-          ? "no-safe-edit-available"
-          : "completed",
+        execution: sourceRetainedForSafety ? "no-safe-edit-available" : preservationRelease.review_required ? "completed-for-review" : "completed",
         execution_diagnostic: executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
-        preservation: sourceRetainedForSafety ? "source-preserved" : preservationRelease.hard_failure ? "failed" : "passed",
+        preservation: sourceRetainedForSafety ? "source-preserved" : preservationRelease.hard_failure ? "repair-or-review-required" : preservationRelease.review_required ? "review-required" : "passed",
         residual: sourceRetainedForSafety ? residualVerdict : residualRework?.accepted ? "improved" : "advisory",
         residual_diagnostic: residualVerdict,
         rewrite_chain: result.iterative_rewrite_quality?.available
@@ -690,16 +457,16 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         output_acceptance_score: completedOutputAcceptance.score,
         output_acceptance_enforced: outputAcceptanceEnforced,
         external_detector_check_recommended: Boolean(
-          !sourceRetainedForSafety && !preservationRelease.hard_failure
+          !sourceRetainedForSafety &&
+          preservationRelease.cleared &&
+          !(completedOutputAcceptance.reasons || []).includes("expand_length_contract_missed")
         ),
-        final_status: finalCandidateStatus(
-          executionCompliance,
-          residualRework,
-          completedOutputAcceptance,
-          outputAcceptanceEnforced,
+        final_status: preservationCandidateStatus({
+          compliance: executionCompliance,
+          outputAcceptance: completedOutputAcceptance,
           sourceRetainedForSafety,
-          preservationRelease
-        ),
+          preservationRelease,
+        }),
         note: verdictNote,
       };
 

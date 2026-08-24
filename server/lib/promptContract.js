@@ -297,7 +297,7 @@ export function buildSystemPrompt({ sourceText, minimumExpansionWords, styleProf
       "- Do not stereotype any region or imitate an accent. Do not manufacture errors, broken grammar or artificial roughness. Improve genuine clarity problems while allowing defensible variation to remain.",
     ].join("\n"),
     "",
-    "Protected spans -- these exact strings must still be present, verbatim, somewhere in the revised text unless the source itself is flagged for author clarification:",
+    "Protected evidence ledger. Preserve every item in its correct claim context. Numeric/statistical/monetary values retain their exact value; numeric ranges may use an equivalent range construction; citation identity may move between narrative and parenthetical grammar; quoted words remain verbatim; acronyms/technical labels remain available where the concept is discussed. Do not satisfy this contract by moving an item to an unrelated claim:",
     JSON.stringify(protectedSpans),
     "",
     precedingContext

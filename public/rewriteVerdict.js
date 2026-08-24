@@ -113,7 +113,6 @@
     const compliance = latestRewrite.execution_compliance || {};
     const residual = latestRewrite.residual_rework || null;
     const surgical = latestRewrite.surgical_recovery || null;
-    const safetyFallback = latestRewrite.safety_fallback || null;
     const policy = latestRewrite.rewrite_mode_policy || null;
     const iterative = latestRewrite.iterative_rewrite_quality || null;
     const beforeRisk = residual?.before?.metrics?.total_risk_score;
@@ -172,12 +171,6 @@
           ${rejectChips ? `<details><summary>Why proposed edits were rejected</summary><div class="rv4-chips">${rejectChips}</div></details>` : ""}
         </div>
         ${compliance.planner_superseded ? `<div class="rv4-superseded"><strong>Broad plan superseded:</strong> ${compliance.deep_plan_superseded_by_surgical_fallback ? "the bounded local recovery did not fulfil the requested Deep structural intervention. It remains a preservation-safe fallback, not a successful Deep reconstruction." : "the original whole-document rewrite was rejected for over-editing. The execution verdict above measures the bounded defect-led recovery rather than comparing a local repair against the discarded broad plan."}</div>` : ""}
-      ` : ""}
-      ${safetyFallback?.source_retained ? `
-        <div class="rv4-nonedit">
-          <strong>No revision applied</strong>
-          <div>${esc(safetyFallback.reason || "The source was returned unchanged because no safe edit survived the preservation safeguards.")}</div>
-        </div>
       ` : ""}
       ${rejectedPreservationWarnings.length ? `<details class="rv4-alert" open><summary>Why the generated candidate was rejected</summary>${rejectedPreservationWarnings.map((warning) => `<p><strong>${esc(title(warning.type))}:</strong> ${esc(warning.detail)}</p>`).join("")}</details>` : ""}
       ${candidateHistory?.exact_historical_duplicate && !delivered ? `<div class="rv4-alert"><strong>Historical candidate repetition:</strong> this candidate is textually identical to an earlier result for the same source and mode.</div>` : ""}
