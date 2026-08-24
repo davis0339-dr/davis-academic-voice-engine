@@ -487,12 +487,14 @@ export function auditOutputAcceptance({
   else if (uniqueReasons.length) status = "review_required";
 
   const targetParagraphIndices = [...new Set([
+    ...((deepDevelopmentalAuto && lengthRatio < minimumDevelopmentalLengthRatio) || (requestedLength === "expand" && lengthRatio < 1)
+      ? developmentTargetParagraphIndices
+      : []),
     ...(dependence.target_paragraph_indices || []),
     ...(candidateMachine.choreography.target_paragraph_indices || []),
     ...(candidateMachine.machine_language?.target_paragraph_indices || []),
     ...calibratedTargetParagraphs(candidateMachine.discourse_regularity),
     ...(candidateEcho.target_paragraph_indices || []),
-    ...((deepDevelopmentalAuto && lengthRatio < minimumDevelopmentalLengthRatio) ? developmentTargetParagraphIndices : []),
   ])].slice(0, 8);
 
   return {

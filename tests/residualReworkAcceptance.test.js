@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { prioritiseResidualBlockIndices, shouldAcceptResidualCandidate } from "../server/lib/residualRework.js";
+import {
+  allocateDevelopmentRecovery,
+  buildDevelopmentRecoverySystemPrompt,
+  prioritiseResidualBlockIndices,
+  shouldAcceptResidualCandidate,
+} from "../server/lib/residualRework.js";
 
 test("completed-output near-copy and duplication targets receive the finite repair budget first", () => {
   assert.deepEqual(
@@ -120,5 +125,20 @@ test("residual prompt protects explanatory functions from deletion-based humanis
   assert.doesNotMatch(source, /Remove sentences that mainly announce complexity/);
   assert.match(source, /must not make the completed manuscript shorter/);
   assert.match(source, /why evidence matters/);
+});
+
+test("length recovery distributes the exact missing words across bounded target paragraphs", () => {
+  const allocations = allocateDevelopmentRecovery([120, 80, 60, 40], 100);
+  assert.equal(allocations.reduce((sum, value) => sum + value, 0), 100);
+  assert.ok(allocations[0] > allocations[3]);
+  assert.deepEqual(allocateDevelopmentRecovery([0, 0], 100), [0, 0]);
+});
+
+test("development recovery has a dedicated evidence-safe contract instead of the mixed style-repair prompt", () => {
+  const prompt = buildDevelopmentRecoverySystemPrompt();
+  assert.match(prompt, /TARGETED ARGUMENT-DEVELOPMENT RECOVERY/);
+  assert.match(prompt, /MINIMUM_REPLACEMENT_WORDS/);
+  assert.match(prompt, /Do not invent facts, examples, mechanisms, findings or citations/);
+  assert.match(prompt, /not a request for padding/);
 });
 

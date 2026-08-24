@@ -13,7 +13,7 @@ import { parseTextStructure } from "./textStructure.js";
 import { extractProtectedSpans } from "./protect.js";
 import { auditPreservation } from "./preservation.js";
 import { analyseResidualWriting } from "./residualDiagnostics.js";
-import { splitSentences } from "./sentences.js";
+import { splitSentences, wordCount } from "./sentences.js";
 import { auditOutputAcceptance, acceptanceImproved } from "./outputAcceptance.js";
 import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
 import { repairPreservationCandidate } from "./preservationRepair.js";
@@ -142,6 +142,21 @@ function acceptanceTargetBlockIndices(candidateText, candidateStructure, accepta
 
 export function prioritiseResidualBlockIndices(forensicBlockIndices = [], legacyBlockIndices = [], maxBlocks = 4) {
   return [...new Set([...forensicBlockIndices, ...legacyBlockIndices])].slice(0, maxBlocks);
+}
+
+export function allocateDevelopmentRecovery(candidateWordCounts = [], requiredWordRecovery = 0) {
+  const counts = candidateWordCounts.map((value) => Math.max(0, Number(value) || 0));
+  const required = Math.max(0, Math.ceil(Number(requiredWordRecovery) || 0));
+  const total = counts.reduce((sum, value) => sum + value, 0);
+  if (!required || !total) return counts.map(() => 0);
+  const allocations = counts.map((value) => Math.floor(required * (value / total)));
+  let remainder = required - allocations.reduce((sum, value) => sum + value, 0);
+  const priority = counts.map((value, index) => ({ value, index })).sort((a, b) => b.value - a.value);
+  for (let cursor = 0; remainder > 0; cursor += 1) {
+    allocations[priority[cursor % priority.length].index] += 1;
+    remainder -= 1;
+  }
+  return allocations;
 }
 
 function machineForensicLabels(acceptance, blockIndex, candidateStructure) {
@@ -289,9 +304,32 @@ Return JSON only in this exact shape:
 Return exactly one replacement for every supplied TARGET block_index and no replacements for any other block.`;
 }
 
-async function callResidualModel(payload) {
+export function buildDevelopmentRecoverySystemPrompt() {
+  return `You are performing a TARGETED ARGUMENT-DEVELOPMENT RECOVERY because an academic revision violated its Auto/Expand length contract by compressing supplied reasoning.
+
+This is not a fresh rewrite and it is not a request for padding. Only TARGET blocks may change; the server locks every other block.
+
+For each target:
+- Preserve every factual proposition, citation, number, variable, method, qualification, comparison, temporal boundary and scope condition.
+- Use SOURCE_REFERENCE to restore explanatory work that the candidate compressed.
+- Meet MINIMUM_REPLACEMENT_WORDS by unpacking only reasoning already supported by SOURCE_REFERENCE: explain relationships, conditions, distinctions, evidential relevance, methodological implications or transitions.
+- Do not invent facts, examples, mechanisms, findings or citations.
+- Do not satisfy length by repetition, generic significance claims, inflated synonyms, extra headings or restating the same proposition.
+- HARD_PROTECTED_SPANS must remain verbatim in that block.
+- Preserve the macro-order and return one replacement for every supplied block_index.
+
+The recovery succeeds only when the completed manuscript meets the supplied minimum length ratio and remains preservation-safe.
+
+Return JSON only:
+{
+  "replacements": [{"block_index": 0, "revised_text": "..."}],
+  "diagnostics_notes": "brief note"
+}`;
+}
+
+async function callResidualModel(payload, { developmentRecovery = false } = {}) {
   const first = await llmProvider.callAnthropic({
-    system: buildResidualSystemPrompt(),
+    system: developmentRecovery ? buildDevelopmentRecoverySystemPrompt() : buildResidualSystemPrompt(),
     messages: [{ role: "user", content: JSON.stringify(payload, null, 2) }],
     maxTokens: 4096,
   });
@@ -356,6 +394,9 @@ export async function selectiveResidualRework({
   // displaced from the finite recovery budget by lower-value cadence signals.
   const targetBlockIndices = prioritiseResidualBlockIndices(forensicBlockIndices, legacyBlockIndices, maxBlocks);
   const acceptanceNeedsRecovery = beforeAcceptance.status !== "pass" && forensicBlockIndices.length > 0;
+  const developmentRecovery = (beforeAcceptance.reasons || []).some((reason) =>
+    reason === "deep_auto_developmental_compression" || reason === "expand_length_contract_missed"
+  );
   const shouldAttempt = targetBlockIndices.length > 0 && (before.should_rework || candidateWorseThanSource || acceptanceNeedsRecovery);
 
   if (!shouldAttempt) {
@@ -382,7 +423,17 @@ export async function selectiveResidualRework({
   }
 
   const legacyTargetsByBlock = new Map(before.target_blocks.map((target) => [target.blockIndex, target]));
-  const targets = targetBlockIndices.map((blockIndex) => {
+  const targetWordCounts = targetBlockIndices.map((blockIndex) =>
+    wordCount(candidateStructure.blocks[blockIndex]?.text || ""));
+  const sourceWords = Number(beforeAcceptance.dimensions?.source_word_count || wordCount(sourceText));
+  const candidateWords = Number(beforeAcceptance.dimensions?.candidate_word_count || wordCount(candidateText));
+  const minimumRatio = Number(beforeAcceptance.dimensions?.minimum_developmental_length_ratio || 1);
+  const requiredWordRecovery = developmentRecovery
+    ? Math.max(0, Math.ceil(sourceWords * minimumRatio) - candidateWords)
+    : 0;
+  const recoveryAllocations = allocateDevelopmentRecovery(targetWordCounts, requiredWordRecovery);
+
+  const targets = targetBlockIndices.map((blockIndex, targetIndex) => {
     const candidateBlock = candidateStructure.blocks[blockIndex];
     const legacyTarget = legacyTargetsByBlock.get(blockIndex) || {
       blockIndex,
@@ -396,6 +447,8 @@ export async function selectiveResidualRework({
       ...targetSignalLabels(before, legacyTarget),
       ...machineForensicLabels(beforeAcceptance, blockIndex, candidateStructure),
     ];
+    const candidateBlockWords = wordCount(candidateBlock?.text || legacyTarget.text || "");
+    const allocatedRecovery = recoveryAllocations[targetIndex] || 0;
     return {
       block_index: blockIndex,
       candidate_text: candidateBlock?.text || legacyTarget.text,
@@ -403,6 +456,8 @@ export async function selectiveResidualRework({
       residual_signals: residualSignals,
       ordinary_content_sentences_to_preserve_when_possible: ordinarySentencesForTarget(candidateText, before, legacyTarget),
       hard_protected_spans: protectedSpans,
+      candidate_words: candidateBlockWords,
+      minimum_replacement_words: candidateBlockWords + allocatedRecovery,
     };
   });
 
@@ -426,9 +481,10 @@ export async function selectiveResidualRework({
       candidate_words: beforeAcceptance.dimensions?.candidate_word_count,
       minimum_completed_ratio: beforeAcceptance.dimensions?.minimum_developmental_length_ratio,
       instruction: "Deep/Authorial Auto is development-preserving: targeted recovery may reorganise wording but must bring the completed manuscript to at least the stated minimum ratio without filler or invented content.",
+      required_word_recovery: requiredWordRecovery,
     },
     targets,
-  });
+  }, { developmentRecovery });
 
   const expected = new Set(targets.map((target) => target.block_index));
   const replacements = result.replacements

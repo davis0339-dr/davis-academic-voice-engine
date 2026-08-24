@@ -5,6 +5,7 @@ import {
   acceptanceImproved,
   narrativeView,
 } from "../server/lib/outputAcceptance.js";
+import { assessArgumentativeSufficiency } from "../server/lib/argumentativeSufficiency.js";
 
 const styleFilters = {
   document_type: "thesis",
@@ -173,4 +174,25 @@ test("Deep Authorial Auto blocks the live 1458-to-1354 compression pattern", () 
   assert.ok(audit.reasons.includes("deep_auto_developmental_compression"));
   assert.notEqual(audit.status, "pass");
   assert.equal(audit.release_gate.external_detector_check_recommended, false);
+});
+
+test("Expand routes compressed argumentative-development paragraphs ahead of generic style targets", () => {
+  const compressedCandidate = `${polishedButChoreographed}\n\nBoard independence may lower debt cost when leverage is low and credit conditions are favourable (Bradley & Chen, 2015), but may raise it under higher leverage or weaker credit conditions (Anderson et al., 2004). The result depends on the conditions in which creditors evaluate governance.`;
+  const expandedSource = `${compressedCandidate}\n\nThe comparison also requires explicit interpretation of why those conditions alter creditor exposure, how the boundary between shareholder monitoring and creditor protection affects the reading of the findings, and why the selected governance measures should be assessed together rather than treated as interchangeable indicators. That explanatory bridge is part of the argument, not expendable wording.`;
+  const audit = auditOutputAcceptance({
+    sourceText: expandedSource,
+    candidateText: compressedCandidate,
+    styleFilters,
+    rewriteIntensity: "deep",
+    naturalisation: "aggressive",
+    lengthPreference: "expand",
+    planSummary: { DISCOURSE_REPACKAGE: 12 },
+  });
+  const developmentTargets = assessArgumentativeSufficiency(compressedCandidate).signals
+    .filter((signal) => signal.severity === "high" || signal.severity === "medium")
+    .map((signal) => signal.blockIndex);
+
+  assert.ok(audit.reasons.includes("expand_length_contract_missed"));
+  assert.ok(developmentTargets.length > 0);
+  assert.equal(audit.target_paragraph_indices[0], developmentTargets[0]);
 });

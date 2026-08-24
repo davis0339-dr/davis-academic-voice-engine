@@ -458,8 +458,17 @@ async function runAnalyseAndRevise() {
     renderPreservation(noRevision && rejectedPreservation ? rejectedPreservation : data.preservation);
     renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
     renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
+    const acceptanceReasons = data.output_acceptance?.reasons || [];
+    const lengthContractMissed = acceptanceReasons.includes("expand_length_contract_missed") || acceptanceReasons.includes("deep_auto_developmental_compression");
+    const sourceWords = data.output_acceptance?.dimensions?.source_word_count;
+    const candidateWords = data.output_acceptance?.dimensions?.candidate_word_count;
+    const lengthEvidence = Number.isFinite(sourceWords) && Number.isFinite(candidateWords)
+      ? ` Source ${formatNumber(sourceWords)} words → candidate ${formatNumber(candidateWords)} words.`
+      : "";
     const outcome = noRevision
       ? "No revision produced: every generated candidate breached a hard preservation invariant. The source remains in the Source box; nothing has been placed in Revised."
+      : lengthContractMissed
+        ? `Revision incomplete: the requested development/length contract was not achieved.${lengthEvidence} The text shown is a diagnostic draft, not a finished revision.`
       : data.candidate_verdict?.final_status === "accepted"
         ? "Revision completed and internally cleared."
         : "Candidate returned for review; it has not been internally cleared as a final revision.";
