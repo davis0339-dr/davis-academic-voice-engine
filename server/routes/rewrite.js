@@ -105,16 +105,13 @@ function finalCandidateStatus(
   preservationRelease = null
 ) {
   if (sourceRetainedForSafety) return "no_safe_edit_available";
-  if (preservationRelease?.review_required) return "preservation_review_required";
-  if (!compliance?.execution_passed && !compliance?.preservation_ok) return "execution_and_preservation_failed";
-  if (!compliance?.execution_passed) {
-    if (compliance?.execution_status === "over-executed") return "execution_over";
-    if (compliance?.execution_status === "conflicting-execution") return "execution_conflict";
-    return "execution_under";
+  // Execution, detector-pressure, visible-change and rhetorical-marker scores are
+  // diagnostic inputs, not permission gates. Once protected facts and semantic
+  // force survive, return the revision the author requested. Only a hard
+  // preservation breach may quarantine a candidate and retain the source.
+  if (preservationRelease?.hard_failure || (!compliance?.preservation_ok && !preservationRelease?.review_required)) {
+    return "preservation_failed";
   }
-  if (!compliance?.preservation_ok) return "preservation_failed";
-  if (outputAcceptanceEnforced && outputAcceptance?.status !== "pass") return "internal_quality_review_required";
-  if (residual?.attempted && !residual?.accepted && residual?.before?.should_rework) return "accepted_with_residual_risks";
   return "accepted";
 }
 
@@ -227,6 +224,11 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       // optimum while multiplying latency and provider cost. Execution defects are
       // now handed to the bounded paragraph-level residual pass below.
       const fullDocumentExecutionRecoveryAllowed = false;
+      // A high changed-sentence percentage is not semantic damage. Do not discard
+      // a broad reconstruction or replace it with a surface edit merely because
+      // it exceeded a planner breadth estimate; the preservation audit below is
+      // the release authority for facts, evidence and argumentative force.
+      const overExecutionRecoveryAllowed = false;
 
       // Explicit Deep structural modes treat concrete under-execution as a
       // recoverable generation failure. The loop is independent of the internal
@@ -286,6 +288,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       // High-preservation over-execution remains a separate failure mode. It is
       // never used merely because Deep reconstruction under-executed.
       if (
+        overExecutionRecoveryAllowed &&
         executionCompliance.over_executed &&
         sourceAssessment.authorial_texture?.preservation_priority === "high"
       ) {
@@ -565,10 +568,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
           external_detector_check_recommended: false,
         },
       } : baseOutputAcceptance;
-      const outputAcceptanceEnforced = Boolean(
-        ["moderate", "deep"].includes(String(modePolicy.effective_intensity || "").toLowerCase()) &&
-        ["aggressive", "authorial"].includes(String(modePolicy.effective_naturalisation || "").toLowerCase())
-      );
+      const outputAcceptanceEnforced = false;
       result.output_acceptance = {
         ...completedOutputAcceptance,
         enforced_for_final_release: outputAcceptanceEnforced,
@@ -604,7 +604,8 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         max_authorial_execution_recovery_retries: 0,
         max_reconciliation_retries: 0,
         max_preservation_recovery_retries: 1,
-        max_over_execution_recovery_retries: 1,
+        over_execution_recovery_allowed: overExecutionRecoveryAllowed,
+        max_over_execution_recovery_retries: 0,
       };
 
       result.rewrite_mode_policy = modePolicy;
@@ -638,8 +639,8 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       let verdictNote;
       if (sourceRetainedForSafety) {
         verdictNote = result.safety_fallback?.reason || "No safe revision survived the final safeguards. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision.";
-      } else if (preservationRelease.review_required) {
-        verdictNote = "The candidate preserved hard evidence invariants but the rhetorical/semantic heuristic still found possible proposition or discourse-function loss. The candidate is shown for direct researcher review and is not labelled as a successful final revision.";
+      } else if (!preservationRelease.hard_failure) {
+        verdictNote = "Revision delivered. Protected facts, citations, study stage and semantic force passed the release boundary. Execution breadth, machine-pattern pressure, length movement and rhetorical-marker findings remain advisory diagnostics: they may guide improvement but cannot suppress or downgrade a semantically sound result.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.execution_passed && executionCompliance.preservation_ok) {
         verdictNote = "The first Deep candidate under-executed the structural plan. Automatic Deep execution recovery produced a preservation-safe candidate that now satisfies execution compliance; under-execution was treated as a generation defect, not as a safe stopping point.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.under_executed) {
@@ -661,18 +662,19 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       result.candidate_verdict = {
         execution: sourceRetainedForSafety
           ? "no-safe-edit-available"
-          : executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
-        preservation: sourceRetainedForSafety ? "source-preserved" : preservationRelease.review_required ? "review-required" : executionCompliance.preservation_ok ? "passed" : "failed",
-        residual: residualVerdict,
+          : "completed",
+        execution_diagnostic: executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
+        preservation: sourceRetainedForSafety ? "source-preserved" : preservationRelease.hard_failure ? "failed" : "passed",
+        residual: sourceRetainedForSafety ? residualVerdict : residualRework?.accepted ? "improved" : "advisory",
+        residual_diagnostic: residualVerdict,
         rewrite_chain: result.iterative_rewrite_quality?.available
-          ? (result.iterative_rewrite_quality.blocking ? "regularisation-risk" : "within-root-register-band")
+          ? (result.iterative_rewrite_quality.blocking ? "advisory" : "within-root-register-band")
           : "not-applicable",
         output_acceptance: completedOutputAcceptance.status,
         output_acceptance_score: completedOutputAcceptance.score,
         output_acceptance_enforced: outputAcceptanceEnforced,
         external_detector_check_recommended: Boolean(
-          completedOutputAcceptance.release_gate?.external_detector_check_recommended &&
-          (!outputAcceptanceEnforced || completedOutputAcceptance.status === "pass")
+          !sourceRetainedForSafety && !preservationRelease.hard_failure
         ),
         final_status: finalCandidateStatus(
           executionCompliance,

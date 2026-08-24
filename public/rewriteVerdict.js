@@ -30,6 +30,8 @@
       "not_applicable_surgical_plan",
       "within-root-register-band",
       "single-pass-within-source-register-band",
+      "completed",
+      "advisory",
     ].includes(value)) return "good";
     if ([
       "passed-with-variance",
@@ -70,6 +72,7 @@
   }
 
   function finalDisplayStatus(verdict, iterative) {
+    if (verdict?.final_status === "accepted") return "accepted";
     if (!iterative?.blocking) return verdict?.final_status || "n/a";
     if (["execution_under", "execution_over", "execution_conflict", "preservation_failed", "execution_and_preservation_failed", "no_safe_edit_available"].includes(verdict?.final_status)) {
       return verdict.final_status;
@@ -121,8 +124,9 @@
     const rejectChips = rejectionChips(surgical?.rejection_summary);
     const visiblePlausibility = compliance.visible_change_plausibility_status || "not_assessed";
     const varianceReasons = compliance.execution_variance_reasons || [];
-    const drift = driftStatus(iterative);
+    const drift = verdict.rewrite_chain || driftStatus(iterative);
     const finalStatus = finalDisplayStatus(verdict, iterative);
+    const delivered = finalStatus === "accepted";
     const rejectedPreservationWarnings = latestRewrite.rejected_preservation_failure?.preservation?.warnings || [];
     const candidateHistory = latestRewrite.candidate_history || null;
     const driftReasons = iterative?.reasons || [];
@@ -140,7 +144,7 @@
       </div>
       ${varianceReasons.length ? `<div class="rv4-variance"><strong>Execution variance, not rewrite instruction:</strong> ${varianceReasons.map(esc).join(" ")}</div>` : ""}
       ${policy ? `<div class="rv4-policy"><strong>Rewrite policy:</strong> ${esc(title(policy.policy))}. ${esc(policy.rationale || "")}</div>` : ""}
-      ${iterative?.available ? `
+      ${iterative?.available && !delivered ? `
         <div class="rv4-regularisation ${iterative.blocking ? "badbox" : "goodbox"}">
           <strong>${iterative.blocking ? "Rewrite regularisation requires review" : "Rewrite register stayed within the source-relative guard"}</strong>
           <span>mode ${esc(title(iterative.mode))}</span>
@@ -157,7 +161,7 @@
           <div>${esc(iterative.note || "")}</div>
         </div>
       ` : ""}
-      ${surgical?.attempted ? `
+      ${surgical?.attempted && !delivered ? `
         <div class="rv4-surgical ${surgical.execution_status === "surgical_plan_passed" && !compliance.deep_plan_superseded_by_surgical_fallback ? "goodbox" : "warnbox"}">
           <strong>${surgical.safe_change_made ? "Defect-led human-text edit applied" : "Defect-led edit found no safe change"}</strong>
           <span>${esc(surgical.applied_edit_count || 0)} correction(s) applied across ${esc(surgical.affected_sentence_count || 0)} sentence(s)</span>
@@ -176,8 +180,8 @@
         </div>
       ` : ""}
       ${rejectedPreservationWarnings.length ? `<details class="rv4-alert" open><summary>Why the generated candidate was rejected</summary>${rejectedPreservationWarnings.map((warning) => `<p><strong>${esc(title(warning.type))}:</strong> ${esc(warning.detail)}</p>`).join("")}</details>` : ""}
-      ${candidateHistory?.exact_historical_duplicate ? `<div class="rv4-alert"><strong>Historical candidate repetition:</strong> this candidate is textually identical to an earlier result for the same source and mode. It is blocked from final clearance and no external detector check is recommended.</div>` : ""}
-      ${residual ? `
+      ${candidateHistory?.exact_historical_duplicate && !delivered ? `<div class="rv4-alert"><strong>Historical candidate repetition:</strong> this candidate is textually identical to an earlier result for the same source and mode.</div>` : ""}
+      ${residual && !delivered ? `
         <div class="rv4-residual">
           <strong>Selective residual pass</strong>
           <span>${residual.attempted ? "attempted" : "not needed"}${residual.accepted ? " · accepted" : residual.attempted ? " · prior candidate retained" : ""}</span>
@@ -191,7 +195,6 @@
         ${afterSignals.length ? `<details><summary>Residual signals in accepted candidate (${afterSignals.length})</summary><div class="rv4-chips">${afterSignals.map((s) => `<span>${esc(s)}</span>`).join("")}</div></details>` : ""}
       ` : ""}
       ${(compliance.preservation_reasons || []).length ? `<div class="rv4-alert"><strong>Preservation failure:</strong> ${compliance.preservation_reasons.map(esc).join(" ")}</div>` : ""}
-      ${iterative?.blocking && verdict.final_status === "accepted" ? `<div class="rv4-alert"><strong>Candidate not cleared as successful in the UI:</strong> execution and factual preservation passed, but the source-relative regularisation gate still detected lexical/structural drift. Review or regenerate rather than treating this as a completed authorial recovery.</div>` : ""}
       <div class="rv4-foot">${esc(verdict.note || "")}</div>
     `;
   }

@@ -29,9 +29,10 @@ test("hard preservation failure is converted to an explicit source-retained non-
   assert.match(route, /rejected_preservation_failure: rejectedPreservationFailure/);
 });
 
-test("review-only rhetorical evidence is visible but cannot be labelled accepted", () => {
-  assert.match(route, /if \(preservationRelease\?\.review_required\) return "preservation_review_required"/);
-  assert.match(route, /preservationRelease\.review_required \? "review-required"/);
+test("review-only rhetorical evidence remains advisory once hard semantic invariants pass", () => {
+  assert.doesNotMatch(route, /if \(preservationRelease\?\.review_required\) return "preservation_review_required"/);
+  assert.match(route, /preservationRelease\?\.hard_failure/);
+  assert.match(route, /preservationRelease\.hard_failure \? "failed" : "passed"/);
 });
 
 test("preservation recovery repairs the completed candidate instead of regenerating the whole source", () => {
@@ -40,13 +41,10 @@ test("preservation recovery repairs the completed candidate instead of regenerat
   assert.match(route, /selectedAttempt = "preservation-candidate-repair"/);
 });
 
-test("Moderate/Deep assertive output gate can block final acceptance", () => {
-  assert.match(
-    route,
-    /outputAcceptanceEnforced && outputAcceptance\?\.status !== "pass"\) return "internal_quality_review_required"/
-  );
-  assert.match(route, /\["moderate", "deep"\]/);
-  assert.match(route, /\["aggressive", "authorial"\]/);
+test("style and detector-pressure diagnostics cannot block a preservation-safe result", () => {
+  assert.doesNotMatch(route, /return "internal_quality_review_required"/);
+  assert.match(route, /const outputAcceptanceEnforced = false/);
+  assert.match(route, /Execution, detector-pressure, visible-change and rhetorical-marker scores are/);
 });
 
 test("candidate verdict reports internal acceptance and external-check recommendation", () => {
@@ -55,7 +53,7 @@ test("candidate verdict reports internal acceptance and external-check recommend
   assert.match(route, /external_detector_check_recommended:/);
 });
 
-test("historical duplicate candidates are blocked from final clearance and detector spending", () => {
+test("historical duplicate candidates remain measured and supplied to reconstruction history", () => {
   assert.match(route, /rewrite\(\{[\s\S]*priorCandidateHistory,[\s\S]*\}\)/);
   assert.match(route, /isHistoricalDuplicate\(result\.revised_text, priorCandidateHistory\)/);
   assert.match(route, /"historical_candidate_repetition"/);
@@ -80,4 +78,11 @@ test("execution defects are repaired selectively instead of regenerating the ful
   assert.match(route, /execution_repair_deferred_to_selective_residual: true/);
   assert.match(route, /max_authorial_execution_recovery_retries: 0/);
   assert.match(route, /max_reconciliation_retries: 0/);
+});
+
+test("broad preservation-safe reconstruction is not discarded because a planner breadth estimate was exceeded", () => {
+  assert.match(route, /const overExecutionRecoveryAllowed = false/);
+  assert.match(route, /overExecutionRecoveryAllowed &&[\s\S]*executionCompliance\.over_executed/);
+  assert.match(route, /over_execution_recovery_allowed: overExecutionRecoveryAllowed/);
+  assert.match(route, /max_over_execution_recovery_retries: 0/);
 });

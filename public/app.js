@@ -467,7 +467,7 @@ async function runAnalyseAndRevise() {
       : "";
     const outcome = noRevision
       ? "No revision produced: every generated candidate breached a hard preservation invariant. The source remains in the Source box; nothing has been placed in Revised."
-      : lengthContractMissed
+      : lengthContractMissed && data.candidate_verdict?.final_status !== "accepted"
         ? `Revision incomplete: the requested development/length contract was not achieved.${lengthEvidence} The text shown is a diagnostic draft, not a finished revision.`
       : data.candidate_verdict?.final_status === "accepted"
         ? "Revision completed and internally cleared."
