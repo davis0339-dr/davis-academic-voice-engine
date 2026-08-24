@@ -59,6 +59,31 @@ test("the final chunk prompt carries both incoming and outgoing intellectual con
   assert.match(prompt, /outgoing transition, unresolved tension or forward link/i);
 });
 
+test("Deep Auto length treats development—not compression—as the ordinary centre", () => {
+  const analysis = analyse({
+    sourceText,
+    styleFilters: { region: "West Africa" },
+    rewriteIntensity: "deep",
+    grammarIntensity: "standard",
+    lengthPreference: "auto",
+    naturalisation: "aggressive",
+  });
+  const prompt = buildSystemPrompt({
+    styleProfile: analysis.style_profile_used.effective,
+    protectedSpans: analysis.protectedSpans,
+    plan: analysis.plan,
+    grammarIntensity: "standard",
+    lengthPreference: "auto",
+    rhetoricalLedger: buildRhetoricalLedger(sourceText),
+    naturalisation: "aggressive",
+    revisionPurpose: "collaborative",
+  });
+
+  assert.match(prompt, /roughly 100-108% of source length as the ordinary developmental centre/i);
+  assert.match(prompt, /Do not compress merely to make the reconstruction look efficient/i);
+  assert.match(prompt, /Do not invent examples or evidence/i);
+});
+
 test("the rhetorical ledger maps propositions and logical force without embedding full source sentences", () => {
   const ledger = buildRhetoricalLedger(sourceText);
   const records = ledger.flatMap((paragraph) => paragraph.sentences);

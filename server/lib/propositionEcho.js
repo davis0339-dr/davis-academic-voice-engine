@@ -1,4 +1,5 @@
 import { splitSentences } from "./sentences.js";
+import { splitTextBlocks } from "./textStructure.js";
 
 const STOP_WORDS = new Set([
   "a", "an", "and", "are", "as", "at", "be", "because", "been", "being", "but", "by", "can", "could",
@@ -34,9 +35,7 @@ function similarity(a, b) {
 }
 
 function paragraphRows(text) {
-  return String(text || "")
-    .replace(/\r\n?/g, "\n")
-    .split(/\n\s*\n+/)
+  return splitTextBlocks(text)
     .map((paragraph, paragraphIndex) => ({ paragraphIndex, text: paragraph.trim() }))
     .filter((row) => row.text);
 }

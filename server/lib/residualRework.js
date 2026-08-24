@@ -17,6 +17,7 @@ import { splitSentences } from "./sentences.js";
 import { auditOutputAcceptance, acceptanceImproved } from "./outputAcceptance.js";
 import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
 import { repairPreservationCandidate } from "./preservationRepair.js";
+import { splitTextBlocks } from "./textStructure.js";
 
 function preservationPassed(p) {
   return Boolean(
@@ -125,9 +126,7 @@ function replaceBlocksSequentially(candidateText, replacements, structure) {
 function acceptanceTargetBlockIndices(candidateText, candidateStructure, acceptance) {
   const wantedParagraphIndices = new Set(acceptance?.target_paragraph_indices || []);
   if (!wantedParagraphIndices.size) return [];
-  const rawParagraphs = String(candidateText || "")
-    .replace(/\r\n?/g, "\n")
-    .split(/\n\s*\n+/)
+  const rawParagraphs = splitTextBlocks(candidateText)
     .map((text, index) => ({ index, text: text.trim() }))
     .filter((row) => row.text);
   const targetTexts = rawParagraphs

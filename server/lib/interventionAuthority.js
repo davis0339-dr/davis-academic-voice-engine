@@ -43,6 +43,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
   const authorialMode = requestedNaturalisation === "authorial" && intensity === "deep";
   const authorialDiscourseMode = authorialMode && effectiveIntent === "discourse_reconstruction";
   const deepDiscourseMode = intensity === "deep" && effectiveIntent === "discourse_reconstruction";
+  const broadDeepDiscoursePlan = deepDiscourseMode && discourseRatio >= 0.65;
 
   if (explicitMinor) {
     return {
@@ -129,7 +130,9 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
       : selectiveDevelopment ? "selective_argument_development"
         : priority === "high" ? "targeted" : priority === "medium" ? "selective" : "broad_if_diagnosed";
 
-  const ordinaryMinimumChanged = Math.max(0, interventionRatio - minimumSlack);
+  const ordinaryMinimumChanged = broadDeepDiscoursePlan
+    ? clamp(Math.max(interventionRatio - minimumSlack, discourseRatio * 0.66), 0, 0.72)
+    : Math.max(0, interventionRatio - minimumSlack);
   const authorialPlanDemand = clamp(substantiveRatio, 0, 1);
   const authorialMinimumChanged = authorialDiscourseMode
     ? clamp(Math.max(0.15, authorialPlanDemand * 0.35), 0, 0.55)
@@ -146,7 +149,7 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     : clamp(substantiveRatio + substantiveMargin, 0.15, 1);
 
   return {
-    version: "intervention-authority-v8",
+    version: "intervention-authority-v9",
     preservation_priority: priority,
     preservation_basis: authorialMode ? "semantic_evidential_fidelity" : "surface_and_semantic_fidelity",
     surface_preservation_required: !authorialMode,
@@ -170,8 +173,10 @@ export function deriveInterventionAuthority({ planSummary, authorialTexture, req
     max_changed_sentence_ratio: Number((authorialMode ? authorialMaxChanged : ordinaryMaxChanged).toFixed(3)),
     max_substantive_operation_ratio: Number((authorialMode ? authorialMaxSubstantive : ordinaryMaxSubstantive).toFixed(3)),
     min_changed_sentence_ratio: Number((authorialMode ? authorialMinimumChanged : ordinaryMinimumChanged).toFixed(3)),
-    minimum_basis: authorialDiscourseMode
-      ? "plan_responsive_authorial_execution_floor"
+    minimum_basis: broadDeepDiscoursePlan && !authorialMode
+      ? "broad_deep_discourse_execution_floor"
+      : authorialDiscourseMode
+        ? "plan_responsive_authorial_execution_floor"
       : authorialMode
         ? "authorial_preservation_aware_plausibility_floor"
         : "preservation_aware_plausibility_floor",

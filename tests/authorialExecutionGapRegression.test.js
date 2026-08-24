@@ -73,6 +73,37 @@ test("material authorial reconstruction is not misclassified as over-editing whe
   assert.equal(compliance.execution_status, "passed");
 });
 
+test("broad Deep aggressive discourse scope cannot clear at barely half-visible execution", () => {
+  const plan = { DISCOURSE_REPACKAGE: 57, SENTENCE_RESTRUCTURE: 1 };
+  const authority = deriveInterventionAuthority({
+    planSummary: plan,
+    authorialTexture: { preservation_priority: "medium", machine_pattern_regularity: { score: 0.42 } },
+    requestedIntensity: "deep",
+    requestedNaturalisation: "aggressive",
+    effectiveIntent: "discourse_reconstruction",
+  });
+  assert.equal(authority.minimum_basis, "broad_deep_discourse_execution_floor");
+  assert.ok(authority.min_changed_sentence_ratio >= 0.64);
+
+  const compliance = assessExecutionCompliance({
+    intervention_plan_summary: plan,
+    intervention_intent: { effective: "discourse_reconstruction" },
+    intervention_authority: authority,
+    edit_summary: {
+      kept: 36,
+      micro_edits: 0,
+      sentence_restructures: 22,
+      split_or_merge: 0,
+      paragraph_reorders: 0,
+    },
+    transformation_quality: { unchanged_sentence_ratio: 0.48 },
+    preservation: preservationPassed(),
+  });
+
+  assert.equal(compliance.execution_passed, false);
+  assert.ok(compliance.under_execution_codes.includes("BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED"));
+});
+
 test("nominal deep reconstruction is rejected for concrete structural under-execution while low visible change remains a separate variance", () => {
   const authority = deriveInterventionAuthority({
     planSummary: discourseHeavyPlan,

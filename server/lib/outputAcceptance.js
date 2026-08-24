@@ -17,6 +17,7 @@ import { extractProtectedSpans } from "./protect.js";
 import { splitSentences } from "./sentences.js";
 import { analyseMachineLanguageForensics } from "./machineLanguageForensics.js";
 import { analysePropositionEcho } from "./propositionEcho.js";
+import { splitTextBlocks } from "./textStructure.js";
 
 const FORMAL_SECTION_RE = /^(?:purpose statement|research questions?(?: and hypotheses)?|hypotheses|hypothesis development|research question\s*\d*|operational definitions?|definitions of terms|assumptions|limitations|delimitations|references|appendix|table\s+\d+|figure\s+\d+)\s*:?[\s]*$/i;
 const NARRATIVE_SECTION_RE = /^(?:introduction|background(?: of the problem| to the study)?|statement of the problem|problem statement|literature review|conceptual review|theoretical review|empirical review|discussion|conclusion|research gap)\s*:?[\s]*$/i;
@@ -50,9 +51,7 @@ function normalise(text) {
 }
 
 function rawParagraphs(text) {
-  return String(text || "")
-    .replace(/\r\n?/g, "\n")
-    .split(/\n\s*\n+/)
+  return splitTextBlocks(text)
     .map((text, index) => ({ index, text: text.trim() }))
     .filter((row) => row.text);
 }

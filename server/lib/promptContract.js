@@ -226,6 +226,7 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
       : ["long", "longer", "expand"].includes(requestedLength)
         ? "expand"
         : "auto";
+  const deepDevelopmentalAuto = lengthMode === "auto" && plan.intensity === "deep" && plan.intent?.effective === "discourse_reconstruction";
 
   return [
     BASE_SYSTEM_PROMPT,
@@ -245,6 +246,8 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
           ? "Compression is authorised, but preserve argument scaffolding, qualifications, claim-evidence links and interpretation."
           : lengthMode === "expand"
             ? "Develop only from supplied reasoning/evidence; never invent facts, findings, citations or mechanisms."
+          : deepDevelopmentalAuto
+            ? "No shortening was selected. For Deep discourse reconstruction, treat roughly 100-108% of source length as the ordinary developmental centre, not a quota. Prefer retaining and, where the supplied material supports it, unpacking causal logic, conceptual distinctions, evidential relevance, qualifications and practical implications. Do not compress merely to make the reconstruction look efficient. Do not invent examples or evidence; when an illustration would require researcher knowledge not present in the source, leave it for Additional Inputs rather than fabricating it."
             : "No shortening was selected. Keep source length as the centre of gravity; do not reward brevity.",
       "Length is diagnostic, not a padding quota; intellectual completeness outranks compactness.",
     ].join("\n"),

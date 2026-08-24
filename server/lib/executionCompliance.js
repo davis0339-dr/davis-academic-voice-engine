@@ -286,10 +286,17 @@ export function assessExecutionCompliance(result) {
     changedSentenceRatio !== null &&
     changedSentenceRatio + 0.03 < minChangedSentenceRatio
   ) {
-    addVariance(
-      "VISIBLE_CHANGE_FLOOR",
-      `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences visibly changed, below the ${Math.round(minChangedSentenceRatio * 100)}% preservation-aware plausibility floor. Concrete plan execution is evaluated separately; this is an execution variance for review, not a rewrite target and not a reason by itself to regenerate more text.`
-    );
+    if (authority.minimum_basis === "broad_deep_discourse_execution_floor") {
+      addUnder(
+        "BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED",
+        `Independent comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences visibly changed although Deep discourse reconstruction covered ${Math.round(Number(authority.planned_discourse_repackage_ratio || 0) * 100)}% of planner units. The ${Math.round(minChangedSentenceRatio * 100)}% floor is a plausibility safeguard for this unusually broad plan, not a rewrite quota; falling below it shows that the paragraph-level reconstruction was not materially realised.`
+      );
+    } else {
+      addVariance(
+        "VISIBLE_CHANGE_FLOOR",
+        `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences visibly changed, below the ${Math.round(minChangedSentenceRatio * 100)}% preservation-aware plausibility floor. Concrete plan execution is evaluated separately; this is an execution variance for review, not a rewrite target and not a reason by itself to regenerate more text.`
+      );
+    }
   }
 
   const maxChangedSentenceRatio = Number.isFinite(Number(authority.max_changed_sentence_ratio))

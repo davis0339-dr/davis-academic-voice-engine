@@ -10,6 +10,7 @@ const NUMBERED_HEADING_RE = /^\s*\d+(?:\.\d+)+\s+\S/;
 const PAGE_ARTIFACT_RE = /^\s*\d{1,4}\s*$/;
 const BLOCKQUOTE_RE = /^\s*>\s*\S/;
 const STANDALONE_QUOTE_RE = /^\s*[“\"][\s\S]+[”\"]\s*$/;
+const KNOWN_SECTION_HEADING_RE = /^(?:introduction|background(?: of the problem| to the study)?|problem statement|statement of the problem|purpose statement|literature review|conceptual review|theoretical review|empirical review|research gap|methodology|methods?|results?|discussion|limitations?|conclusion|references|appendix)\s*:?[\s]*$/i;
 
 function looksLikeHeading(text) {
   const trimmed = text.trim();
@@ -33,7 +34,23 @@ function classifyBlock(text) {
   return "paragraph";
 }
 
-function rawBlocks(text) {
+function strongStandaloneHeading(text) {
+  const trimmed = String(text || "").trim();
+  return KNOWN_SECTION_HEADING_RE.test(trimmed) || NUMBERED_HEADING_RE.test(trimmed);
+}
+
+function proseSegments(lines) {
+  if (!lines.length) return [];
+  if (lines.length === 1) return [lines[0]];
+  const completeLongLines = lines.filter((line) => wordCount(line) >= 28 && /[.!?][”\"]?$/.test(line));
+  // Long complete lines pasted from Word/PDF are usually manuscript paragraphs
+  // separated by one newline. Short/incomplete lines are usually visual wrapping
+  // and must be rejoined rather than converted into artificial paragraphs.
+  if (completeLongLines.length >= 2 && completeLongLines.length / lines.length >= 0.70) return lines;
+  return [lines.join(" ").replace(/\s+/g, " ").trim()];
+}
+
+export function splitTextBlocks(text) {
   const normalised = String(text || "").replace(/\r\n?/g, "\n");
   const chunks = normalised.split(/\n{2,}/).map((chunk) => chunk.trim()).filter(Boolean);
   const blocks = [];
@@ -45,9 +62,23 @@ function rawBlocks(text) {
     // the sentence planner as a separate fragment.
     if (lines.length > 1 && lines.every((line) => LIST_ITEM_RE.test(line))) {
       blocks.push(...lines);
-    } else {
-      blocks.push(chunk);
+      continue;
     }
+
+    let prose = [];
+    const flushProse = () => {
+      blocks.push(...proseSegments(prose));
+      prose = [];
+    };
+    for (const line of lines) {
+      if (LIST_ITEM_RE.test(line) || strongStandaloneHeading(line)) {
+        flushProse();
+        blocks.push(line);
+      } else {
+        prose.push(line);
+      }
+    }
+    flushProse();
   }
   return blocks;
 }
@@ -72,7 +103,7 @@ export function parseTextStructure(text) {
   let sentenceCursor = 0;
   let paragraphOrdinal = 0;
 
-  rawBlocks(text).forEach((raw, blockIndex) => {
+  splitTextBlocks(text).forEach((raw, blockIndex) => {
     const type = classifyBlock(raw);
     const blockSentences = splitSentences(raw);
     const mapped = mapSentenceIndices(blockSentences, allSentences, sentenceCursor);
