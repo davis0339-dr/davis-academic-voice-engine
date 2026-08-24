@@ -24,6 +24,8 @@ import {
   normaliseRewriteLineage,
 } from "./iterativeRewriteGuard.js";
 import { candidateHistoryPromptBlock } from "./candidateHistory.js";
+import { buildLengthContract, lengthContractSatisfied } from "./lengthContract.js";
+import { classifyPreservationRelease } from "./preservationRelease.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
 const SUBSTANTIVE_PLAN_LEVELS = new Set([
@@ -189,6 +191,58 @@ async function runModelPass({ systemPrompt, sourceText, maxTokens = 4096 }) {
   return parsed;
 }
 
+export function buildExpansionCompletionPrompt(contract) {
+  return [
+    "You are completing an academic EXPAND revision that did not meet its binding development contract.",
+    `The original source contains ${contract.source_words} words. The completed revision MUST contain at least ${contract.minimum_candidate_words} words and should ordinarily fall between ${contract.target_candidate_words} and ${contract.maximum_candidate_words} words.`,
+    "Work from the CURRENT CANDIDATE rather than reverting to the source. Preserve its useful reconstruction while adding the missing intellectual development across several appropriate paragraphs.",
+    "Use the ORIGINAL SOURCE as the sole authority for facts, citations, numbers, variables, methods, study stage, scope, modality, causality and argumentative meaning.",
+    "Develop reasoning already present or directly entailed by the source: unpack conceptual relationships, creditor or managerial logic already stated, boundary conditions, evidential relevance, methodological implications, distinctions between measures, and transitions between argumentative levels.",
+    "Do not invent empirical evidence, citations, statistics, findings, named examples or causal mechanisms absent from the source. Do not repeat sentences, add generic significance claims, inflate synonyms, or append filler merely to reach the count.",
+    "Distribute the added development; do not place the entire deficit in one paragraph. Retain headings and the source's section purposes.",
+    "A response below the mandatory minimum is invalid.",
+    "Return one JSON object only: {\"revised_text\":\"the complete expanded manuscript\",\"edit_summary\":{\"kept\":0,\"micro_edits\":0,\"sentence_restructures\":0,\"split_or_merge\":0,\"paragraph_reorders\":0,\"flags_for_author\":[]},\"additional_inputs\":[]}",
+  ].join("\n");
+}
+
+async function completeExpansionContract({ sourceText, candidate, contract, maxTokens }) {
+  let selected = candidate;
+  const attempts = [];
+  for (let attempt = 1; attempt <= 2 && !lengthContractSatisfied(selected.revised_text, contract); attempt += 1) {
+    const currentWords = String(selected.revised_text || "").trim().split(/\s+/).filter(Boolean).length;
+    const deficit = Math.max(0, contract.minimum_candidate_words - currentWords);
+    const payload = [
+      `CURRENT WORD COUNT: ${currentWords}`,
+      `MANDATORY MINIMUM WORD COUNT: ${contract.minimum_candidate_words}`,
+      `CURRENT DEFICIT: ${deficit} words`,
+      "",
+      "ORIGINAL SOURCE (factual and argumentative authority):",
+      sourceText,
+      "",
+      "CURRENT CANDIDATE (develop this version):",
+      selected.revised_text,
+    ].join("\n");
+    const recovered = await runModelPass({
+      systemPrompt: buildExpansionCompletionPrompt(contract),
+      sourceText: payload,
+      maxTokens,
+    });
+    const recoveredPreservation = auditPreservation(sourceText, recovered.revised_text, extractProtectedSpans(sourceText), { lengthPreference: "expand" });
+    const recoveredWords = String(recovered.revised_text || "").trim().split(/\s+/).filter(Boolean).length;
+    const hardFailure = classifyPreservationRelease(recoveredPreservation).hard_failure;
+    const improved = !hardFailure && recoveredWords > currentWords;
+    attempts.push({ attempt, current_words: currentWords, recovered_words: recoveredWords, preservation_hard_failure: hardFailure, selected: improved });
+    if (improved) selected = recovered;
+  }
+  if (!lengthContractSatisfied(selected.revised_text, contract)) {
+    const error = new Error(`Expand could not produce the required preservation-safe minimum of ${contract.minimum_candidate_words} words after two targeted development attempts.`);
+    error.code = "EXPANSION_CONTRACT_UNMET";
+    error.expansion = { contract, attempts };
+    throw error;
+  }
+  return { candidate: selected, attempts };
+}
+
 function nearSourceExamples(quality) {
   const examples = quality.near_source_examples || [];
   if (!examples.length) return "";
@@ -302,10 +356,12 @@ export async function rewrite({
   documentContext,
   rewriteLineage,
   priorCandidateHistory,
+  minimumExpansionWords,
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
   const outputTokenBudget = modelOutputTokenBudget(sourceText, effectiveRevisionPurpose);
+  const lengthContract = buildLengthContract({ sourceText, preference: lengthPreference, minimumExpansionWords });
   const lineage = normaliseRewriteLineage(rewriteLineage, sourceText);
   const analysis = analyse({
     sourceText,
@@ -328,6 +384,8 @@ export async function rewrite({
   const fullDocumentQualityRecoveryAllowed = false;
 
   const systemPrompt = buildSystemPrompt({
+    sourceText,
+    minimumExpansionWords,
     styleProfile: analysis.style_profile_used.effective,
     protectedSpans: analysis.protectedSpans,
     plan: analysis.plan,
@@ -343,6 +401,7 @@ export async function rewrite({
   }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage }) + candidateHistoryPromptBlock(priorCandidateHistory);
 
   let parsed = await runModelPass({ systemPrompt, sourceText, maxTokens: outputTokenBudget });
+  let expansionRecovery = { required: lengthContract.mode === "expand", attempted: false, attempts: [], contract: lengthContract };
   let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
   let iterativeQuality = assessIterativeRegularisation({
     sourceText,
@@ -395,6 +454,31 @@ export async function rewrite({
         message: err.message || "Optional quality refinement failed.",
       };
     }
+  }
+
+  if (lengthContract.mode === "expand" && !lengthContractSatisfied(parsed.revised_text, lengthContract)) {
+    const completed = await completeExpansionContract({
+      sourceText,
+      candidate: parsed,
+      contract: lengthContract,
+      maxTokens: outputTokenBudget,
+    });
+    parsed = completed.candidate;
+    transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
+    iterativeQuality = assessIterativeRegularisation({
+      sourceText,
+      candidateText: parsed.revised_text,
+      rewriteLineage: lineage,
+    });
+    responseRepairUsed = responseRepairUsed || Boolean(parsed.__response_repair_used);
+    responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(parsed.__response_envelope_recovered);
+    expansionRecovery = {
+      required: true,
+      attempted: true,
+      attempts: completed.attempts,
+      contract: lengthContract,
+      completed: true,
+    };
   }
 
   if (
@@ -454,6 +538,11 @@ export async function rewrite({
   return {
     revised_text: parsed.revised_text,
     revision_purpose: effectiveRevisionPurpose,
+    length_contract: {
+      ...lengthContract,
+      satisfied: lengthContractSatisfied(parsed.revised_text, lengthContract),
+      recovery: expansionRecovery,
+    },
     additional_inputs: ensureCollaborativeReviewInputs({
       sourceText,
       revisionPurpose: effectiveRevisionPurpose,

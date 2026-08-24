@@ -15,6 +15,7 @@ import { resolveProfile } from "./styleProfileStore.js";
 import { auditPreservation } from "./preservation.js";
 import { extractProtectedSpans } from "./protect.js";
 import { splitSentences, wordCount } from "./sentences.js";
+import { buildLengthContract } from "./lengthContract.js";
 import { analyseMachineLanguageForensics } from "./machineLanguageForensics.js";
 import { analysePropositionEcho } from "./propositionEcho.js";
 import { splitTextBlocks } from "./textStructure.js";
@@ -355,6 +356,7 @@ export function auditOutputAcceptance({
   naturalisation = "faithful",
   planSummary = {},
   lengthPreference = "auto",
+  minimumExpansionWords,
 } = {}) {
   const source = String(sourceText || "");
   const candidate = String(candidateText || "");
@@ -383,11 +385,12 @@ export function auditOutputAcceptance({
   const deepMode = intensity === "deep";
   const moderateOrDeeper = intensity === "moderate" || deepMode;
   const requestedLength = String(lengthPreference || "auto").toLowerCase();
+  const lengthContract = buildLengthContract({ sourceText: source, preference: lengthPreference, minimumExpansionWords });
   const sourceWordCount = wordCount(source);
   const candidateWordCount = wordCount(candidate);
   const lengthRatio = sourceWordCount ? candidateWordCount / sourceWordCount : 1;
   const deepDevelopmentalAuto = deepMode && assertiveMode && requestedLength === "auto";
-  const minimumDevelopmentalLengthRatio = deepDevelopmentalAuto ? 0.98 : requestedLength === "expand" ? 1 : null;
+  const minimumDevelopmentalLengthRatio = deepDevelopmentalAuto ? 0.98 : lengthContract.mode === "expand" ? Number((lengthContract.minimum_candidate_words / Math.max(1, sourceWordCount)).toFixed(3)) : null;
   const candidateDevelopment = assessArgumentativeSufficiency(candidate);
   const developmentTargetParagraphIndices = (candidateDevelopment.signals || [])
     .filter((signal) => signal.severity === "high" || signal.severity === "medium")
@@ -400,7 +403,7 @@ export function auditOutputAcceptance({
   if (deepDevelopmentalAuto && lengthRatio < minimumDevelopmentalLengthRatio) {
     reasons.push("deep_auto_developmental_compression");
   }
-  if (requestedLength === "expand" && lengthRatio < 1) {
+  if (lengthContract.mode === "expand" && candidateWordCount < lengthContract.minimum_candidate_words) {
     reasons.push("expand_length_contract_missed");
   }
 
@@ -487,8 +490,11 @@ export function auditOutputAcceptance({
   else if (uniqueReasons.length) status = "review_required";
 
   const targetParagraphIndices = [...new Set([
-    ...((deepDevelopmentalAuto && lengthRatio < minimumDevelopmentalLengthRatio) || (requestedLength === "expand" && lengthRatio < 1)
+    ...((deepDevelopmentalAuto && lengthRatio < minimumDevelopmentalLengthRatio) || (lengthContract.mode === "expand" && candidateWordCount < lengthContract.minimum_candidate_words)
       ? developmentTargetParagraphIndices
+      : []),
+    ...(lengthContract.mode === "expand" && candidateWordCount < lengthContract.minimum_candidate_words
+      ? (candidateDevelopment.paragraph_rows || []).map((row) => row.blockIndex).filter(Number.isInteger)
       : []),
     ...(dependence.target_paragraph_indices || []),
     ...(candidateMachine.choreography.target_paragraph_indices || []),
@@ -525,6 +531,9 @@ export function auditOutputAcceptance({
       candidate_word_count: candidateWordCount,
       source_revision_length_ratio: Number(lengthRatio.toFixed(3)),
       minimum_developmental_length_ratio: minimumDevelopmentalLengthRatio,
+      minimum_expansion_addition_words: lengthContract.minimum_addition_words,
+      minimum_expansion_candidate_words: lengthContract.minimum_candidate_words,
+      expansion_word_deficit: Math.max(0, lengthContract.minimum_candidate_words - candidateWordCount),
       candidate_argumentative_development_score: candidateDevelopment.development_score,
       candidate_argumentative_development_signal_count: (candidateDevelopment.signals || []).length,
     },

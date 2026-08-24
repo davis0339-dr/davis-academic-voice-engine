@@ -4,8 +4,9 @@ import { extractProtectedSpans } from "./protect.js";
 import { auditPreservation } from "./preservation.js";
 import { modelOutputTokenBudget } from "./pipeline.js";
 import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
+import { buildLengthContract, lengthContractSatisfied } from "./lengthContract.js";
 
-export function repairPrompt() {
+export function repairPrompt(lengthContract = null) {
   return [
     "You are repairing factual and evidential preservation defects in an already completed academic revision.",
     "MANDATORY PRESERVATION CONTRACT (these invariants also govern repair):",
@@ -19,6 +20,9 @@ export function repairPrompt() {
     "Restore every missing or altered protected item in its logically correct location. Remove any claim, number or citation that the candidate introduced without source support.",
     "Preserve proposal/future orientation exactly when the source describes planned research. Do not convert a prospectus into a completed study.",
     "Do not add new evidence, mechanisms, interpretations or references. Do not undo legitimate sentence restructuring merely to increase lexical overlap with the source. Do not replace the candidate wholesale with the source; that is a failed repair.",
+    lengthContract?.mode === "expand"
+      ? `The Expand contract remains binding during repair: the repaired complete text must contain at least ${lengthContract.minimum_candidate_words} words. Restore fidelity without compressing the candidate below that minimum.`
+      : "",
     "Return exactly one JSON object and nothing else: {\"revised_text\":\"the fully repaired candidate\"}",
   ].join("\n");
 }
@@ -43,7 +47,7 @@ function repairPayload(sourceText, candidateResult, protectedSpans) {
   ].join("\n");
 }
 
-export async function repairPreservationCandidate({ sourceText, candidateResult, revisionPurpose = "fidelity", lengthPreference = "auto" } = {}) {
+export async function repairPreservationCandidate({ sourceText, candidateResult, revisionPurpose = "fidelity", lengthPreference = "auto", minimumExpansionWords } = {}) {
   const source = String(sourceText || "");
   const candidate = String(candidateResult?.revised_text || "");
   if (!source || !candidate) {
@@ -53,8 +57,9 @@ export async function repairPreservationCandidate({ sourceText, candidateResult,
   }
 
   const protectedSpans = extractProtectedSpans(source);
+  const lengthContract = buildLengthContract({ sourceText: source, preference: lengthPreference, minimumExpansionWords });
   const response = await llmProvider.callAnthropic({
-    system: repairPrompt(),
+    system: repairPrompt(lengthContract),
     messages: [{ role: "user", content: repairPayload(source, candidateResult, protectedSpans) }],
     maxTokens: modelOutputTokenBudget(source, revisionPurpose),
   });
@@ -86,6 +91,7 @@ export async function repairPreservationCandidate({ sourceText, candidateResult,
     preservation.document_structure_ok !== false &&
     preservation.rhetorical_semantic_ok !== false &&
     !preservation.new_factual_claims_detected
+    && lengthContractSatisfied(revisedText, lengthContract)
   );
 
   return {
@@ -97,6 +103,7 @@ export async function repairPreservationCandidate({ sourceText, candidateResult,
       passed,
       source_regeneration_avoided: true,
       retained_candidate_metadata: true,
+      length_contract_satisfied: lengthContractSatisfied(revisedText, lengthContract),
     },
   };
 }

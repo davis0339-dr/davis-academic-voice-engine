@@ -45,10 +45,10 @@ test("Long Document does not silently downgrade Deep + Aggressive on a locally c
   });
   assert.equal(policy.requested.naturalisation, "aggressive");
   assert.equal(policy.effective.naturalisation, "aggressive");
-  assert.equal(policy.effective.lengthPreference, "maintain");
+  assert.equal(policy.effective.lengthPreference, "expand");
   assert.equal(policy.authorial_authority, true);
   assert.equal(policy.aggressive_authorised, true);
-  assert.equal(policy.expansion_authorised, false);
+  assert.equal(policy.expansion_authorised, true);
 });
 
 test("Minor still blocks aggressive treatment from becoming hidden deep reconstruction", () => {

@@ -7,6 +7,7 @@ import { DEEP_AUTHORIAL_PROTOCOL } from "../server/lib/diagnosisScopedPlanner.js
 import { buildRhetoricalLedger } from "../server/lib/rhetoricalPreservation.js";
 import { buildResidualSystemPrompt } from "../server/lib/residualRework.js";
 import { repairPrompt } from "../server/lib/preservationRepair.js";
+import { wordCount } from "../server/lib/sentences.js";
 
 const sourceText = fs.readFileSync(
   new URL("./fixtures/rhetorical-preservation/audit-firm-architecture.txt", import.meta.url),
@@ -69,6 +70,7 @@ test("Deep Auto length treats development—not compression—as the ordinary ce
     naturalisation: "aggressive",
   });
   const prompt = buildSystemPrompt({
+    sourceText,
     styleProfile: analysis.style_profile_used.effective,
     protectedSpans: analysis.protectedSpans,
     plan: analysis.plan,
@@ -82,6 +84,32 @@ test("Deep Auto length treats development—not compression—as the ordinary ce
   assert.match(prompt, /roughly 100-108% of source length as the ordinary developmental centre/i);
   assert.match(prompt, /Do not compress merely to make the reconstruction look efficient/i);
   assert.match(prompt, /Do not invent examples or evidence/i);
+});
+
+test("Expand prompt states the exact binding source-plus-200 minimum", () => {
+  const analysis = analyse({
+    sourceText,
+    styleFilters: {},
+    rewriteIntensity: "deep",
+    grammarIntensity: "standard",
+    lengthPreference: "expand",
+    naturalisation: "aggressive",
+  });
+  const sourceWords = wordCount(sourceText);
+  const prompt = buildSystemPrompt({
+    sourceText,
+    styleProfile: analysis.style_profile_used.effective,
+    protectedSpans: analysis.protectedSpans,
+    plan: analysis.plan,
+    grammarIntensity: "standard",
+    lengthPreference: "expand",
+    rhetoricalLedger: buildRhetoricalLedger(sourceText),
+    naturalisation: "aggressive",
+    revisionPurpose: "fidelity",
+  });
+  assert.match(prompt, new RegExp(`return at least ${sourceWords + 200} words`));
+  assert.match(prompt, /mandatory production requirement, not a preference or diagnostic/i);
+  assert.match(prompt, /numeric minimum is authoritative/i);
 });
 
 test("the rhetorical ledger maps propositions and logical force without embedding full source sentences", () => {

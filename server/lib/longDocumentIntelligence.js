@@ -228,12 +228,11 @@ export function deriveLongDocumentChunkPolicy({ sourceText, requestedIntensity, 
     effectiveNaturalisation = "aggressive";
   }
 
-  let effectiveLengthPreference = lengthPreference;
-  if (lengthPreference === "expand" && developmentNeed === "low" && !deepDiagnosis) {
-    // Deep Authorial may reconstruct clean prose, but it must not manufacture new
-    // intellectual content merely to make the document longer.
-    effectiveLengthPreference = "maintain";
-  }
+  // Length preference is author-selected. A locally clean chunk may still need
+  // to carry its share of whole-document development, so Expand is never
+  // silently downgraded to Maintain. The caller allocates the document-level
+  // word addition across substantive chunks.
+  const effectiveLengthPreference = lengthPreference;
 
   return {
     requested: { intensity, naturalisation, lengthPreference },

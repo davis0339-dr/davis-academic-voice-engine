@@ -19,6 +19,8 @@ import {
   coverageRecoveryContext,
   globalRepairContext,
 } from "./longDocumentIntelligence.js";
+import { wordCount } from "./sentences.js";
+import { buildLengthContract, DEFAULT_EXPAND_MIN_ADDITION_WORDS, lengthContractSatisfied } from "./lengthContract.js";
 
 const jobs = new Map();
 const MAX_TRANSIENT_ATTEMPTS = 4;
@@ -42,6 +44,24 @@ const MAX_STORED_JOBS = intEnv("MAX_STORED_LONGDOC_JOBS", 24, 4, 200);
 const MAX_COVERAGE_RECOVERY_CHUNKS = intEnv("MAX_LONGDOC_COVERAGE_RECOVERY_CHUNKS", 16, 4, 30);
 const JOB_TTL_MS = intEnv("LONGDOC_JOB_TTL_MINUTES", 120, 15, 1440) * 60 * 1000;
 const COMPLETED_JOB_TTL_MS = intEnv("COMPLETED_JOB_TTL_MINUTES", 30, 5, 240) * 60 * 1000;
+
+export function allocateLongDocumentExpansion(chunks = [], totalAdditionWords = DEFAULT_EXPAND_MIN_ADDITION_WORDS) {
+  const eligible = chunks.filter((chunk) => chunk?.rewriteMode !== "passthrough" && wordCount(chunk?.sourceText || "") > 0);
+  const totalWords = eligible.reduce((sum, chunk) => sum + wordCount(chunk.sourceText), 0);
+  const target = Math.max(0, Math.round(Number(totalAdditionWords) || 0));
+  if (!eligible.length || !totalWords || !target) return new Map();
+  const rows = eligible.map((chunk) => {
+    const exact = target * (wordCount(chunk.sourceText) / totalWords);
+    return { index: chunk.index, floor: Math.floor(exact), fraction: exact - Math.floor(exact) };
+  });
+  let remainder = target - rows.reduce((sum, row) => sum + row.floor, 0);
+  for (const row of [...rows].sort((a, b) => b.fraction - a.fraction || a.index - b.index)) {
+    if (remainder <= 0) break;
+    row.floor += 1;
+    remainder -= 1;
+  }
+  return new Map(rows.map((row) => [row.index, row.floor]));
+}
 
 function isActive(job) {
   return job && (job.status === "queued" || job.status === "processing");
@@ -190,6 +210,13 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
     requestedLengthPreference: job.options.lengthPreference,
   });
   chunk.executionPolicy = policy;
+  const expansionAllocation = allocateLongDocumentExpansion(job.chunks);
+  const effectiveLengthPreference = job.options.lengthPreference === "expand"
+    ? "expand"
+    : (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference;
+  const chunkMinimumExpansionWords = effectiveLengthPreference === "expand"
+    ? (expansionAllocation.get(chunk.index) || 0)
+    : undefined;
 
   const baseDocumentContext = coverageRecovery
     ? coverageRecoveryContext(job.wholeDocumentBlueprint, job.transformationCoverage, chunk)
@@ -205,12 +232,13 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
         styleFilters: chunkStyleFilters,
         rewriteIntensity: coverageRecovery ? "deep" : policy.effective.intensity,
         grammarIntensity: job.options.grammarIntensity,
-        lengthPreference: (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference,
+        lengthPreference: effectiveLengthPreference,
         naturalisation: coverageRecovery ? "aggressive" : globalRepair ? "faithful" : policy.effective.naturalisation,
         precedingContext: previousRevisedTail(job, chunk) || chunk.precedingContextTail,
         followingContext: chunk.followingContextHead,
         documentGlossary: job.documentMap.glossary,
         documentContext: baseDocumentContext,
+        minimumExpansionWords: chunkMinimumExpansionWords,
       });
 
       if (result.preservation?.rhetorical_semantic_ok === false || result.preservation?.new_factual_claims_detected) {
@@ -218,8 +246,14 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
           sourceText: chunk.sourceText,
           candidateResult: result,
           revisionPurpose: "fidelity",
-          lengthPreference: (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference,
+          lengthPreference: effectiveLengthPreference,
+          minimumExpansionWords: chunkMinimumExpansionWords,
         });
+        if (!result.preservation_repair?.passed) {
+          const repairError = new Error("The long-document preservation repair failed its preservation or length contract.");
+          repairError.code = "PRESERVATION_REPAIR_REJECTED";
+          throw repairError;
+        }
         chunk.rhetoricalPreservationRepairApplied = true;
       }
 
@@ -227,7 +261,7 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
       chunk.revisedText = revisedText;
       chunk.editSummary = result.edit_summary;
       chunk.preservation = result.preservation || auditPreservation(chunk.sourceText, revisedText, undefined, {
-        lengthPreference: (globalRepair || coverageRecovery) ? "maintain" : policy.effective.lengthPreference,
+        lengthPreference: effectiveLengthPreference,
       });
       chunk.transformationQuality = result.transformation_quality || null;
       chunk.qualityReviewRequired = Boolean(result.transformation_quality?.enforced && !result.transformation_quality?.passed);
@@ -273,6 +307,14 @@ async function processChunk(job, chunk, { globalRepair = false, coverageRecovery
 function assembleAndAudit(job) {
   const reassembledText = job.chunks.map(assembleChunkText).join("\n\n");
   job.reassembledText = reassembledText;
+  job.documentLengthContract = buildLengthContract({
+    sourceText: job.sourceText,
+    preference: job.options.lengthPreference,
+    minimumExpansionWords: DEFAULT_EXPAND_MIN_ADDITION_WORDS,
+  });
+  job.documentLengthContract.satisfied = lengthContractSatisfied(reassembledText, job.documentLengthContract);
+  job.documentLengthContract.candidate_words = wordCount(reassembledText);
+  job.documentLengthContract.actual_addition_words = wordCount(reassembledText) - wordCount(job.sourceText);
   job.documentPreservation = auditPreservation(job.sourceText, reassembledText, job.documentMap.protectedSpans, {
     lengthPreference: job.options.lengthPreference,
   });
@@ -362,7 +404,8 @@ async function finalizeJob(job) {
   const preservationPassed = job.documentPreservation?.rhetorical_semantic_ok !== false && !job.documentPreservation?.new_factual_claims_detected;
   const structurePassed = job.structureAudit?.passed !== false;
   const chunkQualityPassed = job.chunks.every((chunk) => !chunk.qualityReviewRequired || chunk.transformationQuality?.passed === true);
-  job.candidateStatus = coveragePassed && regularityPassed && preservationPassed && structurePassed && chunkQualityPassed ? "accepted" : "review_required";
+  const lengthContractPassed = job.documentLengthContract?.satisfied !== false;
+  job.candidateStatus = coveragePassed && regularityPassed && preservationPassed && structurePassed && chunkQualityPassed && lengthContractPassed ? "accepted" : "review_required";
   job.status = "completed";
   job.phase = job.candidateStatus === "accepted" ? "complete" : "complete_review_required";
   job.completedAt = new Date().toISOString();
@@ -428,6 +471,7 @@ export function createJob({ text, styleFilters, rewriteIntensity, grammarIntensi
     wholeDocumentAudit: null,
     structureAudit: null,
     transformationCoverage: null,
+    documentLengthContract: null,
     coverageRepair: null,
     globalRepair: null,
     chunkMethod: method,
@@ -502,6 +546,7 @@ export function retryChunk(jobId, chunkIndex) {
   job.reassembledText = null;
   job.documentPreservation = null;
   job.transformationCoverage = null;
+  job.documentLengthContract = null;
   job.coverageRepair = null;
   job.wholeDocumentAudit = null;
   job.structureAudit = null;
@@ -572,6 +617,7 @@ export function summarizeJob(job) {
     },
     wholeDocumentBlueprint: blueprint,
     transformationCoverage: job.transformationCoverage,
+    documentLengthContract: job.documentLengthContract,
     coverageRepair: job.coverageRepair,
     wholeDocumentAudit: job.wholeDocumentAudit,
     structureAudit: job.structureAudit,

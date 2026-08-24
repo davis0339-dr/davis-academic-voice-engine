@@ -55,6 +55,8 @@ export function shouldAcceptResidualCandidate({
   ]);
   const developmentContractBreached = (afterAcceptance.reasons || [])
     .some((reason) => developmentBlockingReasons.has(reason));
+  const expansionRecoveryRequired = (beforeAcceptance.reasons || []).includes("expand_length_contract_missed");
+  const expansionContractSatisfied = expansionRecoveryRequired && !(afterAcceptance.reasons || []).includes("expand_length_contract_missed");
   const beforeDimensions = beforeAcceptance.dimensions || {};
   const afterDimensions = afterAcceptance.dimensions || {};
   const noMaterialAcceptanceRegression = (
@@ -71,6 +73,8 @@ export function shouldAcceptResidualCandidate({
     newAcceptanceReasons.length === 0 &&
     afterHardFailures.length === 0
   );
+
+  if (preservationOk && expansionContractSatisfied && afterHardFailures.length === 0) return true;
 
   return Boolean(
     preservationOk &&
@@ -369,6 +373,7 @@ export async function selectiveResidualRework({
   naturalisation = "faithful",
   planSummary = {},
   lengthPreference = "auto",
+  minimumExpansionWords,
 }) {
   const sourceBaseline = analyseResidualWriting(sourceText);
   const before = analyseResidualWriting(candidateText);
@@ -383,6 +388,7 @@ export async function selectiveResidualRework({
     naturalisation,
     planSummary,
     lengthPreference,
+    minimumExpansionWords,
   });
 
   const candidateStructure = parseTextStructure(candidateText);
@@ -392,11 +398,12 @@ export async function selectiveResidualRework({
   // Completed-output failures take priority over legacy stylistic targets. A
   // near-copy paragraph or source-plus-reconstruction duplicate must not be
   // displaced from the finite recovery budget by lower-value cadence signals.
-  const targetBlockIndices = prioritiseResidualBlockIndices(forensicBlockIndices, legacyBlockIndices, maxBlocks);
-  const acceptanceNeedsRecovery = beforeAcceptance.status !== "pass" && forensicBlockIndices.length > 0;
   const developmentRecovery = (beforeAcceptance.reasons || []).some((reason) =>
     reason === "deep_auto_developmental_compression" || reason === "expand_length_contract_missed"
   );
+  const effectiveMaxBlocks = developmentRecovery ? Math.max(maxBlocks, 8) : maxBlocks;
+  const targetBlockIndices = prioritiseResidualBlockIndices(forensicBlockIndices, legacyBlockIndices, effectiveMaxBlocks);
+  const acceptanceNeedsRecovery = beforeAcceptance.status !== "pass" && forensicBlockIndices.length > 0;
   const shouldAttempt = targetBlockIndices.length > 0 && (before.should_rework || candidateWorseThanSource || acceptanceNeedsRecovery);
 
   if (!shouldAttempt) {
@@ -428,8 +435,9 @@ export async function selectiveResidualRework({
   const sourceWords = Number(beforeAcceptance.dimensions?.source_word_count || wordCount(sourceText));
   const candidateWords = Number(beforeAcceptance.dimensions?.candidate_word_count || wordCount(candidateText));
   const minimumRatio = Number(beforeAcceptance.dimensions?.minimum_developmental_length_ratio || 1);
+  const minimumCandidateWords = Number(beforeAcceptance.dimensions?.minimum_expansion_candidate_words || Math.ceil(sourceWords * minimumRatio));
   const requiredWordRecovery = developmentRecovery
-    ? Math.max(0, Math.ceil(sourceWords * minimumRatio) - candidateWords)
+    ? Math.max(0, minimumCandidateWords - candidateWords)
     : 0;
   const recoveryAllocations = allocateDevelopmentRecovery(targetWordCounts, requiredWordRecovery);
 
@@ -480,6 +488,7 @@ export async function selectiveResidualRework({
       source_words: beforeAcceptance.dimensions?.source_word_count,
       candidate_words: beforeAcceptance.dimensions?.candidate_word_count,
       minimum_completed_ratio: beforeAcceptance.dimensions?.minimum_developmental_length_ratio,
+      minimum_completed_words: minimumCandidateWords,
       instruction: "Deep/Authorial Auto is development-preserving: targeted recovery may reorganise wording but must bring the completed manuscript to at least the stated minimum ratio without filler or invented content.",
       required_word_recovery: requiredWordRecovery,
     },
@@ -526,6 +535,7 @@ export async function selectiveResidualRework({
         sourceText,
         candidateResult: { revised_text: recoveredText, preservation },
         lengthPreference,
+        minimumExpansionWords,
       });
       residualPreservationRepair = repaired.preservation_repair || { attempted: true, passed: false };
       if (residualPreservationRepair.passed) {
@@ -553,6 +563,7 @@ export async function selectiveResidualRework({
     naturalisation,
     planSummary,
     lengthPreference,
+    minimumExpansionWords,
   });
   const accepted = shouldAcceptResidualCandidate({
     preservationOk,

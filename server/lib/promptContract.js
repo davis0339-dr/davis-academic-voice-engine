@@ -5,6 +5,7 @@
 import { texturePromptBlock } from "../data/textureExemplars.js";
 import { buildCollaborativeRevisionPromptBlock } from "./collaborativeRevision.js";
 import { DEEP_AUTHORIAL_PROTOCOL } from "./diagnosisScopedPlanner.js";
+import { buildLengthContract } from "./lengthContract.js";
 
 // These rules are generation invariants, not optional diagnostic commentary.
 // They are inserted through their own untruncated channel so prompt-size
@@ -213,7 +214,7 @@ function compactRhetoricalLedgerForPrompt(ledger) {
   ]);
 }
 
-export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarIntensity, lengthPreference, rhetoricalLedger, precedingContext, followingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
+export function buildSystemPrompt({ sourceText, minimumExpansionWords, styleProfile, protectedSpans, plan, grammarIntensity, lengthPreference, rhetoricalLedger, precedingContext, followingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
   const level = NATURALISATION_FIDELITY[naturalisation] !== undefined ? naturalisation : "faithful";
   const naturalisationOn = level !== "off";
   const fidelityClause = NATURALISATION_FIDELITY[level];
@@ -227,6 +228,7 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
         ? "expand"
         : "auto";
   const deepDevelopmentalAuto = lengthMode === "auto" && plan.intensity === "deep" && plan.intent?.effective === "discourse_reconstruction";
+  const lengthContract = buildLengthContract({ sourceText, preference: lengthPreference, minimumExpansionWords });
 
   return [
     BASE_SYSTEM_PROMPT,
@@ -245,11 +247,13 @@ export function buildSystemPrompt({ styleProfile, protectedSpans, plan, grammarI
         : lengthMode === "concise"
           ? "Compression is authorised, but preserve argument scaffolding, qualifications, claim-evidence links and interpretation."
           : lengthMode === "expand"
-            ? "Develop only from supplied reasoning/evidence; never invent facts, findings, citations or mechanisms."
+            ? `This is a mandatory production requirement, not a preference or diagnostic: source ${lengthContract.source_words} words; return at least ${lengthContract.minimum_candidate_words} words (${lengthContract.minimum_addition_words} words of net development). Aim for ${lengthContract.target_candidate_words}-${lengthContract.maximum_candidate_words} words. Distribute development across the argument by unpacking supplied reasoning, distinctions, conditions, evidential relevance, methodological implications and transitions. Develop only from supplied reasoning/evidence; never invent facts, findings or citations. Do not return a shorter, equal-length or merely padded candidate.`
           : deepDevelopmentalAuto
             ? "No shortening was selected. For Deep discourse reconstruction, treat roughly 100-108% of source length as the ordinary developmental centre, not a quota. Prefer retaining and, where the supplied material supports it, unpacking causal logic, conceptual distinctions, evidential relevance, qualifications and practical implications. Do not compress merely to make the reconstruction look efficient. Do not invent examples or evidence; when an illustration would require researcher knowledge not present in the source, leave it for Additional Inputs rather than fabricating it."
             : "No shortening was selected. Keep source length as the centre of gravity; do not reward brevity.",
-      "Length is diagnostic, not a padding quota; intellectual completeness outranks compactness.",
+      lengthMode === "expand"
+        ? "For Expand, the numeric minimum is authoritative. Meet it through substantive explanation already supported by the source; filler and repetition do not count as successful development."
+        : "Length is diagnostic, not a padding quota; intellectual completeness outranks compactness.",
     ].join("\n"),
     "",
     mandatoryGuardrailBlock(plan),

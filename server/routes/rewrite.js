@@ -24,6 +24,7 @@ import { retainSourceAfterPreservationFailure } from "../lib/finalSafetyFallback
 import { repairPreservationCandidate } from "../lib/preservationRepair.js";
 import { classifyPreservationRelease } from "../lib/preservationRelease.js";
 import { candidateHistoryFor, isHistoricalDuplicate, rememberCandidate } from "../lib/candidateHistory.js";
+import { DEFAULT_EXPAND_MIN_ADDITION_WORDS } from "../lib/lengthContract.js";
 
 export const rewriteRouter = Router();
 
@@ -119,6 +120,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
   const requestId = randomUUID();
   const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage } = req.body || {};
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
+  const minimumExpansionWords = DEFAULT_EXPAND_MIN_ADDITION_WORDS;
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string.", requestId });
@@ -173,6 +175,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     revisionPurpose: effectiveRevisionPurpose,
     rewriteLineage,
     priorCandidateHistory,
+    minimumExpansionWords,
   });
 
   const runRewrite = () => runRewriteWith();
@@ -428,24 +431,32 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
             candidateResult: result,
             revisionPurpose: effectiveRevisionPurpose,
             lengthPreference,
+            minimumExpansionWords,
           });
-          result = {
-            ...repairedResult,
-            transformation_quality: refreshTransformationQuality(
-              text,
-              result,
-              repairedResult.revised_text,
-              modePolicy.effective_naturalisation
-            ),
-            iterative_rewrite_quality: refreshIterativeQuality(
-              text,
-              result,
-              repairedResult.revised_text,
-              rewriteLineage
-            ),
-          };
-          executionCompliance = assessExecutionCompliance(result);
-          selectedAttempt = "preservation-candidate-repair";
+          if (repairedResult.preservation_repair?.passed) {
+            result = {
+              ...repairedResult,
+              transformation_quality: refreshTransformationQuality(
+                text,
+                result,
+                repairedResult.revised_text,
+                modePolicy.effective_naturalisation
+              ),
+              iterative_rewrite_quality: refreshIterativeQuality(
+                text,
+                result,
+                repairedResult.revised_text,
+                rewriteLineage
+              ),
+            };
+            executionCompliance = assessExecutionCompliance(result);
+            selectedAttempt = "preservation-candidate-repair";
+          } else {
+            preservationRecoveryError = {
+              code: "PRESERVATION_REPAIR_REJECTED",
+              message: "The repair candidate did not satisfy preservation and length contracts; the prior candidate was retained.",
+            };
+          }
         } catch (retryErr) {
           preservationRecoveryError = {
             code: retryErr.code || retryErr.healthState || "PRESERVATION_RECOVERY_FAILED",
@@ -519,6 +530,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
             naturalisation: modePolicy.effective_naturalisation,
             planSummary: result.intervention_plan_summary || {},
             lengthPreference,
+            minimumExpansionWords,
           });
           if (residualRework.accepted) {
             const refreshedQuality = refreshTransformationQuality(
@@ -557,6 +569,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         naturalisation: modePolicy.effective_naturalisation,
         planSummary: result.intervention_plan_summary || {},
         lengthPreference,
+        minimumExpansionWords,
       });
       const historicalDuplicate = !sourceRetainedForSafety && isHistoricalDuplicate(result.revised_text, priorCandidateHistory);
       const completedOutputAcceptance = historicalDuplicate ? {
