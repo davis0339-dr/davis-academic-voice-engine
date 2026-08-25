@@ -105,6 +105,24 @@ test("visibly highlighted screenshot excerpts map back to candidate sentences", 
   assert.equal(report.flagged_sentence_analysis.excerpt_matched_sentence_count, 1);
 });
 
+test("colour-coded PDF passages feed sentence-level research even when the extractor supplies no legacy excerpt list", () => {
+  const report = buildDetectorResearchReport({
+    candidateText: candidate,
+    observations: [{
+      detector: "GPTZero",
+      classification: "ai",
+      aiScore: 100,
+      highlightedPassages: [
+        { text: "reporting integrity and board oversight", classification: "ai", colour: "orange", page: 4 },
+        { text: "Pricing differences can become economically material", classification: "human", colour: "green", page: 5 },
+      ],
+    }],
+  });
+  assert.equal(report.flagged_sentence_analysis.available, true);
+  assert.equal(report.flagged_sentence_analysis.excerpt_matched_sentence_count, 1);
+  assert.equal(report.detector_consensus.observations[0].highlighted_passage_count, 1);
+});
+
 test("evidence registry separates implemented measurements from deeper planned NLP/statistical measures", () => {
   const evidence = detectorEvidenceSummary();
   assert.ok(evidence.version);

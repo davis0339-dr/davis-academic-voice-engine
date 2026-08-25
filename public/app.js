@@ -12,7 +12,7 @@ const startJobBtn = $("startJobBtn");
 
 const DEFAULT_LIMITS = {
   singleEditorWordLimit: 1500,
-  singleRefinementWordLimit: 1920,
+  singleRefinementWordLimit: 3000,
   longDocumentWordLimit: 12000,
   uploadFileSizeLimitBytes: 5 * 1024 * 1024,
 };

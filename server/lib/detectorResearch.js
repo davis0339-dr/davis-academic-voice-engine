@@ -250,6 +250,19 @@ function normalizeObservation(observation = {}) {
   const score = Number(observation.aiScore);
   const humanScore = Number(observation.humanScore);
   const paraphrasedScore = Number(observation.paraphrasedScore);
+  const uploadedPassages = Array.isArray(observation.highlightedPassages)
+    ? observation.highlightedPassages
+      .filter((passage) => passage && typeof passage === "object" && !Array.isArray(passage))
+      .filter((passage) => {
+        const classification = String(passage.classification || "uncertain").toLowerCase();
+        return classification !== "human" && classification !== "likely_human";
+      })
+      .map((passage) => String(passage.text || "").trim().slice(0, 500))
+      .filter(Boolean)
+    : [];
+  const explicitExcerpts = Array.isArray(observation.flaggedExcerpts)
+    ? observation.flaggedExcerpts.map((value) => String(value || "").trim().slice(0, 500)).filter(Boolean)
+    : [];
   return {
     detector: String(observation.detector || "unknown").slice(0, 80),
     version: observation.version ? String(observation.version).slice(0, 80) : null,
@@ -260,9 +273,8 @@ function normalizeObservation(observation = {}) {
     flagged_sentence_indices: Array.isArray(observation.flaggedSentenceIndices)
       ? observation.flaggedSentenceIndices.map(Number).filter((n) => Number.isInteger(n) && n >= 0).slice(0, 1000)
       : [],
-    flagged_excerpts: Array.isArray(observation.flaggedExcerpts)
-      ? observation.flaggedExcerpts.map((value) => String(value || "").trim().slice(0, 500)).filter(Boolean).slice(0, 100)
-      : [],
+    flagged_excerpts: [...new Set([...explicitExcerpts, ...uploadedPassages])].slice(0, 100),
+    highlighted_passage_count: uploadedPassages.length,
     notes: observation.notes ? String(observation.notes).slice(0, 1000) : null,
   };
 }

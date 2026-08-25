@@ -76,7 +76,6 @@
     saveObservations(); renderObservationList();
     window.dispatchEvent(new CustomEvent("academicVoice:detector-observation-saved", { detail: row }));
     ["manualDetectorVersion", "manualAiScore", "manualHumanScore", "manualParaphraseScore", "manualFlaggedSentences", "manualDetectorNotes"].forEach((id) => { if ($(id)) $(id).value = ""; });
-    runResearch();
   }
 
   function clearObservations() {
@@ -251,9 +250,18 @@
   };
 
   loadObservations(); renderObservationList();
+  window.addEventListener("academicVoice:detector-observation-saved", () => {
+    // Screenshot/PDF evidence is persisted by a separate gateway. Reload it
+    // before rendering or analysing so extracted colour passages are not left
+    // in that gateway's private in-memory state while this panel reports zero.
+    loadObservations();
+    renderObservationList();
+    runResearch();
+  });
   $("addDetectorObservationBtn")?.addEventListener("click", addManualObservation);
   $("clearDetectorObservationsBtn")?.addEventListener("click", clearObservations);
   $("analyseDetectorResearchBtn")?.addEventListener("click", runResearch);
+  if (observations.length) window.setTimeout(runResearch, 0);
 
   if (!document.querySelector('script[data-detector-evidence-ui="true"]')) {
     const script = document.createElement("script");

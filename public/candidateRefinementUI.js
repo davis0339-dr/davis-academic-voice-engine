@@ -5,7 +5,9 @@
   const esc = (value) => String(value ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-  const words = (text) => String(text || "").trim().split(/\s+/).filter((token) => /[A-Za-z0-9]/.test(token)).length;
+  const words = (text) => typeof window.AcademicManuscriptWordCount === "function"
+    ? window.AcademicManuscriptWordCount(text)
+    : String(text || "").trim().split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
 
   function candidatePanel() {
     let panel = $("candidateRefinementPreflight");

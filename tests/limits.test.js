@@ -10,8 +10,9 @@ import {
 
 test("single editor and long document have explicit increasing capacity limits", () => {
   assert.equal(SINGLE_EDITOR_WORD_LIMIT, 1500);
-  assert.equal(SINGLE_REFINEMENT_WORD_LIMIT, 1920);
+  assert.equal(SINGLE_REFINEMENT_WORD_LIMIT, 3000);
   assert.ok(SINGLE_REFINEMENT_WORD_LIMIT > SINGLE_EDITOR_WORD_LIMIT);
+  assert.ok(SINGLE_REFINEMENT_WORD_LIMIT >= SINGLE_EDITOR_WORD_LIMIT + 420);
   assert.equal(LONG_DOCUMENT_WORD_LIMIT, 12000);
   assert.ok(LONG_DOCUMENT_WORD_LIMIT > SINGLE_EDITOR_WORD_LIMIT);
 });

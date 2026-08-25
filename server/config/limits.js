@@ -1,8 +1,13 @@
 export const SINGLE_EDITOR_WORD_LIMIT = 1500;
 // A valid Expand result may exceed the source-entry ceiling. Bounded feedback-
 // guided refinement must be able to edit that exact tested candidate without
-// forcing it into Long Document or silently trimming it first.
-export const SINGLE_REFINEMENT_WORD_LIMIT = 1920;
+// forcing it into Long Document or silently trimming it first. The revision
+// model is allowed to overshoot the ordinary +420-word target when the added
+// material is substantive, so the refinement ceiling must not equal that soft
+// target. Two source lengths provides a bounded 3,000-word safety envelope for
+// a 1,500-word editor source while keeping genuinely long documents on the
+// chunked workflow.
+export const SINGLE_REFINEMENT_WORD_LIMIT = SINGLE_EDITOR_WORD_LIMIT * 2;
 export const LONG_DOCUMENT_WORD_LIMIT = 12000;
 export const UPLOAD_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
 

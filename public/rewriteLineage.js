@@ -61,7 +61,9 @@
         generation: nextGeneration,
         candidate_id: responseData?.candidate_history?.current_candidate_id || null,
         text: revised,
-        word_count: String(revised).trim().split(/\s+/).filter(Boolean).length,
+        word_count: typeof window.AcademicManuscriptWordCount === "function"
+          ? window.AcademicManuscriptWordCount(revised)
+          : String(revised).trim().split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token)).length,
         recorded_at: new Date().toISOString(),
       }].slice(-4);
       writeState({
@@ -86,7 +88,9 @@
         generation: 1,
         candidate_id: candidateId,
         text: revised,
-        word_count: String(revised).trim().split(/\s+/).filter(Boolean).length,
+        word_count: typeof window.AcademicManuscriptWordCount === "function"
+          ? window.AcademicManuscriptWordCount(revised)
+          : String(revised).trim().split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token)).length,
         recorded_at: new Date().toISOString(),
       }],
     });

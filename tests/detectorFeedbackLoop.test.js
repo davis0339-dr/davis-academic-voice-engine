@@ -175,6 +175,15 @@ test("detector research omits empty style filters instead of sending rejected nu
   const researchUi = fs.readFileSync(new URL("../public/detectorResearchUI.js", import.meta.url), "utf8");
   assert.match(researchUi, /Object\.fromEntries\(Object\.entries\(/);
   assert.match(researchUi, /typeof selected === "string" && selected\.length > 0/);
+  assert.match(researchUi, /academicVoice:detector-observation-saved/);
+  assert.match(researchUi, /loadObservations\(\);\s*renderObservationList\(\);\s*runResearch\(\);/);
+});
+
+test("feedback refinement capacity cannot be lower than a valid expanded editor candidate", () => {
+  const limits = fs.readFileSync(new URL("../server/config/limits.js", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  assert.match(limits, /SINGLE_REFINEMENT_WORD_LIMIT = SINGLE_EDITOR_WORD_LIMIT \* 2/);
+  assert.match(app, /singleRefinementWordLimit: 3000/);
 });
 
 test("Editor policy copy describes the explicit tested-candidate refinement loop without the retired absolute prohibition", () => {
