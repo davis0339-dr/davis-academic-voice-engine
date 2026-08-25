@@ -46,3 +46,20 @@ test("normalises visible detector screenshot observations without inventing scor
   assert.deepEqual(parsed.flaggedSentenceIndices, []);
   assert.deepEqual(parsed.flaggedExcerpts, ["highlighted academic passage"]);
 });
+
+test("canonicalises branded detector labels returned with interface suffixes", () => {
+  const parsed = normaliseDetectorScreenshotAnalysis(JSON.stringify({
+    detector: "GPTZero AI Detection",
+    version: "Model 4.9b",
+    classification: "ai",
+    aiScore: 100,
+    humanScore: 0,
+    paraphrasedScore: null,
+    flaggedSentenceIndices: [],
+    flaggedExcerpts: [],
+    visibleSummary: "GPTZero result",
+    confidence: "high",
+    warnings: [],
+  }));
+  assert.equal(parsed.detector, "GPTZero");
+});

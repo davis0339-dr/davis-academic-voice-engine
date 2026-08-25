@@ -13,6 +13,17 @@ function cleanString(value, max = 500) {
   return text ? text.slice(0, max) : null;
 }
 
+export function canonicalDetectorName(value) {
+  const text = cleanString(value, 80) || "";
+  const lower = text.toLowerCase();
+  if (lower.includes("gptzero")) return "GPTZero";
+  if (lower.includes("turnitin")) return "Turnitin";
+  if (lower.includes("copyleaks")) return "Copyleaks";
+  if (lower.includes("originality")) return "Originality.ai";
+  if (lower.includes("stealthwriter")) return "Stealthwriter";
+  return text || "Other";
+}
+
 export function validateDetectorScreenshotPayload({ mimeType, imageBase64 } = {}) {
   if (!DETECTOR_SCREENSHOT_MIME_TYPES.has(mimeType)) {
     const err = new Error("Only one PNG or JPEG detector-result screenshot is accepted.");
@@ -65,7 +76,7 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
     ? [...new Set(parsed.flaggedExcerpts.map((value) => cleanString(value, 500)).filter(Boolean))].slice(0, 100)
     : [];
   return {
-    detector: cleanString(parsed.detector, 80) || "Other",
+    detector: canonicalDetectorName(parsed.detector),
     version: cleanString(parsed.version, 80),
     classification,
     aiScore: clampScore(parsed.aiScore),

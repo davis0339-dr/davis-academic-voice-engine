@@ -48,7 +48,7 @@ export function rememberCandidate(candidateText, history = {}) {
   const text = String(candidateText || "").trim();
   if (!text || !history.key) return null;
   const record = {
-    candidate_id: hash(`${history.key}:${hash(normalise(text))}`).slice(0, 24),
+    candidate_id: candidateIdentityFor(text, history),
     normalised_hash: hash(normalise(text)),
     paragraph_openings: paragraphOpenings(text),
     candidate_text: text,
@@ -60,6 +60,12 @@ export function rememberCandidate(candidateText, history = {}) {
   histories.set(history.key, next);
   while (histories.size > MAX_KEYS) histories.delete(histories.keys().next().value);
   return record;
+}
+
+export function candidateIdentityFor(candidateText, history = {}) {
+  const text = String(candidateText || "").trim();
+  if (!text || !history.key) return null;
+  return hash(`${history.key}:${hash(normalise(text))}`).slice(0, 24);
 }
 
 export function candidateById(history = {}, candidateId = "") {

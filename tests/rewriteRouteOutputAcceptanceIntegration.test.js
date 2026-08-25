@@ -37,9 +37,18 @@ test("review-only rhetorical evidence remains advisory once hard semantic invari
 });
 
 test("preservation recovery repairs the completed candidate instead of regenerating the whole source", () => {
-  assert.match(route, /repairPreservationCandidate\(\{[\s\S]*sourceText: text,[\s\S]*candidateResult: result/);
+  assert.match(route, /repairPreservationCandidate\(\{[\s\S]*sourceText: auditAnchorText,[\s\S]*candidateResult: result/);
   assert.doesNotMatch(route, /const recoveryResult = enrichForCompliance\(await runRewrite\(\)\)/);
   assert.match(route, /selectedAttempt = "preservation-candidate-repair"/);
+});
+
+test("tested-candidate refinement keeps the original as history, preservation and length anchor", () => {
+  assert.match(route, /const auditAnchorText = candidateRefinement \? rootSourceText : text/);
+  assert.match(route, /candidateHistoryFor\(\{[\s\S]*sourceText: auditAnchorText/);
+  assert.match(route, /const immediate = auditPreservation\(text,/);
+  assert.match(route, /const root = auditPreservation\(auditAnchorText,/);
+  assert.match(route, /manuscriptWordCount\(result\.revised_text\) - manuscriptWordCount\(auditAnchorText\)/);
+  assert.match(route, /maximum_feedback_refinements: 2/);
 });
 
 test("style and detector-pressure diagnostics cannot block a preservation-safe result", () => {

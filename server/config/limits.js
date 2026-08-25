@@ -1,4 +1,8 @@
 export const SINGLE_EDITOR_WORD_LIMIT = 1500;
+// A valid Expand result may exceed the source-entry ceiling. Bounded feedback-
+// guided refinement must be able to edit that exact tested candidate without
+// forcing it into Long Document or silently trimming it first.
+export const SINGLE_REFINEMENT_WORD_LIMIT = 1920;
 export const LONG_DOCUMENT_WORD_LIMIT = 12000;
 export const UPLOAD_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
 

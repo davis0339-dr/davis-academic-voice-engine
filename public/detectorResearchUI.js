@@ -74,6 +74,7 @@
       : row);
     observations = observations.slice(-20);
     saveObservations(); renderObservationList();
+    window.dispatchEvent(new CustomEvent("academicVoice:detector-observation-saved", { detail: row }));
     ["manualDetectorVersion", "manualAiScore", "manualHumanScore", "manualParaphraseScore", "manualFlaggedSentences", "manualDetectorNotes"].forEach((id) => { if ($(id)) $(id).value = ""; });
     runResearch();
   }
@@ -204,10 +205,10 @@
 
   function currentStyleFilters() {
     const value = (id) => $(id)?.value || null;
-    return {
+    return Object.fromEntries(Object.entries({
       document_type: value("documentType"), region: value("region"), degree: value("degree"),
       discipline: value("discipline"), research_mode: value("researchMode"), section: value("section"),
-    };
+    }).filter(([, selected]) => typeof selected === "string" && selected.length > 0));
   }
 
   async function runResearch() {

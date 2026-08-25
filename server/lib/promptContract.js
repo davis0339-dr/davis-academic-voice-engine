@@ -214,7 +214,7 @@ function compactRhetoricalLedgerForPrompt(ledger) {
   ]);
 }
 
-export function buildSystemPrompt({ sourceText, minimumExpansionWords, styleProfile, protectedSpans, plan, grammarIntensity, lengthPreference, rhetoricalLedger, precedingContext, followingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
+export function buildSystemPrompt({ sourceText, lengthAnchorText, minimumExpansionWords, styleProfile, protectedSpans, plan, grammarIntensity, lengthPreference, rhetoricalLedger, precedingContext, followingContext, documentGlossary, humanCadence, naturalisation, revisionPurpose }) {
   const level = NATURALISATION_FIDELITY[naturalisation] !== undefined ? naturalisation : "faithful";
   const naturalisationOn = level !== "off";
   const fidelityClause = NATURALISATION_FIDELITY[level];
@@ -228,7 +228,7 @@ export function buildSystemPrompt({ sourceText, minimumExpansionWords, styleProf
         ? "expand"
         : "auto";
   const deepDevelopmentalAuto = lengthMode === "auto" && plan.intensity === "deep" && plan.intent?.effective === "discourse_reconstruction";
-  const lengthContract = buildLengthContract({ sourceText, preference: lengthPreference, minimumExpansionWords });
+  const lengthContract = buildLengthContract({ sourceText: lengthAnchorText || sourceText, preference: lengthPreference, minimumExpansionWords });
 
   return [
     BASE_SYSTEM_PROMPT,

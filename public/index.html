@@ -166,7 +166,7 @@
         <h4>Upload external detector result screenshot</h4>
         <span class="detector-gateway-version">Detector Gateway v1.0.0</span>
       </div>
-      <p class="muted">Choose or drop one PNG/JPEG result-summary screenshot (maximum 2 MB), review the extracted values, then save the observation against the exact revision shown in the editor. Manual score entry is free. “Read selected screenshot” uses one language-model provider call and therefore consumes provider credit; it never runs automatically.</p>
+      <p class="muted">Choose or drop up to six PNG/JPEG result screenshots (maximum 2 MB each), review the extracted values, then save them as one evidence bundle against the exact revision shown in the editor. Each screenshot read uses one language-model provider call; the call count is shown before you start. Screenshot reading never runs automatically. Manual score entry is free.</p>
       <div class="detector-gateway-controls">
         <label>Detector shown in screenshot
           <select id="detectorScreenshotDetector">
@@ -180,12 +180,12 @@
           </select>
         </label>
         <label>Screenshot file
-          <input id="detectorScreenshotInput" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" />
+          <input id="detectorScreenshotInput" type="file" multiple accept="image/png,image/jpeg,.png,.jpg,.jpeg" />
         </label>
         <button id="chooseDetectorEvidenceScreenshotBtn" type="button">Choose from device</button>
-        <button id="analyseDetectorScreenshotBtn" class="primary" type="button">Read selected screenshot</button>
+        <button id="analyseDetectorScreenshotBtn" class="primary" type="button">Read selected screenshot(s)</button>
       </div>
-      <div id="detectorScreenshotDropZone" tabindex="0" role="button" aria-label="Drop or paste a detector screenshot">Drop PNG/JPEG here, click to choose a file, or focus this box and paste a screenshot from the clipboard.</div>
+      <div id="detectorScreenshotDropZone" tabindex="0" role="button" aria-label="Drop or paste detector screenshots">Drop up to six PNG/JPEG screenshots here, click to choose files, or focus this box and paste a screenshot from the clipboard.</div>
       <span id="detectorScreenshotStatus" class="file-status">No detector-result screenshot selected.</span>
       <div id="detectorScreenshotPreview"></div>
     </section>

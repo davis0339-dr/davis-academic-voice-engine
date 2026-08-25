@@ -4,8 +4,9 @@
   const STORAGE_KEY = "academicVoice.detectorObservations.v1";
   const MAX_BYTES = 2 * 1024 * 1024;
   const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
-  let pendingFile = null;
-  let extractedObservation = null;
+  const MAX_FILES = 6;
+  let pendingFiles = [];
+  let extractedObservations = [];
 
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value ?? "")
@@ -35,22 +36,36 @@
   }
 
   function validateFile(file) {
-    if (!file) throw new Error("Choose one PNG or JPEG detector-result screenshot first.");
+    if (!file) throw new Error("Choose at least one PNG or JPEG detector-result screenshot first.");
     if (!ALLOWED_TYPES.has(file.type)) throw new Error("Only PNG or JPEG screenshots are accepted.");
     if (file.size > MAX_BYTES) throw new Error("Screenshot is larger than 2 MB. Crop or compress the visible result summary and try again.");
     return file;
   }
 
-  function acceptFile(file) {
+  function acceptFiles(files) {
     try {
-      pendingFile = validateFile(file);
-      status(`Selected: ${pendingFile.name} · ${(pendingFile.size / 1024).toFixed(0)} KB. Press “Read selected screenshot”.`);
+      const selected = [...(files || [])].slice(0, MAX_FILES).map(validateFile);
+      if (!selected.length) throw new Error("Choose at least one PNG or JPEG detector-result screenshot first.");
+      pendingFiles = selected;
+      const calls = pendingFiles.length;
+      status(`Selected ${calls} screenshot${calls === 1 ? "" : "s"}. Reading them will use ${calls} provider call${calls === 1 ? "" : "s"}.`);
       const drop = $("detectorScreenshotDropZone");
       if (drop) drop.dataset.hasFile = "true";
     } catch (err) {
-      pendingFile = null;
+      pendingFiles = [];
       status(err.message, true);
     }
+  }
+
+  function canonicalDetector(value) {
+    const text = String(value || "").trim();
+    const lower = text.toLowerCase();
+    if (lower.includes("gptzero")) return "GPTZero";
+    if (lower.includes("turnitin")) return "Turnitin";
+    if (lower.includes("copyleaks")) return "Copyleaks";
+    if (lower.includes("originality")) return "Originality.ai";
+    if (lower.includes("stealthwriter")) return "Stealthwriter";
+    return text || "Other";
   }
 
   function loadObservations() {
@@ -63,7 +78,7 @@
   function saveObservation(observation) {
     const rows = loadObservations();
     const row = {
-      detector: observation.detector || "Other",
+      detector: canonicalDetector(observation.detector),
       version: observation.version || null,
       classification: observation.classification || "uncertain",
       aiScore: Number.isFinite(Number(observation.aiScore)) ? Number(observation.aiScore) : null,
@@ -95,50 +110,61 @@
     if ($("manualDetectorNotes")) $("manualDetectorNotes").value = observation.notes || "";
   }
 
-  function renderExtracted(observation) {
+  function renderExtracted(observations) {
     const preview = $("detectorScreenshotPreview");
     if (!preview) return;
-    preview.innerHTML = `
+    preview.innerHTML = observations.map((observation, index) => `
       <div class="detector-gateway-result">
-        <div><strong>${esc(observation.detector || "Detector result")}</strong><span>${esc(observation.classification || "uncertain")}</span></div>
+        <div><strong>${esc(observation.detector || "Detector result")} · screenshot ${index + 1}</strong><span>${esc(observation.classification || "uncertain")}</span></div>
         <div class="detector-gateway-metrics">
           ${Number.isFinite(Number(observation.aiScore)) ? `<span>AI <strong>${esc(observation.aiScore)}%</strong></span>` : ""}
           ${Number.isFinite(Number(observation.humanScore)) ? `<span>Human <strong>${esc(observation.humanScore)}%</strong></span>` : ""}
           ${Number.isFinite(Number(observation.paraphrasedScore)) ? `<span>Mixed/paraphrased <strong>${esc(observation.paraphrasedScore)}%</strong></span>` : ""}
         </div>
         ${observation.visibleSummary ? `<p>${esc(observation.visibleSummary)}</p>` : ""}
-        <button id="saveGatewayDetectorResultBtn" class="primary" type="button">Save this external result</button>
-      </div>`;
-    $("saveGatewayDetectorResultBtn")?.addEventListener("click", () => {
-      if (!extractedObservation) return;
-      saveObservation(extractedObservation);
-      populateManualForm(extractedObservation);
-      status(`${extractedObservation.detector || "Detector"} result saved to this browser's external detector evidence.`);
-      window.dispatchEvent(new CustomEvent("academicVoice:detector-observation-saved", { detail: extractedObservation }));
+      </div>`).join("") + '<button id="saveGatewayDetectorResultsBtn" class="primary" type="button">Save and link this evidence bundle</button>';
+    $("saveGatewayDetectorResultsBtn")?.addEventListener("click", () => {
+      if (!extractedObservations.length) return;
+      const candidateText = $("revisedText")?.value || "";
+      const preflight = window.AcademicRewriteLineage?.refinementPreflight?.(candidateText);
+      if (!preflight?.exact_candidate) {
+        status("This evidence cannot be linked because the Revised box no longer contains the exact retained candidate. Restore that revision from version history, then save again.", true);
+        return;
+      }
+      extractedObservations.forEach(saveObservation);
+      populateManualForm(extractedObservations[extractedObservations.length - 1]);
+      status(`Saved and linked ${extractedObservations.length} detector observation${extractedObservations.length === 1 ? "" : "s"} to the exact revision currently shown. The feedback-guided refinement preflight is now ready.`);
+      window.dispatchEvent(new CustomEvent("academicVoice:detector-observation-saved", { detail: { observations: extractedObservations } }));
+      const button = $("saveGatewayDetectorResultsBtn");
+      if (button) { button.disabled = true; button.textContent = "Evidence bundle saved and linked"; }
     });
   }
 
   async function analyseSelected() {
     try {
-      const file = validateFile(pendingFile || $("detectorScreenshotInput")?.files?.[0]);
-      pendingFile = file;
-      status("Reading the visible detector summary…");
-      const imageBase64 = await fileToBase64(file);
-      const response = await fetch("/api/detector-screenshot", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mimeType: file.type, imageBase64 }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || data.error || "Screenshot analysis failed.");
-      const observation = { ...(data.observation || {}) };
-      const selectedDetector = $("detectorScreenshotDetector")?.value || "auto";
-      if (selectedDetector !== "auto") observation.detector = selectedDetector;
-      observation.notes = `Screenshot extraction (${observation.confidence || "unknown"} confidence): ${observation.visibleSummary || ""}`.slice(0, 1000);
-      extractedObservation = observation;
-      populateManualForm(observation);
-      renderExtracted(observation);
-      status("Screenshot read. Verify the extracted values, then save the external result.");
+      const selected = pendingFiles.length ? pendingFiles : [...($("detectorScreenshotInput")?.files || [])].slice(0, MAX_FILES).map(validateFile);
+      if (!selected.length) throw new Error("Choose at least one PNG or JPEG screenshot first.");
+      extractedObservations = [];
+      for (let index = 0; index < selected.length; index += 1) {
+        const file = selected[index];
+        status(`Reading screenshot ${index + 1} of ${selected.length}…`);
+        const imageBase64 = await fileToBase64(file);
+        const response = await fetch("/api/detector-screenshot", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mimeType: file.type, imageBase64 }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(`Screenshot ${index + 1}: ${data.message || data.error || "analysis failed"}`);
+        const observation = { ...(data.observation || {}) };
+        const selectedDetector = $("detectorScreenshotDetector")?.value || "auto";
+        observation.detector = selectedDetector !== "auto" ? selectedDetector : canonicalDetector(observation.detector);
+        observation.notes = `Screenshot extraction (${observation.confidence || "unknown"} confidence): ${observation.visibleSummary || ""}`.slice(0, 1000);
+        extractedObservations.push(observation);
+      }
+      populateManualForm(extractedObservations[extractedObservations.length - 1]);
+      renderExtracted(extractedObservations);
+      status(`Read ${extractedObservations.length} screenshot${extractedObservations.length === 1 ? "" : "s"}. Review the extracted evidence, then click “Save and link this evidence bundle”. Nothing is linked until that button is pressed.`);
     } catch (err) {
       status(err.message || "Screenshot analysis failed.", true);
     }
@@ -161,7 +187,7 @@
     if (!input || !choose || !read || !drop) return;
 
     choose.addEventListener("click", openPicker);
-    input.addEventListener("change", () => acceptFile(input.files?.[0]));
+    input.addEventListener("change", () => acceptFiles(input.files));
     read.addEventListener("click", analyseSelected);
 
     ["dragenter", "dragover"].forEach((eventName) => drop.addEventListener(eventName, (event) => {
@@ -172,7 +198,7 @@
       event.preventDefault();
       drop.classList.remove("dragging");
     }));
-    drop.addEventListener("drop", (event) => acceptFile(event.dataTransfer?.files?.[0]));
+    drop.addEventListener("drop", (event) => acceptFiles(event.dataTransfer?.files));
     drop.addEventListener("click", openPicker);
     drop.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPicker(); }
@@ -181,7 +207,7 @@
       const item = [...(event.clipboardData?.items || [])].find((row) => row.type === "image/png" || row.type === "image/jpeg");
       if (!item) return status("Clipboard does not contain a PNG/JPEG screenshot.", true);
       event.preventDefault();
-      acceptFile(item.getAsFile());
+      acceptFiles([item.getAsFile()]);
     });
 
     // This is intentionally delegated: the compact “Upload result screenshot”

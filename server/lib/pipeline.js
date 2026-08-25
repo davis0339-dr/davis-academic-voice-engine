@@ -361,8 +361,9 @@ export async function rewrite({
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
   const outputTokenBudget = modelOutputTokenBudget(sourceText, effectiveRevisionPurpose);
-  const lengthContract = buildLengthContract({ sourceText, preference: lengthPreference, minimumExpansionWords });
   const lineage = normaliseRewriteLineage(rewriteLineage, sourceText);
+  const rootAnchorText = lineage.chained_from_prior_revision ? lineage.root_source_text : sourceText;
+  const rootLengthContract = buildLengthContract({ sourceText: rootAnchorText, preference: lengthPreference, minimumExpansionWords });
   const analysis = analyse({
     sourceText,
     styleFilters,
@@ -386,6 +387,7 @@ export async function rewrite({
 
   const systemPrompt = buildSystemPrompt({
     sourceText,
+    lengthAnchorText: rootAnchorText,
     minimumExpansionWords,
     styleProfile: analysis.style_profile_used.effective,
     protectedSpans: analysis.protectedSpans,
@@ -402,7 +404,7 @@ export async function rewrite({
   }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage }) + candidateHistoryPromptBlock(priorCandidateHistory) + detectorFeedbackPromptBlock(detectorFeedback);
 
   let parsed = await runModelPass({ systemPrompt, sourceText, maxTokens: outputTokenBudget });
-  let expansionRecovery = { required: lengthContract.mode === "expand", attempted: false, attempts: [], contract: lengthContract };
+  let expansionRecovery = { required: rootLengthContract.mode === "expand", attempted: false, attempts: [], contract: rootLengthContract };
   let transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
   let iterativeQuality = assessIterativeRegularisation({
     sourceText,
@@ -457,11 +459,11 @@ export async function rewrite({
     }
   }
 
-  if (lengthContract.mode === "expand" && !lengthContractSatisfied(parsed.revised_text, lengthContract)) {
+  if (rootLengthContract.mode === "expand" && !lengthContractSatisfied(parsed.revised_text, rootLengthContract)) {
     const completed = await completeExpansionContract({
-      sourceText,
+      sourceText: rootAnchorText,
       candidate: parsed,
-      contract: lengthContract,
+      contract: rootLengthContract,
       maxTokens: outputTokenBudget,
     });
     parsed = completed.candidate;
@@ -477,7 +479,7 @@ export async function rewrite({
       required: true,
       attempted: true,
       attempts: completed.attempts,
-      contract: lengthContract,
+      contract: rootLengthContract,
       completed: completed.satisfied,
       best_complete_candidate_retained: true,
       exhausted_without_empty_result: !completed.satisfied,
@@ -529,7 +531,9 @@ export async function rewrite({
     }
   }
 
-  const preservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans, { lengthPreference });
+  const immediatePreservation = auditPreservation(sourceText, parsed.revised_text, analysis.protectedSpans, { lengthPreference });
+  const rootPreservation = auditPreservation(rootAnchorText, parsed.revised_text, extractProtectedSpans(rootAnchorText), { lengthPreference });
+  const preservation = rootPreservation;
   const revisedLanguageFingerprint = measureLanguageFingerprint(parsed.revised_text);
   const revisedLanguageDeviation = assessLanguageDeviation(revisedLanguageFingerprint, measuredLanguageFamily);
   const sourceAlignment = analysis.diagnostics.measured_language_deviation?.family_alignment_score;
@@ -542,9 +546,10 @@ export async function rewrite({
     revised_text: parsed.revised_text,
     revision_purpose: effectiveRevisionPurpose,
     length_contract: {
-      ...lengthContract,
-      satisfied: lengthContractSatisfied(parsed.revised_text, lengthContract),
+      ...rootLengthContract,
+      satisfied: lengthContractSatisfied(parsed.revised_text, rootLengthContract),
       recovery: expansionRecovery,
+      anchored_to_root_source: lineage.chained_from_prior_revision,
     },
     additional_inputs: ensureCollaborativeReviewInputs({
       sourceText,
@@ -561,6 +566,12 @@ export async function rewrite({
     external_detector_feedback_execution: analysis.plan.externalFeedbackExecution || null,
     planner_sequence: analysis.plan.sequence,
     preservation,
+    preservation_chain: {
+      mode: lineage.chained_from_prior_revision ? "dual_anchor" : "single_anchor",
+      authoritative_anchor: "root_source",
+      root: rootPreservation,
+      immediate_candidate: immediatePreservation,
+    },
     transformation_quality: {
       ...transformationQuality,
       enforced: qualityGateEnforced,

@@ -11,7 +11,7 @@ import { extractProtectedSpans } from "../lib/protect.js";
 import { assessTransformationQuality } from "../lib/transformationQuality.js";
 import { assessIterativeRegularisation } from "../lib/iterativeRewriteGuard.js";
 import { llmProvider } from "../lib/llmProvider.js";
-import { SINGLE_EDITOR_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
+import { SINGLE_EDITOR_WORD_LIMIT, SINGLE_REFINEMENT_WORD_LIMIT, enforceWordLimit } from "../config/limits.js";
 import { normalizeAdditionalInputs, normalizeRevisionPurpose } from "../lib/collaborativeRevision.js";
 import { repairPreservationCandidate } from "../lib/preservationRepair.js";
 import { classifyPreservationRelease } from "../lib/preservationRelease.js";
@@ -19,6 +19,7 @@ import { preservationCandidateStatus, selectPreservationRepairCandidate } from "
 import { candidateHistoryFor, isHistoricalDuplicate, rememberCandidate } from "../lib/candidateHistory.js";
 import { DEFAULT_EXPAND_MIN_ADDITION_WORDS, manuscriptWordCount } from "../lib/lengthContract.js";
 import { resolveDetectorFeedback } from "../lib/detectorFeedback.js";
+import { auditPreservation } from "../lib/preservation.js";
 
 export const rewriteRouter = Router();
 
@@ -71,16 +72,25 @@ function refreshIterativeQuality(sourceText, result, revisedText, rewriteLineage
 
 rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => {
   const requestId = randomUUID();
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage, detectorFeedback } = req.body || {};
+  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage, detectorFeedback, refinementMode } = req.body || {};
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
   const minimumExpansionWords = DEFAULT_EXPAND_MIN_ADDITION_WORDS;
+  const rootSourceText = typeof rewriteLineage?.rootSourceText === "string" ? rewriteLineage.rootSourceText.trim() : "";
+  const candidateRefinement = refinementMode === "tested_candidate";
+  if (candidateRefinement && (!rootSourceText || Number(rewriteLineage?.sourceGeneration || 0) < 1)) {
+    return res.status(400).json({ error: "INVALID_REFINEMENT_LINEAGE", message: "Candidate refinement requires an exact tested candidate and its retained original source.", requestId });
+  }
+  if (candidateRefinement && Number(rewriteLineage?.sourceGeneration || 0) >= 3) {
+    return res.status(409).json({ error: "REFINEMENT_LIMIT_REACHED", message: "This candidate has already used the two bounded feedback-guided refinements. Compare the retained versions or begin a new researcher-authorised revision lineage.", requestId });
+  }
+  const auditAnchorText = candidateRefinement ? rootSourceText : text;
 
   if (typeof text !== "string" || text.trim().length === 0) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`text` is required and must be a non-empty string.", requestId });
   }
 
   try {
-    enforceWordLimit(text, SINGLE_EDITOR_WORD_LIMIT, "Single-text editor");
+    enforceWordLimit(text, candidateRefinement ? SINGLE_REFINEMENT_WORD_LIMIT : SINGLE_EDITOR_WORD_LIMIT, candidateRefinement ? "Tested-candidate refinement" : "Single-text editor");
     if (typeof rewriteLineage?.rootSourceText === "string" && rewriteLineage.rootSourceText.trim()) {
       enforceWordLimit(rewriteLineage.rootSourceText, SINGLE_EDITOR_WORD_LIMIT, "Rewrite lineage root source");
     }
@@ -109,12 +119,12 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     authorialTexture: sourceAssessment.authorial_texture,
   });
   const priorCandidateHistory = candidateHistoryFor({
-    sourceText: text,
+    sourceText: auditAnchorText,
     rewriteIntensity: modePolicy.effective_intensity,
     naturalisation: modePolicy.effective_naturalisation,
     lengthPreference,
   });
-  const detectorFeedbackProfile = resolveDetectorFeedback(detectorFeedback, priorCandidateHistory);
+  const detectorFeedbackProfile = resolveDetectorFeedback(detectorFeedback, priorCandidateHistory, candidateRefinement ? text : "");
 
   const runRewrite = () => rewrite({
     sourceText: text,
@@ -129,6 +139,22 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     minimumExpansionWords,
     detectorFeedback: detectorFeedbackProfile,
   });
+
+  function applyDualAnchorPreservation(result) {
+    if (!result?.revised_text) return result;
+    const immediate = auditPreservation(text, result.revised_text, extractProtectedSpans(text), { lengthPreference });
+    const root = auditPreservation(auditAnchorText, result.revised_text, extractProtectedSpans(auditAnchorText), { lengthPreference });
+    return {
+      ...result,
+      preservation: root,
+      preservation_chain: {
+        mode: candidateRefinement ? "dual_anchor" : "single_anchor",
+        authoritative_anchor: "root_source",
+        root,
+        immediate_candidate: immediate,
+      },
+    };
+  }
 
   function enrichForCompliance(result) {
     const authority = deriveInterventionAuthority({
@@ -155,7 +181,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
   let lastErr;
   while (attempt <= MAX_RETRIES) {
     try {
-      let result = enrichForCompliance(await runRewrite());
+      let result = applyDualAnchorPreservation(enrichForCompliance(await runRewrite()));
       let executionCompliance = assessExecutionCompliance(result);
 
       const reconciliationRetryUsed = false;
@@ -197,7 +223,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         preservationRecoveryUsed = true;
         try {
           const repairedResult = await repairPreservationCandidate({
-            sourceText: text,
+            sourceText: auditAnchorText,
             candidateResult: result,
             revisionPurpose: effectiveRevisionPurpose,
             lengthPreference,
@@ -205,7 +231,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
           });
           const repairSelection = selectPreservationRepairCandidate(result, repairedResult);
           if (repairSelection.selected === "repaired") {
-            result = {
+            result = applyDualAnchorPreservation({
               ...repairSelection.result,
               transformation_quality: refreshTransformationQuality(
                 text,
@@ -219,7 +245,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
                 repairSelection.result.revised_text,
                 rewriteLineage
               ),
-            };
+            });
             executionCompliance = assessExecutionCompliance(result);
             selectedAttempt = "preservation-candidate-repair";
             if (!repairSelection.length_contract_satisfied) {
@@ -310,13 +336,13 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
               residualRework.revised_text,
               modePolicy.effective_naturalisation
             );
-            result = {
+            result = applyDualAnchorPreservation({
               ...result,
               revised_text: residualRework.revised_text,
               preservation: residualRework.preservation || result.preservation,
               transformation_quality: refreshedQuality,
               iterative_rewrite_quality: refreshIterativeQuality(text, result, residualRework.revised_text, rewriteLineage),
-            };
+            });
             executionCompliance = assessExecutionCompliance(result);
           }
         } catch (residualErr) {
@@ -333,7 +359,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       }
 
       const baseOutputAcceptance = auditOutputAcceptance({
-        sourceText: text,
+        sourceText: auditAnchorText,
         candidateText: result.revised_text,
         styleFilters: styleFilters || {},
         rewriteIntensity: modePolicy.effective_intensity,
@@ -358,7 +384,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         enforced_for_final_release: outputAcceptanceEnforced,
       };
       if (result.length_contract?.mode === "expand") {
-        const actualAddition = manuscriptWordCount(result.revised_text) - manuscriptWordCount(text);
+        const actualAddition = manuscriptWordCount(result.revised_text) - manuscriptWordCount(auditAnchorText);
         result.length_contract = {
           ...result.length_contract,
           actual_addition_words: actualAddition,
@@ -375,6 +401,10 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         repetition_blocking: historicalDuplicate,
         detector_feedback_received: Boolean(detectorFeedback),
         detector_feedback_applied: Boolean(detectorFeedbackProfile),
+        refinement_mode: candidateRefinement ? "tested_candidate" : "source",
+        root_source_anchor_used: candidateRefinement,
+        source_generation: Number(rewriteLineage?.sourceGeneration || 0),
+        maximum_feedback_refinements: 2,
       };
 
       result.execution_compliance = {

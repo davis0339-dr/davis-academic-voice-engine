@@ -1,4 +1,4 @@
-import { candidateById } from "./candidateHistory.js";
+import { candidateById, candidateIdentityFor } from "./candidateHistory.js";
 
 const AI_LABELS = new Set(["ai", "ai_generated", "ai_paraphrased", "likely_ai"]);
 
@@ -35,10 +35,12 @@ function normaliseObservation(row = {}) {
   };
 }
 
-export function resolveDetectorFeedback(feedback, history = {}) {
+export function resolveDetectorFeedback(feedback, history = {}, exactCandidateText = "") {
   if (!feedback || typeof feedback !== "object" || Array.isArray(feedback)) return null;
   const candidateId = String(feedback.candidateId || "");
-  const priorCandidate = candidateById(history, candidateId);
+  const rememberedCandidate = candidateById(history, candidateId);
+  const reconstructedId = candidateIdentityFor(exactCandidateText, history);
+  const priorCandidate = rememberedCandidate || (reconstructedId === candidateId ? { candidate_id: candidateId, candidate_text: String(exactCandidateText) } : null);
   if (!priorCandidate) return null;
   const observations = (feedback.observations || []).slice(-8).map(normaliseObservation);
   if (!observations.length) return null;

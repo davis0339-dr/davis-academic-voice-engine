@@ -234,6 +234,7 @@ export function validateApiPayload(req, res, next) {
     lengthPreference,
     naturalisation,
     revisionPurpose,
+    refinementMode,
     label,
   } = req.body;
   for (const [key, value] of Object.entries({ text, sourceText, candidateText, thoughts, manuscriptContext, researchContext, constraints, section })) {
@@ -243,6 +244,9 @@ export function validateApiPayload(req, res, next) {
   }
   if (revisionPurpose !== undefined && !["fidelity", "collaborative"].includes(revisionPurpose)) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`revisionPurpose` must be `fidelity` or `collaborative`.", requestId: req.requestId });
+  }
+  if (refinementMode !== undefined && !["source", "tested_candidate"].includes(refinementMode)) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "`refinementMode` must be `source` or `tested_candidate`.", requestId: req.requestId });
   }
   if (observations !== undefined) {
     if (!Array.isArray(observations) || observations.length > 20 || !observations.every(validateDetectorObservation)) {

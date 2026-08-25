@@ -12,6 +12,7 @@ const startJobBtn = $("startJobBtn");
 
 const DEFAULT_LIMITS = {
   singleEditorWordLimit: 1500,
+  singleRefinementWordLimit: 1920,
   longDocumentWordLimit: 12000,
   uploadFileSizeLimitBytes: 5 * 1024 * 1024,
 };
@@ -300,7 +301,7 @@ function renderAdditionalInputs(additionalInputs = [], revisionPurpose = "fideli
     </section>`);
 }
 
-function renderPreservation(preservation, release = null) {
+function renderPreservation(preservation, release = null, chain = null) {
   const rhetorical = preservation.rhetorical_semantic_preservation || {};
   const warningTypes = new Set((preservation.warnings || []).map((warning) => warning.type));
   const rows = [
@@ -353,7 +354,14 @@ function renderPreservation(preservation, release = null) {
       <p>${escapeHtml(release.note || "")}</p>
       <p class="muted">Repair-required warnings: ${escapeHtml((release.repair_warning_types || []).join(", ") || "none")} · Review-only warnings: ${escapeHtml((release.review_warning_types || []).join(", ") || "none")}</p>
     </section>` : "";
-  $("tab-preservation").innerHTML = releaseHtml + rowsHtml + rhetoricalHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
+  const chainHtml = chain?.mode === "dual_anchor" ? `
+    <section class="preservation-detail-panel">
+      <h4>Two-anchor refinement audit</h4>
+      <p><strong>Original → current revision:</strong> authoritative evidence, meaning, citation, qualification, study-stage and final-length check.</p>
+      <p><strong>Tested candidate → current revision:</strong> local continuity check showing what the feedback-guided pass changed.</p>
+      <p class="muted">The tested candidate is the editing surface. It never replaces the original as the factual and argumentative authority.</p>
+    </section>` : "";
+  $("tab-preservation").innerHTML = chainHtml + releaseHtml + rowsHtml + rhetoricalHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
 }
 
 function clearBusyTimer() {
@@ -444,10 +452,18 @@ async function runAnalyseOnly() {
   }
 }
 
-async function runAnalyseAndRevise() {
-  const text = sourceText.value.trim();
-  if (!validateSingleText(text)) return;
-  setBusy(true, "Revising…");
+async function runAnalyseAndRevise(options = {}) {
+  const refinement = options?.refinement === true;
+  const text = refinement ? String(options.candidateText || "").trim() : sourceText.value.trim();
+  if (!refinement && !validateSingleText(text)) return;
+  if (refinement) {
+    const refinementWords = wordCount(text);
+    if (!text) return setError("The tested revision is no longer available.");
+    if (refinementWords > capabilities.singleRefinementWordLimit) {
+      return setError(`This tested revision is ${formatNumber(refinementWords)} words. The bounded refinement limit is ${formatNumber(capabilities.singleRefinementWordLimit)} words; use Long Document for a larger candidate.`);
+    }
+  }
+  setBusy(true, refinement ? "Refining tested revision…" : "Revising…");
   try {
     const res = await fetch("/api/rewrite", {
       method: "POST",
@@ -460,6 +476,7 @@ async function runAnalyseAndRevise() {
         lengthPreference: $("lengthPreference").value,
         naturalisation: $("naturalisation").value,
         revisionPurpose: $("revisionPurpose").value,
+        refinementMode: refinement ? "tested_candidate" : "source",
       }),
     });
     const data = await res.json();
@@ -469,7 +486,7 @@ async function runAnalyseAndRevise() {
     renderDiagnostics(data.diagnostics);
     renderProfile(data.style_profile_used);
     const rejectedPreservation = data.execution_compliance?.rejected_preservation_failure?.preservation;
-    renderPreservation(data.preservation || rejectedPreservation || {}, data.preservation_release);
+    renderPreservation(data.preservation || rejectedPreservation || {}, data.preservation_release, data.preservation_chain);
     renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
     renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
     const acceptanceReasons = data.output_acceptance?.reasons || [];
@@ -483,12 +500,13 @@ async function runAnalyseAndRevise() {
     const expandEvidence = expandContract?.satisfied
       ? ` Expand contract met: +${formatNumber(Math.max(0, Number(candidateWords || 0) - Number(sourceWords || 0)))} words (minimum +${formatNumber(expandContract.minimum_addition_words)}).`
       : "";
+    const refinementPrefix = refinement ? "Feedback-guided candidate refinement completed. " : "";
     const outcome = lengthContractMissed && data.candidate_verdict?.final_status !== "accepted"
         ? `Best complete preservation-safe revision returned.${lengthEvidence} Expand requested at least +${formatNumber(expandContract?.minimum_addition_words || 200)} words; the achieved increase is shown for honest researcher review. No additional paid full-document retry was launched.`
         : data.candidate_verdict?.final_status === "accepted"
          ? `Revision completed and internally cleared.${expandEvidence}`
         : `Complete candidate returned for researcher review; it has not been labelled as an internally cleared final revision.${lengthEvidence}`;
-    setBusy(false, `${outcome} Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}${formatProviderUsage(data.provider_usage)}`);
+    setBusy(false, `${refinementPrefix}${outcome} Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}${formatProviderUsage(data.provider_usage)}`);
     statusMessage.className = data.candidate_verdict?.final_status !== "accepted"
       ? "status-message error"
       : "status-message";
@@ -536,7 +554,7 @@ async function loadDetectorHealth() {
     const data = await res.json();
     const statuses = data.providers.map((p) => `${p.label}: ${p.state}`).join(" · ");
     disclaimerEl.textContent =
-      "Third-party classifier output is evaluation evidence, not proof of authorship. When you save a result against the exact revision currently shown, it is automatically supplied to the planner on the next rewrite of that same manuscript. Unsaved, stale or unlinked observations are not used. Provider status: " + statuses;
+      "Third-party classifier output is evaluation evidence, not proof of authorship. When you save a result against the exact revision currently shown, the Feedback-guided refinement preflight can use it to refine that tested candidate while retaining the original as the preservation anchor. The ordinary Analyse & Revise button does not silently attach candidate feedback. Unsaved, stale or unlinked observations are not used. Provider status: " + statuses;
   } catch {
     disclaimerEl.textContent = "Could not load detector provider status.";
   }
@@ -755,7 +773,16 @@ $("longdocFileInput").addEventListener("change", () =>
 
 $("startJobBtn").addEventListener("click", startLongDocJob);
 analyseOnlyBtn.addEventListener("click", runAnalyseOnly);
-analyseReviseBtn.addEventListener("click", runAnalyseAndRevise);
+analyseReviseBtn.addEventListener("click", () => runAnalyseAndRevise());
+
+window.AcademicVoiceEditor = {
+  runCandidateRefinement(candidateText) {
+    return runAnalyseAndRevise({ refinement: true, candidateText });
+  },
+  isBusy() {
+    return analyseReviseBtn.dataset.busy === "true";
+  },
+};
 
 configureMobileControls();
 loadLlmStatus();

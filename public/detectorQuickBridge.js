@@ -49,6 +49,7 @@
       ? window.AcademicRewriteLineage.annotateObservation(row, $("revisedText")?.value || "")
       : row);
     try { localStorage.setItem(OBSERVATION_STORAGE_KEY, JSON.stringify(current.slice(-20))); } catch {}
+    window.dispatchEvent(new CustomEvent("academicVoice:detector-observation-saved", { detail: row }));
   }
 
   function latestObservationSummary() {

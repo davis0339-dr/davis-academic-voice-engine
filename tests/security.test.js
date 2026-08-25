@@ -146,6 +146,19 @@ test("rewrite accepts bounded candidate-linked feedback and rejects stale-shaped
   assert.equal(invalidRes.statusCode, 400);
 });
 
+test("rewrite accepts only explicit source or tested-candidate refinement modes", () => {
+  const valid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Candidate text.", refinementMode: "tested_candidate" } });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Candidate text.", refinementMode: "unbounded_retry" } });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("invalid refinement mode must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
+});
+
 test("payload validator does not require a JSON body for chunk retry routes", () => {
   const req = mockReq({ method: "POST", path: "/jobs/id/chunks/1/retry", body: undefined });
   const res = mockRes();

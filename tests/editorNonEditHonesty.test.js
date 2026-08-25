@@ -12,5 +12,5 @@ test("a completed response always places its candidate in Revised", () => {
 
 test("the Preservation tab can show a legacy rejected audit and always receives the shared release decision", () => {
   assert.match(app, /rejected_preservation_failure\?\.preservation/);
-  assert.match(app, /renderPreservation\(data\.preservation \|\| rejectedPreservation \|\| \{\}, data\.preservation_release\)/);
+  assert.match(app, /renderPreservation\(data\.preservation \|\| rejectedPreservation \|\| \{\}, data\.preservation_release, data\.preservation_chain\)/);
 });

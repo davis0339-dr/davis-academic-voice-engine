@@ -61,7 +61,7 @@
           <div><strong>Automatic original → revised comparison</strong><span>${reason === "rewrite" ? " refreshed after this rewrite" : " current comparison"}</span></div>
           <span class="comparison-badge">before/after · not an authorship score</span>
         </div>
-        <p class="muted">This compares the exact Source text with the current Revised candidate. A saved external observation is linked visibly to that exact candidate and becomes planning evidence for the next rewrite; it is never treated as a hidden authorship verdict or an unrestricted generation target.</p>
+        <p class="muted">This compares the exact Source text with the current Revised candidate. A saved external observation is linked visibly to that exact candidate and becomes planning evidence only when the researcher chooses Feedback-guided refinement; the original remains the preservation anchor.</p>
         <table class="research-table comparison-table">
           <thead><tr><th>Metric</th><th>Original source</th><th>Revised candidate</th><th>Change</th><th>Revised opening 2 prose paragraphs</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -195,7 +195,7 @@
           <span id="detectorScreenshotStatus" class="file-status">No image selected.</span>
         </div>
         <div id="detectorScreenshotPreview"></div>
-        <p class="muted">Privacy: the image is request-scoped and is not stored by Davis. Reading the screenshot alone does not affect generation. After you review and save the extracted observation against the exact displayed candidate, it becomes planning evidence for the next rewrite of that manuscript.</p>`;
+        <p class="muted">Privacy: the image is request-scoped and is not stored by Davis. Reading the screenshot alone does not affect generation. After you review and save the extracted observation against the exact displayed candidate, it becomes planning evidence when you explicitly choose Feedback-guided refinement.</p>`;
       if (manual) panel.insertBefore(box, manual);
       else panel.prepend(box);
       $("detectorScreenshotInput")?.addEventListener("change", () => {

@@ -33,6 +33,22 @@ test("external observations resolve only against the exact remembered candidate"
   assert.equal(resolveDetectorFeedback(feedback, differentSourceHistory), null, "feedback must not cross manuscript boundaries");
 });
 
+test("the exact tested candidate re-establishes its feedback identity after server-memory restart", () => {
+  clearCandidateHistoryForTests();
+  const history = candidateHistoryFor(options);
+  const candidate = "Boards monitor management. Creditors price the resulting risk differently.";
+  const remembered = rememberCandidate(candidate, history);
+  const feedback = {
+    candidateId: remembered.candidate_id,
+    observations: [{ detector: "GPTZero", classification: "ai", aiScore: 100 }],
+  };
+  clearCandidateHistoryForTests();
+  const rebuiltHistory = candidateHistoryFor(options);
+  assert.equal(resolveDetectorFeedback(feedback, rebuiltHistory), null);
+  assert.equal(resolveDetectorFeedback(feedback, rebuiltHistory, candidate)?.verified_candidate_link, true);
+  assert.equal(resolveDetectorFeedback(feedback, rebuiltHistory, `${candidate} Unrelated addition.`), null);
+});
+
 test("high candidate-linked evidence becomes operational planner scope, not a passive note", () => {
   const source = Array.from({ length: 12 }, (_, index) => `Evidence sentence ${index + 1} explains how governance conditions affect creditor assessment.`).join(" ");
   const diagnostics = diagnose(source);
@@ -65,13 +81,46 @@ test("editor sends only candidate-linked observations into the next rewrite", ()
   assert.match(script, /detectorFeedback/);
   assert.match(script, /linkedObservationsFor/);
   assert.match(script, /row\?\.candidateId === state\.candidate_id/);
+  assert.match(script, /normalise\(sourceText\) !== normalise\(state\.last_revision\)/);
+  assert.match(script, /body\.refinementMode === "tested_candidate"\s*\?\s*linkedObservationsFor\(body\.text\)/);
 });
 
-test("Editor policy copy describes the implemented next-rewrite loop without the retired absolute prohibition", () => {
+test("feedback-guided refinement edits the tested candidate without replacing the visible original source", () => {
+  const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  const lineage = fs.readFileSync(new URL("../public/rewriteLineage.js", import.meta.url), "utf8");
+  const ui = fs.readFileSync(new URL("../public/candidateRefinementUI.js", import.meta.url), "utf8");
+  assert.match(app, /refinement \? String\(options\.candidateText/);
+  assert.match(app, /refinementMode: refinement \? "tested_candidate" : "source"/);
+  assert.match(lineage, /MAX_FEEDBACK_REFINEMENTS = 2/);
+  assert.match(lineage, /refinementPreflight\(candidateText\)/);
+  assert.match(ui, /Refine this tested revision/);
+  assert.match(ui, /Permanent meaning\/evidence anchor/);
+  assert.doesNotMatch(ui, /sourceText[^\n]*\.value\s*=/);
+});
+
+test("detector screenshots can be read as a bounded multi-image evidence bundle", () => {
+  const html = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  const gateway = fs.readFileSync(new URL("../public/detectorScreenshotGateway.js", import.meta.url), "utf8");
+  assert.match(html, /type="file" multiple/);
+  assert.match(gateway, /MAX_FILES = 6/);
+  assert.match(gateway, /Save and link this evidence bundle/);
+  assert.match(gateway, /Nothing is linked until that button is pressed/);
+  assert.match(gateway, /if \(!preflight\?\.exact_candidate\)/);
+  assert.match(gateway, /cannot be linked because the Revised box no longer contains the exact retained candidate/);
+});
+
+test("detector research omits empty style filters instead of sending rejected null values", () => {
+  const researchUi = fs.readFileSync(new URL("../public/detectorResearchUI.js", import.meta.url), "utf8");
+  assert.match(researchUi, /Object\.fromEntries\(Object\.entries\(/);
+  assert.match(researchUi, /typeof selected === "string" && selected\.length > 0/);
+});
+
+test("Editor policy copy describes the explicit tested-candidate refinement loop without the retired absolute prohibition", () => {
   const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const screenshotRoute = fs.readFileSync(new URL("../server/routes/detectorScan.js", import.meta.url), "utf8");
   assert.doesNotMatch(app, /never fed automatically into generation/i);
-  assert.match(app, /automatically supplied to the planner on the next rewrite/i);
+  assert.match(app, /Feedback-guided refinement preflight can use it to refine that tested candidate/i);
+  assert.match(app, /ordinary Analyse & Revise button does not silently attach candidate feedback/i);
   assert.match(screenshotRoute, /saved_candidate_link_feeds_next_rewrite_planner: true/);
   assert.match(screenshotRoute, /screenshot_read_alone_feeds_generation: false/);
 });
