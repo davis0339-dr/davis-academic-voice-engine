@@ -536,7 +536,7 @@ async function loadDetectorHealth() {
     const data = await res.json();
     const statuses = data.providers.map((p) => `${p.label}: ${p.state}`).join(" · ");
     disclaimerEl.textContent =
-      "Third-party classifier output is shown for evaluation only. It is not proof of authorship and is never fed automatically into generation. Provider status: " + statuses;
+      "Third-party classifier output is evaluation evidence, not proof of authorship. When you save a result against the exact revision currently shown, it is automatically supplied to the planner on the next rewrite of that same manuscript. Unsaved, stale or unlinked observations are not used. Provider status: " + statuses;
   } catch {
     disclaimerEl.textContent = "Could not load detector provider status.";
   }

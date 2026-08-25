@@ -101,7 +101,9 @@ detectorScanRouter.post("/detector-screenshot", async (req, res) => {
       },
       policy: {
         purpose: "manual external detector observation extraction",
-        feeds_generation_automatically: false,
+        screenshot_read_alone_feeds_generation: false,
+        requires_researcher_save_against_exact_candidate: true,
+        saved_candidate_link_feeds_next_rewrite_planner: true,
         detector_vendor_contacted: false,
       },
       requestId: req.requestId,

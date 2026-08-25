@@ -67,6 +67,15 @@ test("editor sends only candidate-linked observations into the next rewrite", ()
   assert.match(script, /row\?\.candidateId === state\.candidate_id/);
 });
 
+test("Editor policy copy describes the implemented next-rewrite loop without the retired absolute prohibition", () => {
+  const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  const screenshotRoute = fs.readFileSync(new URL("../server/routes/detectorScan.js", import.meta.url), "utf8");
+  assert.doesNotMatch(app, /never fed automatically into generation/i);
+  assert.match(app, /automatically supplied to the planner on the next rewrite/i);
+  assert.match(screenshotRoute, /saved_candidate_link_feeds_next_rewrite_planner: true/);
+  assert.match(screenshotRoute, /screenshot_read_alone_feeds_generation: false/);
+});
+
 test("screenshot extraction discloses its provider-credit cost and manual entry remains free", () => {
   const html = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   assert.match(html, /Manual score entry is free/);
