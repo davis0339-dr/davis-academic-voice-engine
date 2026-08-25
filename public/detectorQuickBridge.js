@@ -34,7 +34,7 @@
 
   function saveObservation(observation) {
     const current = loadObservations();
-    current.push({
+    const row = {
       detector: observation.detector || "Other",
       version: observation.version || null,
       classification: observation.classification || "uncertain",
@@ -44,7 +44,10 @@
       flaggedSentenceIndices: Array.isArray(observation.flaggedSentenceIndices) ? observation.flaggedSentenceIndices : [],
       notes: observation.notes || null,
       recordedAt: new Date().toISOString(),
-    });
+    };
+    current.push(window.AcademicRewriteLineage?.annotateObservation
+      ? window.AcademicRewriteLineage.annotateObservation(row, $("revisedText")?.value || "")
+      : row);
     try { localStorage.setItem(OBSERVATION_STORAGE_KEY, JSON.stringify(current.slice(-20))); } catch {}
   }
 

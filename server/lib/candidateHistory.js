@@ -34,6 +34,7 @@ export function candidateHistoryFor(options = {}) {
   const key = keyFor(options);
   return {
     key,
+    source_hash: hash(normalise(options.sourceText)),
     candidates: (histories.get(key) || []).map((candidate) => ({ ...candidate })),
   };
 }
@@ -47,8 +48,11 @@ export function rememberCandidate(candidateText, history = {}) {
   const text = String(candidateText || "").trim();
   if (!text || !history.key) return null;
   const record = {
+    candidate_id: hash(`${history.key}:${hash(normalise(text))}`).slice(0, 24),
     normalised_hash: hash(normalise(text)),
     paragraph_openings: paragraphOpenings(text),
+    candidate_text: text,
+    source_hash: history.source_hash || null,
   };
   const previous = histories.get(history.key) || [];
   const next = [record, ...previous.filter((candidate) => candidate.normalised_hash !== record.normalised_hash)]
@@ -56,6 +60,13 @@ export function rememberCandidate(candidateText, history = {}) {
   histories.set(history.key, next);
   while (histories.size > MAX_KEYS) histories.delete(histories.keys().next().value);
   return record;
+}
+
+export function candidateById(history = {}, candidateId = "") {
+  if (!candidateId) return null;
+  const candidate = (history.candidates || []).find((row) => row.candidate_id === candidateId)
+    || [...histories.values()].flat().find((row) => row.candidate_id === candidateId && row.source_hash === history.source_hash);
+  return candidate ? { ...candidate } : null;
 }
 
 export function candidateHistoryPromptBlock(history = {}) {

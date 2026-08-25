@@ -182,7 +182,18 @@ function validateDetectorObservation(observation) {
   if (observation.flaggedSentenceIndices !== undefined) {
     if (!Array.isArray(observation.flaggedSentenceIndices) || observation.flaggedSentenceIndices.length > 1000) return false;
   }
+  if (observation.flaggedExcerpts !== undefined) {
+    if (!Array.isArray(observation.flaggedExcerpts) || observation.flaggedExcerpts.length > 30) return false;
+    if (observation.flaggedExcerpts.some((value) => typeof value !== "string" || value.length > 280)) return false;
+  }
   return true;
+}
+
+function validateRewriteDetectorFeedback(feedback) {
+  if (!feedback || typeof feedback !== "object" || Array.isArray(feedback)) return false;
+  if (typeof feedback.candidateId !== "string" || !/^[a-f0-9]{24}$/.test(feedback.candidateId)) return false;
+  if (!Array.isArray(feedback.observations) || feedback.observations.length < 1 || feedback.observations.length > 8) return false;
+  return feedback.observations.every(validateDetectorObservation);
 }
 
 export function validateApiPayload(req, res, next) {
@@ -216,6 +227,7 @@ export function validateApiPayload(req, res, next) {
     constraints,
     section,
     observations,
+    detectorFeedback,
     styleFilters,
     rewriteIntensity,
     grammarIntensity,
@@ -236,6 +248,9 @@ export function validateApiPayload(req, res, next) {
     if (!Array.isArray(observations) || observations.length > 20 || !observations.every(validateDetectorObservation)) {
       return res.status(400).json({ error: "BAD_REQUEST", message: "Invalid detector observations payload.", requestId: req.requestId });
     }
+  }
+  if (detectorFeedback !== undefined && !validateRewriteDetectorFeedback(detectorFeedback)) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "Invalid candidate-linked detector feedback payload.", requestId: req.requestId });
   }
   for (const [key, value] of Object.entries({ rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, label })) {
     if (value !== undefined && (typeof value !== "string" || value.length > 80)) {

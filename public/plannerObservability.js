@@ -134,6 +134,7 @@
     const sourceArchitecture = latestAnalysis?.diagnostics?.discourse_architecture?.signals || [];
     const machineLanguage = latestAnalysis?.diagnostics?.machine_language_forensics || null;
     const machineExecution = plan?.machineLanguageExecution || null;
+    const feedbackExecution = rewrite?.external_detector_feedback_execution || plan?.externalFeedbackExecution || null;
     const postDiag = rewrite?.post_rewrite_diagnostics || rewrite?.residual_rework?.after || rewrite?.residual_rework?.before || null;
     const postArchitecture = postDiag?.discourse_architecture?.signals || [];
 
@@ -192,6 +193,7 @@
         <div><span>Machine-language recurrence</span><strong>${machineLanguage?.available ? `${pct(machineLanguage.metrics?.hit_sentence_ratio)} · ${esc(machineLanguage.metrics?.hit_sentence_count || 0)}/${esc(machineLanguage.metrics?.sentence_count || 0)} sentences` : "n/a"}</strong></div>
         <div><span>Composite machine-language pressure</span><strong>${machineLanguage?.available ? `${esc(title(machineLanguage.label))} · ${pct(machineLanguage.score)}` : "n/a"}</strong></div>
         <div><span>Machine-language target units</span><strong>${esc(machineExecution?.targeted_sentence_count || 0)}</strong></div>
+        <div><span>Prior detector result applied</span><strong>${feedbackExecution ? `YES · ${esc(feedbackExecution.targeted_sentence_count)} target units` : "no"}</strong></div>
         <div><span>Pattern-accountable target operations</span><strong>${rewritePatternCount}</strong></div>
         <div><span>Planner units</span><strong>${totalUnits}</strong></div>
       </div>

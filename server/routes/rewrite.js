@@ -17,7 +17,8 @@ import { repairPreservationCandidate } from "../lib/preservationRepair.js";
 import { classifyPreservationRelease } from "../lib/preservationRelease.js";
 import { preservationCandidateStatus, selectPreservationRepairCandidate } from "../lib/preservationLifecycle.js";
 import { candidateHistoryFor, isHistoricalDuplicate, rememberCandidate } from "../lib/candidateHistory.js";
-import { DEFAULT_EXPAND_MIN_ADDITION_WORDS } from "../lib/lengthContract.js";
+import { DEFAULT_EXPAND_MIN_ADDITION_WORDS, manuscriptWordCount } from "../lib/lengthContract.js";
+import { resolveDetectorFeedback } from "../lib/detectorFeedback.js";
 
 export const rewriteRouter = Router();
 
@@ -70,7 +71,7 @@ function refreshIterativeQuality(sourceText, result, revisedText, rewriteLineage
 
 rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => {
   const requestId = randomUUID();
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage } = req.body || {};
+  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage, detectorFeedback } = req.body || {};
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
   const minimumExpansionWords = DEFAULT_EXPAND_MIN_ADDITION_WORDS;
 
@@ -113,6 +114,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     naturalisation: modePolicy.effective_naturalisation,
     lengthPreference,
   });
+  const detectorFeedbackProfile = resolveDetectorFeedback(detectorFeedback, priorCandidateHistory);
 
   const runRewrite = () => rewrite({
     sourceText: text,
@@ -125,6 +127,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     rewriteLineage,
     priorCandidateHistory,
     minimumExpansionWords,
+    detectorFeedback: detectorFeedbackProfile,
   });
 
   function enrichForCompliance(result) {
@@ -268,12 +271,10 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         result.transformation_quality?.corrective_retry_error ||
         result.transformation_quality?.rescue_retry_error
       );
-      const bindingExpansionCandidate = result.length_contract?.mode === "expand";
       residualStageEligible = Boolean(
         !sourceRetainedForSafety &&
         !overExecutionRecoveryUsed &&
         !optionalProviderFailure &&
-        !bindingExpansionCandidate &&
         executionCompliance.preservation_ok &&
         !executionCompliance.over_executed &&
         modePolicy.effective_naturalisation !== "off"
@@ -283,7 +284,6 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         if (sourceRetainedForSafety) residualStageBlockedReason = "non_edit_result";
         else if (overExecutionRecoveryUsed) residualStageBlockedReason = "surgical_recovery_is_final";
         else if (optionalProviderFailure) residualStageBlockedReason = "provider_refinement_failed";
-        else if (bindingExpansionCandidate) residualStageBlockedReason = "binding_expansion_candidate_is_final";
         else if (modePolicy.effective_naturalisation === "off") residualStageBlockedReason = "naturalisation_off";
         else if (!executionCompliance.preservation_ok) residualStageBlockedReason = "preservation_failed";
         else if (executionCompliance.over_executed) residualStageBlockedReason = "over_execution";
@@ -301,6 +301,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
             planSummary: result.intervention_plan_summary || {},
             lengthPreference,
             minimumExpansionWords,
+            maxBlocks: detectorFeedbackProfile?.high_machine_pattern_signal ? 8 : 4,
           });
           if (residualRework.accepted) {
             const refreshedQuality = refreshTransformationQuality(
@@ -356,10 +357,24 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         ...completedOutputAcceptance,
         enforced_for_final_release: outputAcceptanceEnforced,
       };
+      if (result.length_contract?.mode === "expand") {
+        const actualAddition = manuscriptWordCount(result.revised_text) - manuscriptWordCount(text);
+        result.length_contract = {
+          ...result.length_contract,
+          actual_addition_words: actualAddition,
+          satisfied: actualAddition >= minimumExpansionWords,
+          effective_outcome: actualAddition >= minimumExpansionWords ? "expand_completed" : "maintain_fallback",
+          outcome_note: actualAddition >= minimumExpansionWords
+            ? `Expand completed with ${actualAddition} net additional words.`
+            : `The bounded Expand attempt could not add ${minimumExpansionWords} words without losing preservation or completed-output quality. This complete draft is returned as an explicit Maintain fallback, not mislabelled as Expand.`,
+        };
+      }
       result.candidate_history = {
         prior_candidate_count: priorCandidateHistory.candidates.length,
         exact_historical_duplicate: historicalDuplicate,
         repetition_blocking: historicalDuplicate,
+        detector_feedback_received: Boolean(detectorFeedback),
+        detector_feedback_applied: Boolean(detectorFeedbackProfile),
       };
 
       result.execution_compliance = {
@@ -459,6 +474,8 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         external_detector_check_recommended: Boolean(
           !sourceRetainedForSafety &&
           preservationRelease.cleared &&
+          executionCompliance.execution_passed &&
+          completedOutputAcceptance.status === "pass" &&
           !(completedOutputAcceptance.reasons || []).includes("expand_length_contract_missed")
         ),
         final_status: preservationCandidateStatus({
@@ -472,7 +489,8 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
 
       result.revision_purpose = effectiveRevisionPurpose;
       result.additional_inputs = normalizeAdditionalInputs(result.additional_inputs, effectiveRevisionPurpose);
-      if (!sourceRetainedForSafety) rememberCandidate(result.revised_text, priorCandidateHistory);
+      const rememberedCandidate = !sourceRetainedForSafety ? rememberCandidate(result.revised_text, priorCandidateHistory) : null;
+      result.candidate_history.current_candidate_id = rememberedCandidate?.candidate_id || null;
       return res.json({ ...result, provider_usage: llmProvider.usageSnapshot(), requestId });
     } catch (err) {
       lastErr = err;

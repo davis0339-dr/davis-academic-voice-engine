@@ -40,6 +40,7 @@ export function selectPreservationRepairCandidate(originalResult, repairedResult
 export function preservationCandidateStatus({ compliance, outputAcceptance, sourceRetainedForSafety = false, preservationRelease } = {}) {
   if (sourceRetainedForSafety) return "no_safe_edit_available";
   if (preservationRelease?.review_required || !compliance?.preservation_ok) return "preservation_review_required";
+  if (compliance?.under_executed || compliance?.execution_passed === false) return "execution_review_required";
   if ((outputAcceptance?.reasons || []).includes("expand_length_contract_missed")) return "length_review_required";
   return "accepted";
 }

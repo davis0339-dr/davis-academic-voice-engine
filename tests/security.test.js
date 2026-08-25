@@ -123,6 +123,29 @@ test("detector research payload rejects oversized or malformed observation recor
   assert.equal(res.body.error, "BAD_REQUEST");
 });
 
+test("rewrite accepts bounded candidate-linked feedback and rejects stale-shaped identifiers", () => {
+  const valid = mockReq({
+    method: "POST",
+    path: "/rewrite",
+    body: {
+      text: "Academic source.",
+      detectorFeedback: {
+        candidateId: "a".repeat(24),
+        observations: [{ detector: "GPTZero", classification: "ai", aiScore: 100, flaggedExcerpts: ["Academic candidate sentence."] }],
+      },
+    },
+  });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Academic source.", detectorFeedback: { candidateId: "stale", observations: [] } } });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("invalid feedback must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
+});
+
 test("payload validator does not require a JSON body for chunk retry routes", () => {
   const req = mockReq({ method: "POST", path: "/jobs/id/chunks/1/retry", body: undefined });
   const res = mockRes();

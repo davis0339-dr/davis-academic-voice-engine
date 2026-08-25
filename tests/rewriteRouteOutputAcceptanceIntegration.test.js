@@ -73,10 +73,11 @@ test("a failed optional model refinement blocks further residual provider spendi
   assert.match(route, /residualStageBlockedReason = "provider_refinement_failed"/);
 });
 
-test("Expand candidates do not trigger an additional residual provider pass", () => {
-  assert.match(route, /const bindingExpansionCandidate = result\.length_contract\?\.mode === "expand"/);
-  assert.match(route, /!bindingExpansionCandidate &&/);
-  assert.match(route, /residualStageBlockedReason = "binding_expansion_candidate_is_final"/);
+test("Expand candidates may receive the bounded residual pass when execution remains weak", () => {
+  assert.doesNotMatch(route, /bindingExpansionCandidate/);
+  assert.match(route, /selectiveResidualRework\(\{/);
+  assert.match(route, /minimumExpansionWords/);
+  assert.match(route, /maxBlocks: detectorFeedbackProfile\?\.high_machine_pattern_signal \? 8 : 4/);
 });
 
 test("execution defects are repaired selectively instead of regenerating the full manuscript", () => {

@@ -59,7 +59,7 @@
   }
 
   function addManualObservation() {
-    observations.push({
+    const row = {
       detector: $("manualDetector")?.value || "Other",
       version: $("manualDetectorVersion")?.value.trim() || null,
       classification: $("manualDetectorClass")?.value || null,
@@ -68,7 +68,10 @@
       paraphrasedScore: numberOrNull($("manualParaphraseScore")?.value),
       flaggedSentenceIndices: parseFlaggedSentences($("manualFlaggedSentences")?.value),
       notes: $("manualDetectorNotes")?.value.trim() || null,
-    });
+    };
+    observations.push(window.AcademicRewriteLineage?.annotateObservation
+      ? window.AcademicRewriteLineage.annotateObservation(row, $("revisedText")?.value || "")
+      : row);
     observations = observations.slice(-20);
     saveObservations(); renderObservationList();
     ["manualDetectorVersion", "manualAiScore", "manualHumanScore", "manualParaphraseScore", "manualFlaggedSentences", "manualDetectorNotes"].forEach((id) => { if ($(id)) $(id).value = ""; });

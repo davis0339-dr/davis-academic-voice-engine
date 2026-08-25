@@ -104,3 +104,12 @@ test("an otherwise cleared draft that misses Expand is returned for length revie
   });
   assert.equal(status, "length_review_required");
 });
+
+test("a complete near-copy remains visible but cannot be labelled accepted", () => {
+  const status = preservationCandidateStatus({
+    compliance: { preservation_ok: true, execution_passed: false, under_executed: true },
+    preservationRelease: { review_required: false },
+    outputAcceptance: { reasons: [] },
+  });
+  assert.equal(status, "execution_review_required");
+});

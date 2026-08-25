@@ -62,7 +62,7 @@
 
   function saveObservation(observation) {
     const rows = loadObservations();
-    rows.push({
+    const row = {
       detector: observation.detector || "Other",
       version: observation.version || null,
       classification: observation.classification || "uncertain",
@@ -74,7 +74,10 @@
       notes: observation.notes || null,
       recordedAt: new Date().toISOString(),
       evidenceSource: "uploaded_detector_screenshot",
-    });
+    };
+    rows.push(window.AcademicRewriteLineage?.annotateObservation
+      ? window.AcademicRewriteLineage.annotateObservation(row, $("revisedText")?.value || "")
+      : row);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rows.slice(-20))); } catch {}
   }
 

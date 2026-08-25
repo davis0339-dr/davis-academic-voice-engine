@@ -26,6 +26,7 @@ import {
 import { candidateHistoryPromptBlock } from "./candidateHistory.js";
 import { buildLengthContract, lengthContractSatisfied, manuscriptWordCount } from "./lengthContract.js";
 import { classifyPreservationRelease } from "./preservationRelease.js";
+import { detectorFeedbackPromptBlock } from "./detectorFeedback.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
 const SUBSTANTIVE_PLAN_LEVELS = new Set([
@@ -51,10 +52,10 @@ function measuredGuidance(deviation, family) {
   };
 }
 
-export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation }) {
+export function analyse({ sourceText, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, detectorFeedback }) {
   const protectedSpans = extractProtectedSpans(sourceText);
   const diagnostics = diagnose(sourceText);
-  const plan = buildDiagnosisScopedPlan(diagnostics, { rewriteIntensity, lengthPreference, naturalisation });
+  const plan = buildDiagnosisScopedPlan(diagnostics, { rewriteIntensity, lengthPreference, naturalisation, detectorFeedback });
   const profileResolution = resolveProfile(styleFilters);
   const cadenceDeviation = assessCadenceDeviation(sourceText, styleFilters);
   const languageFingerprint = measureLanguageFingerprint(sourceText);
@@ -355,6 +356,7 @@ export async function rewrite({
   rewriteLineage,
   priorCandidateHistory,
   minimumExpansionWords,
+  detectorFeedback,
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
@@ -368,6 +370,7 @@ export async function rewrite({
     grammarIntensity,
     lengthPreference,
     naturalisation: naturalisationLevel,
+    detectorFeedback,
   });
 
   const humanCadence = analysis.diagnostics.cadence_deviation?.family || null;
@@ -396,7 +399,7 @@ export async function rewrite({
     humanCadence,
     naturalisation: naturalisationLevel,
     revisionPurpose: effectiveRevisionPurpose,
-  }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage }) + candidateHistoryPromptBlock(priorCandidateHistory);
+  }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage }) + candidateHistoryPromptBlock(priorCandidateHistory) + detectorFeedbackPromptBlock(detectorFeedback);
 
   let parsed = await runModelPass({ systemPrompt, sourceText, maxTokens: outputTokenBudget });
   let expansionRecovery = { required: lengthContract.mode === "expand", attempted: false, attempts: [], contract: lengthContract };
@@ -555,6 +558,7 @@ export async function rewrite({
     paragraph_plan_summary: analysis.plan.paragraphSummary,
     planner_version: analysis.plan.plannerVersion,
     planner_scope_policy_version: analysis.plan.scopePolicyVersion || null,
+    external_detector_feedback_execution: analysis.plan.externalFeedbackExecution || null,
     planner_sequence: analysis.plan.sequence,
     preservation,
     transformation_quality: {
@@ -598,6 +602,7 @@ export async function rewrite({
       note: "Family alignment is a descriptive academic-language diagnostic from the measured pilot corpus, not an AI-authorship score and not a hard acceptance target.",
     },
     diagnostics: analysis.diagnostics,
+    detector_feedback_applied: detectorFeedback || null,
     model_notes: parsed.diagnostics_notes || "",
     naturalisation_applied: {
       level: naturalisationLevel,

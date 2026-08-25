@@ -264,6 +264,64 @@ function moderateLocalDiscourseScope(plan, { requestedIntensity, requestedNatura
   return plan;
 }
 
+function externalFeedbackExecutionScope(plan, diagnostics, { requestedIntensity, requestedNaturalisation, detectorFeedback }) {
+  const eligibleMode = ["moderate", "deep"].includes(requestedIntensity)
+    && ["aggressive", "authorial"].includes(requestedNaturalisation);
+  if (!eligibleMode || !detectorFeedback?.verified_candidate_link || !detectorFeedback.high_machine_pattern_signal) return plan;
+
+  const items = plan.items || [];
+  const capRatio = requestedIntensity === "deep" ? 0.75 : 0.52;
+  const floorRatio = requestedIntensity === "deep" ? 0.55 : 0.35;
+  const maxTargets = Math.max(1, Math.floor(items.length * capRatio));
+  const minimumTargets = Math.max(1, Math.floor(items.length * floorRatio));
+  const targetParagraphs = new Set(detectorFeedback.target_paragraph_indices || []);
+  const ranked = [
+    ...(diagnostics?.machine_language_forensics?.target_sentence_indices || []),
+    ...(diagnostics?.discourse_regularity_forensics?.priority_sentence_indices || []),
+    ...items.filter((item) => targetParagraphs.has(item.paragraphBlockIndex)).map((item) => item.sentenceIndex),
+    ...items.map((item) => item.sentenceIndex),
+  ].filter(Number.isInteger);
+  const eligible = new Set(items.filter((item) => !FORMAL_KEEP_CODES.has(item.decisionCode)).map((item) => item.sentenceIndex));
+  const targetIndices = [];
+  for (const sentenceIndex of ranked) {
+    if (!eligible.has(sentenceIndex) || targetIndices.includes(sentenceIndex)) continue;
+    targetIndices.push(sentenceIndex);
+    if (targetIndices.length >= maxTargets) break;
+  }
+  if (targetIndices.length < minimumTargets) return plan;
+  const targetSet = new Set(targetIndices);
+  let escalated = 0;
+  plan.items = items.map((item) => {
+    if (!targetSet.has(item.sentenceIndex)) return item;
+    const level = requestedIntensity === "deep" ? "DISCOURSE_REPACKAGE" : "SENTENCE_RESTRUCTURE";
+    if (item.level !== level) escalated += 1;
+    return {
+      ...item,
+      level,
+      decisionCode: requestedIntensity === "deep" ? "EXTERNAL_FEEDBACK_DISCOURSE_REPACKAGE" : "EXTERNAL_FEEDBACK_SENTENCE_RESTRUCTURE",
+      reasons: [
+        ...(item.reasons || []),
+        "This unit belongs to the exact prior candidate that received a high external machine-pattern result. That candidate-linked result is operational failed-output evidence, not a generic authorship verdict.",
+        "Reconstruct the information packaging and relationship to neighbouring reasoning. Do not repeat the prior candidate's sentence alignment or paragraph choreography, and do not use cosmetic synonym changes as execution.",
+      ],
+    };
+  });
+  plan.summary = summarise(plan.items);
+  plan.externalFeedbackExecution = {
+    version: detectorFeedback.version,
+    candidate_id: detectorFeedback.candidate_id,
+    observation_count: detectorFeedback.observation_count,
+    mean_ai_score: detectorFeedback.mean_ai_score,
+    targeted_sentence_count: targetIndices.length,
+    newly_escalated_sentence_count: escalated,
+    targeted_sentence_indices: targetIndices,
+    target_paragraph_indices: [...targetParagraphs],
+    mode: requestedIntensity === "deep" ? "candidate_linked_discourse_reconstruction" : "candidate_linked_sentence_flow_reconstruction",
+    principle: "A verified failed candidate widens execution within the author-selected mode; preservation of research content remains mandatory.",
+  };
+  return plan;
+}
+
 export const DEEP_AUTHORIAL_PROTOCOL = Object.freeze([
     "DEEP AUTHORIAL V4 EXECUTION PROTOCOL: this is not a sentence-by-sentence paraphrase pass. Before drafting each authorised substantive paragraph, recover its protected proposition/evidence ledger: claim(s), evidence/citation attachment, qualification/condition, measurement distinction, mechanism, setting/time context, and rhetorical purpose. Reconstruct from that ledger rather than walking through source sentence shells in order.",
     "PRESERVE RESEARCH, NOT AUTOMATICALLY SURFACE PACKAGING: factual meaning, citations, statistics, variables, hypotheses, methods, chronology, study stage, technical terminology and epistemic strength are immutable. Sentence boundaries, grammatical subjects, clause order, local information packaging and paragraph development are available for reconstruction only where diagnosis supports intervention.",
@@ -315,6 +373,11 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     requestedIntensity,
     requestedNaturalisation,
   });
+  plan = externalFeedbackExecutionScope(plan, diagnostics, {
+    requestedIntensity,
+    requestedNaturalisation,
+    detectorFeedback: options.detectorFeedback,
+  });
 
   plan.intensity = requestedIntensity;
   plan.diagnosticIntensity = diagnosticIntensity;
@@ -346,6 +409,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     "A Deep/Authorial request must not be silently collapsed into local synonym polishing where genuine reconstruction has been diagnosed.",
     "Expand develops diagnosed reasoning, evidence, qualification, context, measurement or gap work; it is not a word-growth quota.",
     "Keep decisions remain legitimate in every mode for headings, quotations, equations, technical labels, evidence, formal research artefacts, and genuinely author-specific passages that do not warrant intervention.",
+    ...(plan.externalFeedbackExecution ? ["Candidate-linked external test evidence is now execution evidence for the exact failed candidate. Reconstruct its diagnosed machine-shaped information packaging; do not merely acknowledge the score or repeat the same candidate with synonyms."] : []),
     ...(authorialAuthority ? DEEP_AUTHORIAL_PROTOCOL : []),
   ];
   plan.documentGuidance = [
