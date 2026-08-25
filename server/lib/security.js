@@ -186,6 +186,16 @@ function validateDetectorObservation(observation) {
     if (!Array.isArray(observation.flaggedExcerpts) || observation.flaggedExcerpts.length > 30) return false;
     if (observation.flaggedExcerpts.some((value) => typeof value !== "string" || value.length > 280)) return false;
   }
+  if (observation.highlightedPassages !== undefined) {
+    if (!Array.isArray(observation.highlightedPassages) || observation.highlightedPassages.length > 120) return false;
+    for (const passage of observation.highlightedPassages) {
+      if (!passage || typeof passage !== "object" || Array.isArray(passage)) return false;
+      if (typeof passage.text !== "string" || passage.text.length > 500) return false;
+      if (passage.classification !== undefined && typeof passage.classification !== "string") return false;
+      if (passage.colour !== undefined && passage.colour !== null && (typeof passage.colour !== "string" || passage.colour.length > 40)) return false;
+      if (passage.page !== undefined && passage.page !== null && (!Number.isInteger(Number(passage.page)) || Number(passage.page) < 1)) return false;
+    }
+  }
   return true;
 }
 

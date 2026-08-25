@@ -18,7 +18,7 @@ import { classifyPreservationRelease } from "../lib/preservationRelease.js";
 import { preservationCandidateStatus, selectPreservationRepairCandidate } from "../lib/preservationLifecycle.js";
 import { candidateHistoryFor, isHistoricalDuplicate, rememberCandidate } from "../lib/candidateHistory.js";
 import { DEFAULT_EXPAND_MIN_ADDITION_WORDS, manuscriptWordCount } from "../lib/lengthContract.js";
-import { resolveDetectorFeedback } from "../lib/detectorFeedback.js";
+import { auditFeedbackRefinementChange, resolveDetectorFeedback } from "../lib/detectorFeedback.js";
 import { auditPreservation } from "../lib/preservation.js";
 
 export const rewriteRouter = Router();
@@ -368,8 +368,11 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         lengthPreference,
         minimumExpansionWords,
       });
+      const feedbackOpeningChangeAudit = candidateRefinement && detectorFeedbackProfile
+        ? auditFeedbackRefinementChange(text, result.revised_text)
+        : null;
       const historicalDuplicate = !sourceRetainedForSafety && isHistoricalDuplicate(result.revised_text, priorCandidateHistory);
-      const completedOutputAcceptance = historicalDuplicate ? {
+      let completedOutputAcceptance = historicalDuplicate ? {
         ...baseOutputAcceptance,
         status: "review_required",
         reasons: [...new Set([...(baseOutputAcceptance.reasons || []), "historical_candidate_repetition"])],
@@ -378,6 +381,13 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
           external_detector_check_recommended: false,
         },
       } : baseOutputAcceptance;
+      if (feedbackOpeningChangeAudit?.available && !feedbackOpeningChangeAudit.materially_reconstructed) {
+        completedOutputAcceptance = {
+          ...completedOutputAcceptance,
+          status: "review_required",
+          reasons: [...new Set([...(completedOutputAcceptance.reasons || []), "feedback_opening_reconstruction_insufficient"])],
+        };
+      }
       const outputAcceptanceEnforced = false;
       result.output_acceptance = {
         ...completedOutputAcceptance,
@@ -405,6 +415,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         root_source_anchor_used: candidateRefinement,
         source_generation: Number(rewriteLineage?.sourceGeneration || 0),
         maximum_feedback_refinements: 2,
+        feedback_opening_change_audit: feedbackOpeningChangeAudit,
       };
 
       result.execution_compliance = {

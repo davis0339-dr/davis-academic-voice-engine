@@ -68,7 +68,39 @@ export function validateDetectorScreenshotPayload({ mimeType, fileBase64, imageB
 }
 
 export function detectorScreenshotPrompt() {
-  return `You are reading ONE user-supplied external AI-writing detector result file. It may be a result screenshot or a full PDF report. The purpose is research logging and source-versus-revision analysis.\n\nExtract only information explicitly supported by the supplied file. Do not infer missing scores and do not claim authorship. For a multi-page PDF, use the overall document result and capture short flagged excerpts only when the report explicitly marks them.\n\nReturn ONLY valid JSON with this exact shape:\n{\n  "detector": string|null,\n  "version": string|null,\n  "classification": "ai"|"ai_paraphrased"|"mixed"|"human"|"uncertain"|null,\n  "aiScore": number|null,\n  "humanScore": number|null,\n  "paraphrasedScore": number|null,\n  "flaggedSentenceIndices": number[],\n  "flaggedExcerpts": string[],\n  "visibleSummary": string,\n  "confidence": "high"|"medium"|"low",\n  "warnings": string[]\n}\n\nRules:\n- Scores are percentages from 0 to 100 only when explicitly shown.\n- flaggedSentenceIndices must be zero-based and included only when the report explicitly numbers sentences; otherwise return [].\n- flaggedExcerpts may contain short verbatim excerpts only when the report visibly highlights or distinctly classifies those words. Return [] when no highlighted passage is legible. Do not infer missing text.\n- If the report uses a label such as AI, Mixed, Human, AI paraphrased, or uncertain, map it conservatively.\n- Do not count highlighted words or estimate percentages from coloured areas.\n- visibleSummary should briefly state exactly what the supplied screenshot or PDF report explicitly reports.\n- If text is ambiguous, use null and explain in warnings.`;
+  return `You are reading ONE user-supplied external AI-writing detector result file. It may be a result screenshot or a full PDF report. The purpose is research logging and source-versus-revision analysis.
+
+Extract only information explicitly supported by the supplied file. Do not infer missing scores and do not claim authorship. For a multi-page PDF, inspect the overall result AND every page that visibly contains colour-coded or distinctly classified manuscript passages.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "detector": string|null,
+  "version": string|null,
+  "classification": "ai"|"ai_paraphrased"|"mixed"|"human"|"uncertain"|null,
+  "aiScore": number|null,
+  "humanScore": number|null,
+  "paraphrasedScore": number|null,
+  "flaggedSentenceIndices": number[],
+  "flaggedExcerpts": string[],
+  "highlightedPassages": [
+    {"text": string, "classification": "ai"|"ai_paraphrased"|"mixed"|"human"|"uncertain", "colour": string|null, "page": number|null}
+  ],
+  "visibleSummary": string,
+  "confidence": "high"|"medium"|"low",
+  "warnings": string[]
+}
+
+Rules:
+- Scores are percentages from 0 to 100 only when explicitly shown.
+- flaggedSentenceIndices must be zero-based and included only when the report explicitly numbers sentences; otherwise return [].
+- Inspect every visible report page for colour-coded or distinctly classified manuscript passages, not only the overall score panel.
+- highlightedPassages must record each legible highlighted passage separately. Copy enough contiguous wording to map it back to the tested manuscript (normally 6-40 words), record the explicit AI/mixed/human classification, the visible colour name when discernible, and the one-based PDF page number when available.
+- flaggedExcerpts must contain the text of passages explicitly marked as AI or AI-paraphrased. Do not include green/human passages as rewrite targets.
+- Return empty passage arrays only when the report genuinely contains no legible passage-level highlighting. State that limitation in warnings; do not imply that the colour layer was analysed when only the overall score was read.
+- If the report uses a label such as AI, Mixed, Human, AI paraphrased, or uncertain, map it conservatively.
+- Do not count highlighted words or estimate percentages from coloured areas.
+- visibleSummary should state whether passage-level colours were extracted, in addition to the overall result.
+- If text is ambiguous, use null and explain in warnings.`;
 }
 
 function extractJson(text) {
@@ -90,8 +122,25 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
     ? [...new Set(parsed.flaggedSentenceIndices.map(Number).filter((n) => Number.isInteger(n) && n >= 0))].slice(0, 1000)
     : [];
   const flaggedExcerpts = Array.isArray(parsed.flaggedExcerpts)
-    ? [...new Set(parsed.flaggedExcerpts.map((value) => cleanString(value, 500)).filter(Boolean))].slice(0, 100)
+    ? [...new Set(parsed.flaggedExcerpts.map((value) => cleanString(value, 280)).filter(Boolean))].slice(0, 100)
     : [];
+  const highlightedPassages = Array.isArray(parsed.highlightedPassages)
+    ? parsed.highlightedPassages.map((row) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+        const text = cleanString(row.text, 500);
+        if (!text) return null;
+        const page = Number(row.page);
+        return {
+          text,
+          classification: allowed.has(row.classification) ? row.classification : "uncertain",
+          colour: cleanString(row.colour, 40),
+          page: Number.isInteger(page) && page > 0 ? page : null,
+        };
+      }).filter(Boolean).slice(0, 120)
+    : [];
+  const machinePassageExcerpts = highlightedPassages
+    .filter((row) => row.classification === "ai" || row.classification === "ai_paraphrased")
+    .map((row) => cleanString(row.text, 280));
   return {
     detector: canonicalDetectorName(parsed.detector),
     version: cleanString(parsed.version, 80),
@@ -100,7 +149,8 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
     humanScore: clampScore(parsed.humanScore),
     paraphrasedScore: clampScore(parsed.paraphrasedScore),
     flaggedSentenceIndices,
-    flaggedExcerpts,
+    flaggedExcerpts: [...new Set([...flaggedExcerpts, ...machinePassageExcerpts])].slice(0, 100),
+    highlightedPassages,
     visibleSummary: cleanString(parsed.visibleSummary, 1000) || "Detector report analysed; no additional explicit summary was returned.",
     confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
     warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map((x) => cleanString(x, 500)).filter(Boolean).slice(0, 10) : [],

@@ -96,6 +96,7 @@
       paraphrasedScore: Number.isFinite(Number(observation.paraphrasedScore)) ? Number(observation.paraphrasedScore) : null,
       flaggedSentenceIndices: Array.isArray(observation.flaggedSentenceIndices) ? observation.flaggedSentenceIndices : [],
       flaggedExcerpts: Array.isArray(observation.flaggedExcerpts) ? observation.flaggedExcerpts : [],
+      highlightedPassages: Array.isArray(observation.highlightedPassages) ? observation.highlightedPassages : [],
       notes: observation.notes || null,
       recordedAt: new Date().toISOString(),
       evidenceSource: "uploaded_detector_report",
@@ -132,6 +133,9 @@
           ${Number.isFinite(Number(observation.paraphrasedScore)) ? `<span>Mixed/paraphrased <strong>${esc(observation.paraphrasedScore)}%</strong></span>` : ""}
         </div>
         ${observation.visibleSummary ? `<p>${esc(observation.visibleSummary)}</p>` : ""}
+        ${Array.isArray(observation.highlightedPassages) && observation.highlightedPassages.length
+          ? `<details><summary>${esc(observation.highlightedPassages.length)} colour-coded passage(s) extracted</summary><ul>${observation.highlightedPassages.slice(0, 30).map((passage) => `<li><strong>${esc(passage.classification || "uncertain")}</strong>${passage.colour ? ` · ${esc(passage.colour)}` : ""}${passage.page ? ` · page ${esc(passage.page)}` : ""}: “${esc(passage.text)}”</li>`).join("")}</ul></details>`
+          : '<p class="warning-text">No sentence-level colour passages were extracted. This file currently supplies only document-level evidence and cannot guide local targeting.</p>'}
       </div>`).join("") + '<button id="saveGatewayDetectorResultsBtn" class="primary" type="button">Save and link this evidence bundle</button>';
     $("saveGatewayDetectorResultsBtn")?.addEventListener("click", () => {
       if (!extractedObservations.length) return;
@@ -148,6 +152,19 @@
       const button = $("saveGatewayDetectorResultsBtn");
       if (button) { button.disabled = true; button.textContent = "Evidence bundle saved and linked"; }
     });
+  }
+
+  function resetForNewCandidate() {
+    if (!extractedObservations.length && !pendingFiles.length) return;
+    extractedObservations = [];
+    pendingFiles = [];
+    const preview = $("detectorScreenshotPreview");
+    if (preview) preview.innerHTML = "";
+    const input = $("detectorScreenshotInput");
+    if (input) input.value = "";
+    const drop = $("detectorScreenshotDropZone");
+    if (drop) delete drop.dataset.hasFile;
+    status("A new revision is now shown. Evidence saved for the previous revision was consumed there; test and upload the new revision before another refinement.");
   }
 
   async function analyseSelected() {
@@ -179,6 +196,8 @@
       status(err.message || "Screenshot analysis failed.", true);
     }
   }
+
+  window.addEventListener("academicVoice:rewrite-lineage-updated", resetForNewCandidate);
 
   function openPicker() {
     document.querySelector('.tab-header[data-tab="detectorqa"]')?.click();

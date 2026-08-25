@@ -23,6 +23,10 @@
     const bits = [row.detector || "External detector"];
     if (row.version) bits.push(row.version);
     if (Number.isFinite(Number(row.aiScore))) bits.push(`AI ${row.aiScore}%`);
+    const passageCount = Array.isArray(row.highlightedPassages) ? row.highlightedPassages.length : 0;
+    const targetCount = Array.isArray(row.flaggedExcerpts) ? row.flaggedExcerpts.length : 0;
+    if (passageCount) bits.push(`${passageCount} colour passage${passageCount === 1 ? "" : "s"}`);
+    if (targetCount) bits.push(`${targetCount} local target${targetCount === 1 ? "" : "s"}`);
     return bits.join(" · ");
   }
 

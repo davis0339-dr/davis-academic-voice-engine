@@ -43,6 +43,8 @@
       humanScore: numberOrNull(observation.humanScore),
       paraphrasedScore: numberOrNull(observation.paraphrasedScore),
       flaggedSentenceIndices: Array.isArray(observation.flaggedSentenceIndices) ? observation.flaggedSentenceIndices : [],
+      flaggedExcerpts: Array.isArray(observation.flaggedExcerpts) ? observation.flaggedExcerpts : [],
+      highlightedPassages: Array.isArray(observation.highlightedPassages) ? observation.highlightedPassages : [],
       notes: observation.notes || null,
       recordedAt: new Date().toISOString(),
     };

@@ -67,6 +67,27 @@ test("normalises visible detector screenshot observations without inventing scor
   assert.deepEqual(parsed.flaggedExcerpts, ["highlighted academic passage"]);
 });
 
+test("extracts colour-coded passage evidence as structured, mappable observations", () => {
+  const parsed = normaliseDetectorScreenshotAnalysis(JSON.stringify({
+    detector: "GPTZero",
+    classification: "ai",
+    aiScore: 100,
+    flaggedSentenceIndices: [],
+    flaggedExcerpts: [],
+    highlightedPassages: [
+      { text: "Creditors must assess whether management is reliably monitored", classification: "ai", colour: "yellow", page: 3 },
+      { text: "The purpose of this explanatory sequential mixed methods study", classification: "human", colour: "green", page: 5 },
+    ],
+    visibleSummary: "Overall AI result plus two highlighted passages.",
+    confidence: "high",
+    warnings: [],
+  }));
+  assert.equal(parsed.highlightedPassages.length, 2);
+  assert.deepEqual(parsed.flaggedExcerpts, ["Creditors must assess whether management is reliably monitored"]);
+  assert.equal(parsed.highlightedPassages[0].colour, "yellow");
+  assert.equal(parsed.highlightedPassages[1].classification, "human");
+});
+
 test("canonicalises branded detector labels returned with interface suffixes", () => {
   const parsed = normaliseDetectorScreenshotAnalysis(JSON.stringify({
     detector: "GPTZero AI Detection",

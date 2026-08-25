@@ -275,10 +275,17 @@ function externalFeedbackExecutionScope(plan, diagnostics, { requestedIntensity,
   const maxTargets = Math.max(1, Math.floor(items.length * capRatio));
   const minimumTargets = Math.max(1, Math.floor(items.length * floorRatio));
   const targetParagraphs = new Set(detectorFeedback.target_paragraph_indices || []);
+  const openingParagraphs = [...new Set(items
+    .filter((item) => !FORMAL_KEEP_CODES.has(item.decisionCode))
+    .map((item) => item.paragraphBlockIndex)
+    .filter(Number.isInteger))].sort((a, b) => a - b).slice(0, 2);
+  if (detectorFeedback.global_candidate_failure || Number(detectorFeedback.mean_ai_score) >= 95) {
+    openingParagraphs.forEach((index) => targetParagraphs.add(index));
+  }
   const ranked = [
+    ...items.filter((item) => targetParagraphs.has(item.paragraphBlockIndex)).map((item) => item.sentenceIndex),
     ...(diagnostics?.machine_language_forensics?.target_sentence_indices || []),
     ...(diagnostics?.discourse_regularity_forensics?.priority_sentence_indices || []),
-    ...items.filter((item) => targetParagraphs.has(item.paragraphBlockIndex)).map((item) => item.sentenceIndex),
     ...items.map((item) => item.sentenceIndex),
   ].filter(Number.isInteger);
   const eligible = new Set(items.filter((item) => !FORMAL_KEEP_CODES.has(item.decisionCode)).map((item) => item.sentenceIndex));
@@ -316,6 +323,7 @@ function externalFeedbackExecutionScope(plan, diagnostics, { requestedIntensity,
     newly_escalated_sentence_count: escalated,
     targeted_sentence_indices: targetIndices,
     target_paragraph_indices: [...targetParagraphs],
+    opening_paragraph_indices: openingParagraphs,
     mode: requestedIntensity === "deep" ? "candidate_linked_discourse_reconstruction" : "candidate_linked_sentence_flow_reconstruction",
     principle: "A verified failed candidate widens execution within the author-selected mode; preservation of research content remains mandatory.",
   };
