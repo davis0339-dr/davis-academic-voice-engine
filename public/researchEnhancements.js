@@ -4,7 +4,8 @@
   const $ = (id) => document.getElementById(id);
   const OBSERVATION_STORAGE_KEY = "academicVoice.detectorObservations.v1";
   const MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
-  const ALLOWED_SCREENSHOT_TYPES = new Set(["image/png", "image/jpeg"]);
+  const MAX_PDF_BYTES = 5 * 1024 * 1024;
+  const ALLOWED_SCREENSHOT_TYPES = new Set(["image/png", "image/jpeg", "application/pdf"]);
   const upstreamFetch = window.fetch.bind(window);
   let voiceRecognition = null;
   let voiceFinalTranscript = "";
@@ -129,16 +130,17 @@
     const preview = $("detectorScreenshotPreview");
     const file = input?.files?.[0];
     if (!file) {
-      if (status) status.textContent = "Choose one PNG or JPEG screenshot first.";
+      if (status) status.textContent = "Choose one PNG, JPEG or PDF detector report first.";
       return;
     }
-    if (!ALLOWED_SCREENSHOT_TYPES.has(file.type)) {
-      if (status) status.textContent = "Only PNG or JPEG screenshots are accepted.";
+    const mimeType = file.type || (/\.pdf$/i.test(file.name) ? "application/pdf" : "");
+    if (!ALLOWED_SCREENSHOT_TYPES.has(mimeType)) {
+      if (status) status.textContent = "Only PNG/JPEG screenshots and PDF detector reports are accepted.";
       input.value = "";
       return;
     }
-    if (file.size > MAX_SCREENSHOT_BYTES) {
-      if (status) status.textContent = "Screenshot is larger than 2 MB. Crop/compress the result summary and try again.";
+    if (file.size > (mimeType === "application/pdf" ? MAX_PDF_BYTES : MAX_SCREENSHOT_BYTES)) {
+      if (status) status.textContent = mimeType === "application/pdf" ? "PDF report is larger than 5 MB." : "Screenshot is larger than 2 MB. Crop/compress the result summary and try again.";
       input.value = "";
       return;
     }
@@ -148,7 +150,7 @@
       const response = await upstreamFetch("/api/detector-screenshot", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mimeType: file.type, imageBase64: base64 }),
+        body: JSON.stringify({ mimeType, fileBase64: base64 }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || data.error || "Screenshot analysis failed");
@@ -186,16 +188,16 @@
       const box = document.createElement("section");
       box.className = "detector-screenshot-card";
       box.innerHTML = `
-        <h4>Upload one detector-result screenshot</h4>
-        <p class="muted">Optional shortcut for a result summary from Turnitin, GPTZero or another detector. One PNG/JPEG only, maximum 2 MB. Upload the summary screen, not a Turnitin report/PDF. Davis extracts only visible scores/labels so you do not have to count highlighted words manually.</p>
+        <h4>Upload a detector-result report</h4>
+        <p class="muted">Optional shortcut for a result from Turnitin, GPTZero or another detector. Upload a PNG/JPEG result screenshot (maximum 2 MB) or a full PDF report (maximum 5 MB).</p>
         <div class="file-toolbar">
-          <label class="file-button" for="detectorScreenshotInput">Choose detector screenshot</label>
-          <input id="detectorScreenshotInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" />
-          <button id="analyseDetectorScreenshotBtn" type="button">Read screenshot</button>
+          <label class="file-button" for="detectorScreenshotInput">Choose detector report</label>
+          <input id="detectorScreenshotInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,application/pdf,.png,.jpg,.jpeg,.pdf" />
+          <button id="analyseDetectorScreenshotBtn" type="button">Read report</button>
           <span id="detectorScreenshotStatus" class="file-status">No image selected.</span>
         </div>
         <div id="detectorScreenshotPreview"></div>
-        <p class="muted">Privacy: the image is request-scoped and is not stored by Davis. Reading the screenshot alone does not affect generation. After you review and save the extracted observation against the exact displayed candidate, it becomes planning evidence when you explicitly choose Feedback-guided refinement.</p>`;
+        <p class="muted">Privacy: the uploaded file is request-scoped and is not stored by Davis. Reading it alone does not affect generation. After you review and save the extracted observation against the exact displayed candidate, it becomes planning evidence when you explicitly choose Feedback-guided refinement.</p>`;
       if (manual) panel.insertBefore(box, manual);
       else panel.prepend(box);
       $("detectorScreenshotInput")?.addEventListener("change", () => {

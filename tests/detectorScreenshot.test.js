@@ -2,18 +2,30 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MAX_DETECTOR_SCREENSHOT_BYTES,
+  MAX_DETECTOR_REPORT_PDF_BYTES,
   validateDetectorScreenshotPayload,
   normaliseDetectorScreenshotAnalysis,
 } from "../server/lib/detectorScreenshot.js";
 
-test("accepts one small PNG/JPEG base64 payload and rejects unsupported types", () => {
+test("accepts PNG/JPEG screenshots and rejects unsupported report types", () => {
   const payload = Buffer.from("small-image-fixture").toString("base64");
   const result = validateDetectorScreenshotPayload({ mimeType: "image/png", imageBase64: payload });
   assert.equal(result.bytes, Buffer.byteLength("small-image-fixture"));
 
   assert.throws(
-    () => validateDetectorScreenshotPayload({ mimeType: "application/pdf", imageBase64: payload }),
-    /PNG or JPEG/
+    () => validateDetectorScreenshotPayload({ mimeType: "text/plain", fileBase64: payload }),
+    /PNG, JPEG or PDF/
+  );
+});
+
+test("accepts a signed PDF detector report and rejects disguised PDF data", () => {
+  const pdf = Buffer.from("%PDF-1.7\nGPTZero report fixture").toString("base64");
+  const result = validateDetectorScreenshotPayload({ mimeType: "application/pdf", fileBase64: pdf });
+  assert.equal(result.kind, "pdf_report");
+  assert.equal(result.maximumBytes, MAX_DETECTOR_REPORT_PDF_BYTES);
+  assert.throws(
+    () => validateDetectorScreenshotPayload({ mimeType: "application/pdf", fileBase64: Buffer.from("not-a-pdf").toString("base64") }),
+    /valid PDF signature/
   );
 });
 
@@ -22,6 +34,14 @@ test("rejects screenshots above the decoded 2 MB cap", () => {
   assert.throws(
     () => validateDetectorScreenshotPayload({ mimeType: "image/jpeg", imageBase64: huge }),
     /2 MB/
+  );
+});
+
+test("rejects PDF reports above the decoded 5 MB cap", () => {
+  const huge = Buffer.concat([Buffer.from("%PDF-"), Buffer.alloc(MAX_DETECTOR_REPORT_PDF_BYTES, 1)]).toString("base64");
+  assert.throws(
+    () => validateDetectorScreenshotPayload({ mimeType: "application/pdf", fileBase64: huge }),
+    /5 MB/
   );
 });
 

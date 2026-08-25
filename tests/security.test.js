@@ -108,6 +108,19 @@ test("detector research payload accepts bounded observations and manuscript stri
   assert.equal(nextCalled, true);
 });
 
+test("detector evidence payload accepts bounded PDF reports and rejects unsupported files", () => {
+  const valid = mockReq({ method: "POST", path: "/detector-screenshot", body: { mimeType: "application/pdf", fileBase64: "A".repeat(100) } });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({ method: "POST", path: "/detector-screenshot", body: { mimeType: "text/plain", fileBase64: "A" } });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("unsupported detector report must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
+});
+
 test("detector research payload rejects oversized or malformed observation records", () => {
   const req = mockReq({
     method: "POST",

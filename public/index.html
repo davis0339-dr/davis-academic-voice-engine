@@ -163,14 +163,14 @@
 
     <section id="detectorScreenshotGateway" class="detector-screenshot-card detector-screenshot-gateway">
       <div class="detector-gateway-title">
-        <h4>Upload external detector result screenshot</h4>
-        <span class="detector-gateway-version">Detector Gateway v1.0.0</span>
+        <h4>Upload external detector result report</h4>
+        <span class="detector-gateway-version">Detector Gateway v1.1.0</span>
       </div>
-      <p class="muted">Choose or drop up to six PNG/JPEG result screenshots (maximum 2 MB each), review the extracted values, then save them as one evidence bundle against the exact revision shown in the editor. Each screenshot read uses one language-model provider call; the call count is shown before you start. Screenshot reading never runs automatically. Manual score entry is free.</p>
+      <p class="muted">Choose or drop up to six detector-result files: PNG/JPEG screenshots (maximum 2 MB each) or full PDF reports (maximum 5 MB each). A complete PDF is usually preferable to many screenshots because it can retain the overall score and flagged passages in one file, although a multi-page PDF may consume more provider input credit than one screenshot. Review the extracted values before linking them to the exact revision. Each file uses one language-model provider call; the call count is shown before you start. Reading never runs automatically. Manual score entry is free.</p>
       <div class="detector-gateway-controls">
-        <label>Detector shown in screenshot
+        <label>Detector shown in report
           <select id="detectorScreenshotDetector">
-            <option value="auto" selected>Auto-detect from screenshot</option>
+            <option value="auto" selected>Auto-detect from report</option>
             <option value="GPTZero">GPTZero</option>
             <option value="Turnitin">Turnitin</option>
             <option value="Copyleaks">Copyleaks</option>
@@ -179,14 +179,14 @@
             <option value="Other">Other</option>
           </select>
         </label>
-        <label>Screenshot file
-          <input id="detectorScreenshotInput" type="file" multiple accept="image/png,image/jpeg,.png,.jpg,.jpeg" />
+        <label>Detector report file
+          <input id="detectorScreenshotInput" type="file" multiple accept="image/png,image/jpeg,application/pdf,.png,.jpg,.jpeg,.pdf" />
         </label>
-        <button id="chooseDetectorEvidenceScreenshotBtn" type="button">Choose from device</button>
-        <button id="analyseDetectorScreenshotBtn" class="primary" type="button">Read selected screenshot(s)</button>
+        <button id="chooseDetectorEvidenceScreenshotBtn" type="button">Choose detector report file(s)</button>
+        <button id="analyseDetectorScreenshotBtn" class="primary" type="button">Read selected report file(s)</button>
       </div>
-      <div id="detectorScreenshotDropZone" tabindex="0" role="button" aria-label="Drop or paste detector screenshots">Drop up to six PNG/JPEG screenshots here, click to choose files, or focus this box and paste a screenshot from the clipboard.</div>
-      <span id="detectorScreenshotStatus" class="file-status">No detector-result screenshot selected.</span>
+      <div id="detectorScreenshotDropZone" tabindex="0" role="button" aria-label="Drop detector report files">Drop up to six PNG/JPEG/PDF detector reports here, click to choose files, or focus this box and paste an image from the clipboard.</div>
+      <span id="detectorScreenshotStatus" class="file-status">No detector-result report selected.</span>
       <div id="detectorScreenshotPreview"></div>
     </section>
 
@@ -268,7 +268,7 @@
 <script src="/fileImport.js"></script>
 <script src="/runtimeGuard.js"></script>
 <script src="/modeControlGuard.js?v=1.0.0"></script>
-<script src="/detectorScreenshotGateway.js?v=1.0.0"></script>
+<script src="/detectorScreenshotGateway.js?v=1.1.0"></script>
 <script src="/app.js"></script>
 <script src="/workspaceHandoff.js" defer></script>
 <script src="/optionalFeatures.js" defer></script>

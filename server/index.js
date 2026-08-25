@@ -41,7 +41,8 @@ app.use("/api", generalApiLimiter, enforceSameOrigin, protectExpensiveApi, expen
 // evidence links, so it shares the larger chapter-scale JSON envelope.
 app.use("/api/jobs", express.json({ limit: "1mb", strict: true, type: "application/json" }));
 app.use("/api/research/evidence-enhance-candidate", express.json({ limit: "1mb", strict: true, type: "application/json" }));
-app.use("/api/detector-screenshot", express.json({ limit: "3mb", strict: true, type: "application/json" }));
+// A base64-encoded 5 MB PDF occupies roughly 6.7 MB in JSON.
+app.use("/api/detector-screenshot", express.json({ limit: "8mb", strict: true, type: "application/json" }));
 app.use("/api", express.json({ limit: "512kb", strict: true, type: "application/json" }));
 app.use(jsonBodyErrorHandler);
 app.use("/api", validateApiPayload);

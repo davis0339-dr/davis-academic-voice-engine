@@ -207,12 +207,14 @@ export function validateApiPayload(req, res, next) {
   }
 
   if (path === "/detector-screenshot") {
-    const { mimeType, imageBase64 } = req.body;
-    if (!["image/png", "image/jpeg"].includes(mimeType)) {
-      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector screenshot must be PNG or JPEG.", requestId: req.requestId });
+    const { mimeType, fileBase64, imageBase64 } = req.body;
+    if (!["image/png", "image/jpeg", "application/pdf"].includes(mimeType)) {
+      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector evidence must be PNG, JPEG or PDF.", requestId: req.requestId });
     }
-    if (typeof imageBase64 !== "string" || imageBase64.length === 0 || imageBase64.length > 2_900_000) {
-      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector screenshot payload is missing or exceeds the bounded image envelope.", requestId: req.requestId });
+    const encoded = typeof fileBase64 === "string" ? fileBase64 : imageBase64;
+    const maximumEncodedLength = mimeType === "application/pdf" ? 7_100_000 : 2_900_000;
+    if (typeof encoded !== "string" || encoded.length === 0 || encoded.length > maximumEncodedLength) {
+      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector report payload is missing or exceeds the bounded file envelope.", requestId: req.requestId });
     }
     return next();
   }

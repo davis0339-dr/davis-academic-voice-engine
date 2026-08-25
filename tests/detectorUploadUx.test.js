@@ -5,11 +5,11 @@ import fs from "node:fs";
 const ux = fs.readFileSync(new URL("../public/detectorEvidenceUploadUX.js", import.meta.url), "utf8");
 const optional = fs.readFileSync(new URL("../public/optionalFeatures.js", import.meta.url), "utf8");
 
-test("detector evidence screenshot uses a real clickable button", () => {
+test("detector evidence report uses a real clickable button", () => {
   assert.match(ux, /chooseDetectorEvidenceScreenshotBtn/);
-  assert.match(ux, /Choose detector evidence screenshot/);
+  assert.match(ux, /Choose detector report file\(s\)/);
   assert.match(ux, /input\.click\(\)/);
-  assert.match(ux, /Read selected screenshot/);
+  assert.match(ux, /Read selected report file\(s\)/);
 });
 
 test("detector selector and upload status are explicitly laid out", () => {
@@ -17,6 +17,7 @@ test("detector selector and upload status are explicitly laid out", () => {
   assert.match(ux, /detector-selector-control/);
   assert.match(ux, /Selected: \$\{file\.name\}/);
   assert.match(ux, /grid-template-columns:minmax\(250px,360px\)/);
+  assert.match(ux, /card\.id !== "detectorScreenshotGateway"/);
 });
 
 test("detector evidence upload UX loads after detector bridge", () => {

@@ -21,7 +21,7 @@
       chooseButton.id = "chooseDetectorEvidenceScreenshotBtn";
       chooseButton.type = "button";
       chooseButton.className = "detector-evidence-upload-button primary";
-      chooseButton.textContent = "Choose detector evidence screenshot";
+      chooseButton.textContent = "Choose detector report file(s)";
       chooseButton.setAttribute("aria-controls", "detectorScreenshotInput");
       chooseButton.addEventListener("click", () => input.click());
 
@@ -29,6 +29,7 @@
       if (readButton) controls.insertBefore(chooseButton, readButton);
       else controls.appendChild(chooseButton);
     }
+    chooseButton.textContent = "Choose detector report file(s)";
 
     const legacyLabel = card.querySelector('label[for="detectorScreenshotInput"]');
     if (legacyLabel) {
@@ -41,26 +42,28 @@
       const selectLabel = detectorSelect.closest("label");
       if (selectLabel) selectLabel.classList.add("detector-selector-field");
       detectorSelect.classList.add("detector-selector-control");
-      detectorSelect.setAttribute("aria-label", "Detector shown in screenshot");
+      detectorSelect.setAttribute("aria-label", "Detector shown in report");
     }
 
     const readButton = $("analyseDetectorScreenshotBtn");
     if (readButton) {
       readButton.classList.add("detector-read-button");
-      readButton.textContent = "Read selected screenshot";
+      readButton.textContent = "Read selected report file(s)";
     }
 
     const status = $("detectorScreenshotStatus");
     if (status) status.classList.add("detector-upload-status");
 
-    if (!input.dataset.explicitUploadBound) {
+    // The primary gateway owns validation and the multi-file cost status. This
+    // fallback binding is only for legacy pages that do not mount that gateway.
+    if (card.id !== "detectorScreenshotGateway" && !input.dataset.explicitUploadBound) {
       input.dataset.explicitUploadBound = "true";
       input.addEventListener("change", () => {
         const file = input.files?.[0];
         if (!status) return;
         status.textContent = file
-          ? `Selected: ${file.name} · ${(file.size / 1024).toFixed(0)} KB. Press “Read selected screenshot”.`
-          : "No detector evidence screenshot selected.";
+          ? `Selected: ${file.name} · ${(file.size / 1024).toFixed(0)} KB. Press “Read selected report file(s)”.`
+          : "No detector report file selected.";
       });
     }
 

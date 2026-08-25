@@ -2,8 +2,9 @@
   "use strict";
 
   const STORAGE_KEY = "academicVoice.detectorObservations.v1";
-  const MAX_BYTES = 2 * 1024 * 1024;
-  const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
+  const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+  const MAX_PDF_BYTES = 5 * 1024 * 1024;
+  const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "application/pdf"]);
   const MAX_FILES = 6;
   let pendingFiles = [];
   let extractedObservations = [];
@@ -24,31 +25,40 @@
   function fileToBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onerror = () => reject(new Error("Could not read the screenshot."));
+      reader.onerror = () => reject(new Error("Could not read the detector report file."));
       reader.onload = () => {
         const text = String(reader.result || "");
         const comma = text.indexOf(",");
-        if (comma < 0) return reject(new Error("Could not decode the screenshot."));
+        if (comma < 0) return reject(new Error("Could not decode the detector report file."));
         resolve(text.slice(comma + 1));
       };
       reader.readAsDataURL(file);
     });
   }
 
+  function normaliseMimeType(file) {
+    if (file?.type) return file.type;
+    return /\.pdf$/i.test(file?.name || "") ? "application/pdf" : "";
+  }
+
   function validateFile(file) {
-    if (!file) throw new Error("Choose at least one PNG or JPEG detector-result screenshot first.");
-    if (!ALLOWED_TYPES.has(file.type)) throw new Error("Only PNG or JPEG screenshots are accepted.");
-    if (file.size > MAX_BYTES) throw new Error("Screenshot is larger than 2 MB. Crop or compress the visible result summary and try again.");
-    return file;
+    if (!file) throw new Error("Choose at least one PNG, JPEG or PDF detector-result file first.");
+    const mimeType = normaliseMimeType(file);
+    if (!ALLOWED_TYPES.has(mimeType)) throw new Error("Only PNG/JPEG screenshots and PDF detector reports are accepted.");
+    const maximumBytes = mimeType === "application/pdf" ? MAX_PDF_BYTES : MAX_IMAGE_BYTES;
+    if (file.size > maximumBytes) throw new Error(mimeType === "application/pdf"
+      ? "PDF report is larger than 5 MB. Download a smaller report or split it before uploading."
+      : "Screenshot is larger than 2 MB. Crop or compress the visible result summary and try again.");
+    return { file, mimeType };
   }
 
   function acceptFiles(files) {
     try {
       const selected = [...(files || [])].slice(0, MAX_FILES).map(validateFile);
-      if (!selected.length) throw new Error("Choose at least one PNG or JPEG detector-result screenshot first.");
+      if (!selected.length) throw new Error("Choose at least one PNG, JPEG or PDF detector-result file first.");
       pendingFiles = selected;
       const calls = pendingFiles.length;
-      status(`Selected ${calls} screenshot${calls === 1 ? "" : "s"}. Reading them will use ${calls} provider call${calls === 1 ? "" : "s"}.`);
+      status(`Selected ${calls} detector report file${calls === 1 ? "" : "s"}. Reading them will use ${calls} provider call${calls === 1 ? "" : "s"}.`);
       const drop = $("detectorScreenshotDropZone");
       if (drop) drop.dataset.hasFile = "true";
     } catch (err) {
@@ -88,7 +98,7 @@
       flaggedExcerpts: Array.isArray(observation.flaggedExcerpts) ? observation.flaggedExcerpts : [],
       notes: observation.notes || null,
       recordedAt: new Date().toISOString(),
-      evidenceSource: "uploaded_detector_screenshot",
+      evidenceSource: "uploaded_detector_report",
     };
     rows.push(window.AcademicRewriteLineage?.annotateObservation
       ? window.AcademicRewriteLineage.annotateObservation(row, $("revisedText")?.value || "")
@@ -115,7 +125,7 @@
     if (!preview) return;
     preview.innerHTML = observations.map((observation, index) => `
       <div class="detector-gateway-result">
-        <div><strong>${esc(observation.detector || "Detector result")} · screenshot ${index + 1}</strong><span>${esc(observation.classification || "uncertain")}</span></div>
+        <div><strong>${esc(observation.detector || "Detector result")} · report file ${index + 1}</strong><span>${esc(observation.classification || "uncertain")}</span></div>
         <div class="detector-gateway-metrics">
           ${Number.isFinite(Number(observation.aiScore)) ? `<span>AI <strong>${esc(observation.aiScore)}%</strong></span>` : ""}
           ${Number.isFinite(Number(observation.humanScore)) ? `<span>Human <strong>${esc(observation.humanScore)}%</strong></span>` : ""}
@@ -143,28 +153,28 @@
   async function analyseSelected() {
     try {
       const selected = pendingFiles.length ? pendingFiles : [...($("detectorScreenshotInput")?.files || [])].slice(0, MAX_FILES).map(validateFile);
-      if (!selected.length) throw new Error("Choose at least one PNG or JPEG screenshot first.");
+      if (!selected.length) throw new Error("Choose at least one PNG, JPEG or PDF detector-result file first.");
       extractedObservations = [];
       for (let index = 0; index < selected.length; index += 1) {
-        const file = selected[index];
-        status(`Reading screenshot ${index + 1} of ${selected.length}…`);
+        const { file, mimeType } = selected[index];
+        status(`Reading detector file ${index + 1} of ${selected.length}…`);
         const imageBase64 = await fileToBase64(file);
         const response = await fetch("/api/detector-screenshot", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ mimeType: file.type, imageBase64 }),
+          body: JSON.stringify({ mimeType, fileBase64: imageBase64 }),
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(`Screenshot ${index + 1}: ${data.message || data.error || "analysis failed"}`);
+        if (!response.ok) throw new Error(`Detector file ${index + 1}: ${data.message || data.error || "analysis failed"}`);
         const observation = { ...(data.observation || {}) };
         const selectedDetector = $("detectorScreenshotDetector")?.value || "auto";
         observation.detector = selectedDetector !== "auto" ? selectedDetector : canonicalDetector(observation.detector);
-        observation.notes = `Screenshot extraction (${observation.confidence || "unknown"} confidence): ${observation.visibleSummary || ""}`.slice(0, 1000);
+        observation.notes = `${mimeType === "application/pdf" ? "PDF report" : "Screenshot"} extraction (${observation.confidence || "unknown"} confidence): ${observation.visibleSummary || ""}`.slice(0, 1000);
         extractedObservations.push(observation);
       }
       populateManualForm(extractedObservations[extractedObservations.length - 1]);
       renderExtracted(extractedObservations);
-      status(`Read ${extractedObservations.length} screenshot${extractedObservations.length === 1 ? "" : "s"}. Review the extracted evidence, then click “Save and link this evidence bundle”. Nothing is linked until that button is pressed.`);
+      status(`Read ${extractedObservations.length} detector report file${extractedObservations.length === 1 ? "" : "s"}. Review the extracted evidence, then click “Save and link this evidence bundle”. Nothing is linked until that button is pressed.`);
     } catch (err) {
       status(err.message || "Screenshot analysis failed.", true);
     }
@@ -205,12 +215,12 @@
     });
     drop.addEventListener("paste", (event) => {
       const item = [...(event.clipboardData?.items || [])].find((row) => row.type === "image/png" || row.type === "image/jpeg");
-      if (!item) return status("Clipboard does not contain a PNG/JPEG screenshot.", true);
+      if (!item) return status("Clipboard does not contain a PNG/JPEG screenshot. Choose PDF reports using the file picker.", true);
       event.preventDefault();
       acceptFiles([item.getAsFile()]);
     });
 
-    // This is intentionally delegated: the compact “Upload result screenshot”
+    // This is intentionally delegated: the compact “Upload detector result”
     // button is created later after a rewrite. It must still open a real device
     // picker without depending on an optional enhancer having mounted correctly.
     document.addEventListener("click", (event) => {

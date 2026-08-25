@@ -13,7 +13,7 @@ export const detectorScanRouter = Router();
 
 const EXTERNAL_DETECTOR_POLICY = Object.freeze({
   state: "DISABLED_BY_DESIGN",
-  message: "Live third-party detector integrations are disabled. External detector results may be recorded manually or from a user-supplied result screenshot for independent comparison, but manuscript text is not sent to detector vendors by this application.",
+  message: "Live third-party detector integrations are disabled. External detector results may be recorded manually or from a user-supplied result screenshot or PDF report for independent comparison, but manuscript text is not sent to detector vendors by this application.",
 });
 
 detectorScanRouter.get("/health/detectors", (_req, res) => {
@@ -66,24 +66,27 @@ detectorScanRouter.post("/detector-screenshot", async (req, res) => {
     if (!llmProvider.isConfigured()) {
       return res.status(503).json({
         error: "NOT_CONFIGURED",
-        message: "The language-model provider is not configured, so screenshot reading is unavailable.",
+        message: "The language-model provider is not configured, so detector report reading is unavailable.",
         requestId: req.requestId,
       });
     }
 
+    const reportContent = validated.mimeType === "application/pdf"
+      ? {
+          type: "document",
+          source: { type: "base64", media_type: validated.mimeType, data: validated.fileBase64 },
+          title: "External detector report",
+        }
+      : {
+          type: "image",
+          source: { type: "base64", media_type: validated.mimeType, data: validated.fileBase64 },
+        };
     const response = await llmProvider.callAnthropic({
-      system: "Extract only visibly supported information from the supplied detector-result screenshot. Return the requested JSON only.",
+      system: "Extract only explicitly supported information from the supplied detector-result screenshot or PDF report. Return the requested JSON only.",
       messages: [{
         role: "user",
         content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: validated.mimeType,
-              data: validated.imageBase64,
-            },
-          },
+          reportContent,
           { type: "text", text: detectorScreenshotPrompt() },
         ],
       }],
@@ -93,15 +96,17 @@ detectorScanRouter.post("/detector-screenshot", async (req, res) => {
     const observation = normaliseDetectorScreenshotAnalysis(response.text);
     return res.json({
       observation,
-      image: {
+      evidence_file: {
         mimeType: validated.mimeType,
         bytes: validated.bytes,
+        kind: validated.kind,
         persisted: false,
-        maxBytes: 2 * 1024 * 1024,
+        maxBytes: validated.maximumBytes,
       },
       policy: {
         purpose: "manual external detector observation extraction",
         screenshot_read_alone_feeds_generation: false,
+        report_read_alone_feeds_generation: false,
         requires_researcher_save_against_exact_candidate: true,
         saved_candidate_link_feeds_next_rewrite_planner: true,
         detector_vendor_contacted: false,
@@ -109,10 +114,10 @@ detectorScanRouter.post("/detector-screenshot", async (req, res) => {
       requestId: req.requestId,
     });
   } catch (err) {
-    if (err?.status === 413 || err?.code === "SCREENSHOT_TOO_LARGE") {
-      return res.status(413).json({ error: err.code || "SCREENSHOT_TOO_LARGE", message: err.message, requestId: req.requestId });
+    if (err?.status === 413 || err?.code === "REPORT_TOO_LARGE") {
+      return res.status(413).json({ error: err.code || "REPORT_TOO_LARGE", message: err.message, requestId: req.requestId });
     }
-    if (["UNSUPPORTED_SCREENSHOT_TYPE", "BAD_SCREENSHOT_DATA"].includes(err?.code)) {
+    if (["UNSUPPORTED_REPORT_TYPE", "BAD_REPORT_DATA"].includes(err?.code)) {
       return res.status(400).json({ error: err.code, message: err.message, requestId: req.requestId });
     }
     const state = err?.healthState || HealthState.PROVIDER_ERROR;
@@ -125,7 +130,7 @@ detectorScanRouter.post("/detector-screenshot", async (req, res) => {
       502;
     return res.status(httpStatus).json({
       error: err?.code || state,
-      message: err?.message || "Detector screenshot analysis failed.",
+      message: err?.message || "Detector report analysis failed.",
       requestId: req.requestId,
     });
   }
