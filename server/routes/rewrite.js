@@ -21,6 +21,7 @@ import { DEFAULT_EXPAND_MIN_ADDITION_WORDS, manuscriptWordCount } from "../lib/l
 import { auditFeedbackRefinementChange, resolveDetectorFeedback } from "../lib/detectorFeedback.js";
 import { auditPreservation } from "../lib/preservation.js";
 import { analyseResidualWriting } from "../lib/residualDiagnostics.js";
+import { assessAuthorialAnchor, AUTHORIAL_ANCHOR_MAX_WORDS } from "../lib/authorialAnchor.js";
 
 export const rewriteRouter = Router();
 
@@ -73,7 +74,7 @@ function refreshIterativeQuality(sourceText, result, revisedText, rewriteLineage
 
 rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => {
   const requestId = randomUUID();
-  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage, detectorFeedback, refinementMode } = req.body || {};
+  const { text, styleFilters, rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, revisionPurpose, rewriteLineage, detectorFeedback, refinementMode, authorialAnchor } = req.body || {};
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
   const minimumExpansionWords = DEFAULT_EXPAND_MIN_ADDITION_WORDS;
   const rootSourceText = typeof rewriteLineage?.rootSourceText === "string" ? rewriteLineage.rootSourceText.trim() : "";
@@ -94,6 +95,9 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     enforceWordLimit(text, candidateRefinement ? SINGLE_REFINEMENT_WORD_LIMIT : SINGLE_EDITOR_WORD_LIMIT, candidateRefinement ? "Tested-candidate refinement" : "Single-text editor");
     if (typeof rewriteLineage?.rootSourceText === "string" && rewriteLineage.rootSourceText.trim()) {
       enforceWordLimit(rewriteLineage.rootSourceText, SINGLE_EDITOR_WORD_LIMIT, "Rewrite lineage root source");
+    }
+    if (typeof authorialAnchor === "string" && authorialAnchor.trim()) {
+      enforceWordLimit(authorialAnchor, AUTHORIAL_ANCHOR_MAX_WORDS, "Researcher-authored calibration sample");
     }
   } catch (err) {
     return res.status(413).json({
@@ -126,6 +130,15 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     lengthPreference,
   });
   const detectorFeedbackProfile = resolveDetectorFeedback(detectorFeedback, priorCandidateHistory, candidateRefinement ? text : "");
+  const authorialAnchorAssessment = assessAuthorialAnchor(authorialAnchor);
+  if (candidateRefinement && detectorFeedbackProfile?.high_machine_pattern_signal && !authorialAnchorAssessment.sufficient) {
+    return res.status(422).json({
+      error: "AUTHORIAL_ANCHOR_REQUIRED",
+      message: `This detector-guided retry requires ${authorialAnchorAssessment.minimum_words}-${authorialAnchorAssessment.maximum_words} words genuinely written by the researcher. Another blind model-only reconstruction would repeat the failure pattern and spend provider credits without an authorial reference.`,
+      authorial_anchor: authorialAnchorAssessment,
+      requestId,
+    });
+  }
 
   const runRewrite = () => rewrite({
     sourceText: text,
@@ -139,6 +152,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     priorCandidateHistory,
     minimumExpansionWords,
     detectorFeedback: detectorFeedbackProfile,
+    authorialAnchor,
   });
 
   function applyDualAnchorPreservation(result) {

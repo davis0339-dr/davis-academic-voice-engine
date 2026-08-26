@@ -214,6 +214,19 @@ test("rewrite accepts only explicit source or tested-candidate refinement modes"
   assert.equal(invalidRes.statusCode, 400);
 });
 
+test("rewrite accepts a bounded authorial calibration sample and rejects an oversized one", () => {
+  const valid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Candidate text.", authorialAnchor: "Researcher-authored prose. ".repeat(100) } });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Candidate text.", authorialAnchor: "x".repeat(12001) } });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("oversized authorial sample must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
+});
+
 test("payload validator does not require a JSON body for chunk retry routes", () => {
   const req = mockReq({ method: "POST", path: "/jobs/id/chunks/1/retry", body: undefined });
   const res = mockRes();

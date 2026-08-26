@@ -491,6 +491,7 @@ async function runAnalyseAndRevise(options = {}) {
         naturalisation: $("naturalisation").value,
         revisionPurpose: $("revisionPurpose").value,
         refinementMode: refinement ? "tested_candidate" : "source",
+        authorialAnchor: refinement ? (window.AcademicAuthorialAnchor?.get?.() || "") : "",
       }),
     });
     const data = await res.json();

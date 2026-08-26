@@ -8,6 +8,23 @@
   const words = (text) => typeof window.AcademicManuscriptWordCount === "function"
     ? window.AcademicManuscriptWordCount(text)
     : String(text || "").trim().split(/\s+/u).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
+  const ANCHOR_STORAGE_KEY = "academicVoice.authorialAnchor.v1";
+  const ANCHOR_MIN_WORDS = 120;
+  const ANCHOR_MAX_WORDS = 700;
+
+  function loadAuthorialAnchor() {
+    try { return localStorage.getItem(ANCHOR_STORAGE_KEY) || ""; } catch { return ""; }
+  }
+
+  function saveAuthorialAnchor(value) {
+    try { localStorage.setItem(ANCHOR_STORAGE_KEY, String(value || "")); } catch {}
+  }
+
+  function anchorState() {
+    const text = $("authorialAnchorText")?.value || loadAuthorialAnchor();
+    const count = words(text);
+    return { text, count, valid: count >= ANCHOR_MIN_WORDS && count <= ANCHOR_MAX_WORDS };
+  }
 
   function candidatePanel() {
     let panel = $("candidateRefinementPreflight");
@@ -77,10 +94,13 @@
         <textarea readonly rows="6">${esc(version.text || "")}</textarea>
       </details>`).join("");
 
+    const anchor = anchorState();
     const readiness = preflight.observation_count === 0
       ? "Test this exact revision externally, then save at least one result against it."
       : preflight.remaining_refinements <= 0
         ? "The two bounded feedback-guided refinements have been used. Compare the retained versions instead of creating an uncontrolled rewrite chain."
+        : !anchor.valid
+          ? `Detector evidence is linked to Revision V${preflight.generation}. Add ${ANCHOR_MIN_WORDS}-${ANCHOR_MAX_WORDS} words of your own writing below before spending another refinement request.`
         : `${preflight.observation_count} saved detector observation(s) are linked to Revision V${preflight.generation}. The next Analyse & Revise action will apply them automatically to this exact revision.`;
 
     panel.innerHTML = `
@@ -97,15 +117,32 @@
       </div>
       ${preflight.observations.length ? `<div class="candidate-refinement-evidence">${preflight.observations.map((row) => `<span>${esc(observationLabel(row))}</span>`).join("")}</div>` : ""}
       <p class="muted">This action edits the tested revision while auditing facts, citations, numbers, qualifications, study design and final length against the retained original. It starts a paid reconstruction request and may use bounded preservation or residual calls. It does not contact the detector vendor.</p>
-      <button id="refineTestedCandidateBtn" class="primary" type="button" ${preflight.ready ? "" : "disabled"}>Refine this tested revision</button>
+      <label class="candidate-authorial-anchor"><strong>Your own writing sample</strong>
+        <span>Paste ${ANCHOR_MIN_WORDS}-${ANCHOR_MAX_WORDS} words that you wrote without AI assistance. It calibrates reasoning order and sentence construction; its facts and phrases must never be inserted into the manuscript.</span>
+        <textarea id="authorialAnchorText" rows="7" maxlength="12000" placeholder="Paste a representative passage from your own writing…">${esc(anchor.text)}</textarea>
+        <small id="authorialAnchorStatus">${esc(anchor.count)} words · ${anchor.valid ? "ready" : `needs ${ANCHOR_MIN_WORDS}-${ANCHOR_MAX_WORDS} words`}</small>
+      </label>
+      <button id="refineTestedCandidateBtn" class="primary" type="button" ${(preflight.ready && anchor.valid) ? "" : "disabled"}>Refine this tested revision</button>
       <span id="candidateRefinementStatus" class="file-status"></span>
       ${versions ? `<details class="candidate-version-history"><summary>Compare retained revision versions</summary>${versions}</details>` : ""}`;
+
+    $("authorialAnchorText")?.addEventListener("input", (event) => {
+      saveAuthorialAnchor(event.target.value);
+      const current = anchorState();
+      const status = $("authorialAnchorStatus");
+      if (status) status.textContent = `${current.count} words · ${current.valid ? "ready" : `needs ${ANCHOR_MIN_WORDS}-${ANCHOR_MAX_WORDS} words`}`;
+      const button = $("refineTestedCandidateBtn");
+      if (button) button.disabled = !(preflight.ready && current.valid);
+    });
 
     $("refineTestedCandidateBtn")?.addEventListener("click", async () => {
       const fresh = window.AcademicRewriteLineage?.refinementPreflight?.($("revisedText")?.value || "");
       const status = $("candidateRefinementStatus");
-      if (!fresh?.ready) {
-        if (status) status.textContent = "This revision is not ready: save linked detector evidence or review the pass limit.";
+      const freshAnchor = anchorState();
+      if (!fresh?.ready || !freshAnchor.valid) {
+        if (status) status.textContent = !fresh?.ready
+          ? "This revision is not ready: save linked detector evidence or review the pass limit."
+          : `Add ${ANCHOR_MIN_WORDS}-${ANCHOR_MAX_WORDS} words of your own writing before spending another refinement request.`;
         return;
       }
       if (window.AcademicVoiceEditor?.isBusy?.()) {
@@ -124,6 +161,7 @@
     .candidate-refinement-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.6rem;margin:.8rem 0}.candidate-refinement-grid>div{padding:.65rem;background:rgba(4,10,18,.38);border-radius:7px}.candidate-refinement-grid span{display:block;font-size:.76rem;opacity:.72}.candidate-refinement-grid strong{display:block;margin-top:.25rem}
     .candidate-refinement-evidence{display:flex;gap:.45rem;flex-wrap:wrap;margin:.7rem 0}.candidate-refinement-evidence span{padding:.3rem .5rem;border:1px solid #4f8f78;border-radius:999px;font-size:.82rem}
     .candidate-version-history{margin-top:.8rem}.candidate-version-row{margin:.5rem 0}.candidate-version-row textarea{width:100%;margin-top:.45rem}
+    .candidate-authorial-anchor{display:grid;gap:.42rem;margin:.9rem 0;padding:.8rem;border:1px solid #4f8f78;border-radius:8px}.candidate-authorial-anchor span,.candidate-authorial-anchor small{color:var(--muted)}.candidate-authorial-anchor textarea{width:100%;box-sizing:border-box}
   `;
   document.head.appendChild(style);
 
@@ -136,4 +174,9 @@
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialise, { once: true });
   else initialise();
+  window.AcademicAuthorialAnchor = {
+    get: () => anchorState().text,
+    wordCount: () => anchorState().count,
+    valid: () => anchorState().valid,
+  };
 })();

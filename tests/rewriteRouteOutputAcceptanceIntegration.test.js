@@ -53,6 +53,9 @@ test("tested-candidate refinement keeps the original as history, preservation an
   assert.match(route, /const root = auditPreservation\(auditAnchorText,/);
   assert.match(route, /manuscriptWordCount\(result\.revised_text\) - manuscriptWordCount\(auditAnchorText\)/);
   assert.match(route, /maximum_feedback_refinements: 2/);
+  assert.match(route, /AUTHORIAL_ANCHOR_REQUIRED/);
+  assert.match(route, /detectorFeedbackProfile\?\.high_machine_pattern_signal && !authorialAnchorAssessment\.sufficient/);
+  assert.match(route, /authorialAnchor,/);
 });
 
 test("style and detector-pressure diagnostics cannot block a preservation-safe result", () => {

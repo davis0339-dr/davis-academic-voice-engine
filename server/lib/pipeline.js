@@ -27,6 +27,7 @@ import { candidateHistoryPromptBlock } from "./candidateHistory.js";
 import { buildLengthContract, lengthContractSatisfied, manuscriptWordCount } from "./lengthContract.js";
 import { classifyPreservationRelease } from "./preservationRelease.js";
 import { detectorFeedbackPromptBlock } from "./detectorFeedback.js";
+import { assessAuthorialAnchor, authorialAnchorPromptBlock } from "./authorialAnchor.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
 const SUBSTANTIVE_PLAN_LEVELS = new Set([
@@ -357,6 +358,7 @@ export async function rewrite({
   priorCandidateHistory,
   minimumExpansionWords,
   detectorFeedback,
+  authorialAnchor,
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
@@ -401,7 +403,7 @@ export async function rewrite({
     humanCadence,
     naturalisation: naturalisationLevel,
     revisionPurpose: effectiveRevisionPurpose,
-  }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage }) + candidateHistoryPromptBlock(priorCandidateHistory) + detectorFeedbackPromptBlock(detectorFeedback);
+  }) + wholeDocumentContextBlock(documentContext) + buildIterativeRewriteDirective({ sourceText, rewriteLineage: lineage }) + candidateHistoryPromptBlock(priorCandidateHistory) + authorialAnchorPromptBlock(authorialAnchor) + detectorFeedbackPromptBlock(detectorFeedback);
 
   let parsed = await runModelPass({ systemPrompt, sourceText, maxTokens: outputTokenBudget });
   let expansionRecovery = { required: rootLengthContract.mode === "expand", attempted: false, attempts: [], contract: rootLengthContract };
@@ -614,6 +616,12 @@ export async function rewrite({
     },
     diagnostics: analysis.diagnostics,
     detector_feedback_applied: detectorFeedback || null,
+    authorial_anchor: {
+      ...assessAuthorialAnchor(authorialAnchor),
+      sample_text_exposed: false,
+      used_for_generation: assessAuthorialAnchor(authorialAnchor).sufficient,
+      content_transfer_forbidden: true,
+    },
     model_notes: parsed.diagnostics_notes || "",
     naturalisation_applied: {
       level: naturalisationLevel,

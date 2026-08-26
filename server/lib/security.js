@@ -256,6 +256,7 @@ export function validateApiPayload(req, res, next) {
     section,
     observations,
     detectorFeedback,
+    authorialAnchor,
     styleFilters,
     rewriteIntensity,
     grammarIntensity,
@@ -265,10 +266,13 @@ export function validateApiPayload(req, res, next) {
     refinementMode,
     label,
   } = req.body;
-  for (const [key, value] of Object.entries({ text, sourceText, candidateText, thoughts, manuscriptContext, researchContext, constraints, section })) {
+  for (const [key, value] of Object.entries({ text, sourceText, candidateText, thoughts, manuscriptContext, researchContext, constraints, section, authorialAnchor })) {
     if (value !== undefined && typeof value !== "string") {
       return res.status(400).json({ error: "BAD_REQUEST", message: `\`${key}\` must be a string.`, requestId: req.requestId });
     }
+  }
+  if (typeof authorialAnchor === "string" && authorialAnchor.length > 12000) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "`authorialAnchor` exceeds the bounded calibration-sample envelope.", requestId: req.requestId });
   }
   if (revisionPurpose !== undefined && !["fidelity", "collaborative"].includes(revisionPurpose)) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "`revisionPurpose` must be `fidelity` or `collaborative`.", requestId: req.requestId });

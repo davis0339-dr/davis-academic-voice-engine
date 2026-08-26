@@ -122,10 +122,15 @@ test("feedback-guided refinement edits the tested candidate without replacing th
   assert.match(app, /explicitRefinement \? options\.candidateText/);
   assert.match(app, /automaticPreflight\.candidate_text/);
   assert.match(app, /refinementMode: refinement \? "tested_candidate" : "source"/);
+  assert.match(app, /AcademicAuthorialAnchor/);
   assert.match(lineage, /MAX_FEEDBACK_REFINEMENTS = 2/);
   assert.match(lineage, /refinementPreflight\(candidateText\)/);
   assert.match(ui, /Refine this tested revision/);
   assert.match(ui, /Permanent meaning\/evidence anchor/);
+  assert.match(ui, /Your own writing sample/);
+  assert.match(ui, /ANCHOR_MIN_WORDS = 120/);
+  assert.match(ui, /preflight\.ready && anchor\.valid/);
+  assert.match(ui, /facts and phrases must never be inserted into the manuscript/i);
   assert.doesNotMatch(ui, /sourceText[^\n]*\.value\s*=/);
 });
 
