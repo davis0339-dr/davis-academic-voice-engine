@@ -69,11 +69,22 @@ export function classifyPreservationRelease(preservation = {}) {
 
   const voiceReview = preservation.researcher_voice_ok === false;
   const reviewRequired = repairRequired || rhetoricalReview || voiceReview || reviewWarnings.length > 0;
-  const releaseStatus = repairRequired ? "repair_or_researcher_review_required" : reviewRequired ? "researcher_review_required" : "cleared";
+  // Review-only marker, register and soft-length evidence must remain visible,
+  // but it must not contradictorily prevent an otherwise safe complete draft
+  // from being labelled internally cleared. Material rhetorical-semantic loss
+  // still blocks clearance through rhetorical_semantic_ok=false.
+  const acceptanceBlocked = repairRequired || preservation.rhetorical_semantic_ok === false;
+  const releaseStatus = repairRequired
+    ? "repair_or_researcher_review_required"
+    : acceptanceBlocked
+      ? "researcher_review_required"
+      : reviewRequired
+        ? "cleared_with_advisory"
+        : "cleared";
 
   return {
     release_status: releaseStatus,
-    cleared: !reviewRequired,
+    cleared: !acceptanceBlocked,
     hard_failure: repairRequired,
     repair_required: repairRequired,
     review_required: reviewRequired,
@@ -86,11 +97,11 @@ export function classifyPreservationRelease(preservation = {}) {
     review_warning_types: unique(reviewWarnings.map((warning) => warning.type)),
     semantic_force_change_count: semanticForceChanges.length,
     candidate_may_be_shown_for_review: true,
-    candidate_may_be_labelled_accepted: !reviewRequired,
+    candidate_may_be_labelled_accepted: !acceptanceBlocked,
     note: repairRequired
       ? "A complete draft may be shown, but it cannot be labelled accepted until its concrete evidence, stage, structure or semantic-force defect is repaired or reviewed by the researcher."
       : reviewRequired
-        ? "Concrete evidence invariants passed. Rhetorical, voice or length evidence remains visible for researcher review and cannot suppress the draft or trigger a paid repair by itself."
+        ? "The candidate is internally cleared with advisory evidence. Rhetorical markers, voice or soft-length signals remain visible for researcher judgement but do not suppress or downgrade the complete draft."
         : "The candidate cleared concrete invariants and advisory preservation review.",
   };
 }

@@ -59,6 +59,8 @@ test("researcher voice and rhetorical marker changes are review-only", () => {
   assert.equal(decision.repair_required, false);
   assert.equal(decision.review_required, true);
   assert.equal(decision.candidate_may_be_shown_for_review, true);
+  assert.equal(decision.candidate_may_be_labelled_accepted, true);
+  assert.equal(decision.release_status, "cleared_with_advisory");
 });
 
 test("modality, causality, scope and comparison drift remain hard blockers", () => {

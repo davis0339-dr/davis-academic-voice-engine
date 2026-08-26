@@ -20,6 +20,7 @@ import { candidateHistoryFor, isHistoricalDuplicate, rememberCandidate } from ".
 import { DEFAULT_EXPAND_MIN_ADDITION_WORDS, manuscriptWordCount } from "../lib/lengthContract.js";
 import { auditFeedbackRefinementChange, resolveDetectorFeedback } from "../lib/detectorFeedback.js";
 import { auditPreservation } from "../lib/preservation.js";
+import { analyseResidualWriting } from "../lib/residualDiagnostics.js";
 
 export const rewriteRouter = Router();
 
@@ -449,7 +450,11 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
 
       result.rewrite_mode_policy = modePolicy;
       result.residual_rework = residualRework;
-      result.post_rewrite_diagnostics = residualRework?.after || residualRework?.before || null;
+      // Always diagnose the candidate actually returned. Previously a
+      // preservation-blocked residual stage left this null, and the UI rendered
+      // "0 post-rewrite signals" even when the final candidate still contained
+      // strong triadic and balanced-contrast recurrence.
+      result.post_rewrite_diagnostics = residualRework?.after || residualRework?.before || analyseResidualWriting(result.revised_text);
       result.naturalisation_applied = {
         ...(result.naturalisation_applied || {}),
         requested_level: modePolicy.requested_naturalisation,
@@ -480,8 +485,10 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         verdictNote = result.safety_fallback?.reason || "No safe revision survived the final safeguards. The source is unchanged and this result is explicitly classified as a non-edit, not a successful revision.";
       } else if (preservationRelease.hard_failure) {
         verdictNote = "Revision delivered for researcher review. One bounded repair was unable to clear every concrete evidence, stage, structure or semantic-force warning. The complete draft remains visible and is not labelled accepted; inspect the Preservation panel before use.";
+      } else if (!preservationRelease.candidate_may_be_labelled_accepted) {
+        verdictNote = "Revision delivered for researcher review. Concrete evidence invariants passed, but material rhetorical-semantic preservation still requires review before internal clearance.";
       } else if (preservationRelease.review_required) {
-        verdictNote = "Revision delivered for researcher review. Concrete evidence invariants passed, while rhetorical, voice or length diagnostics remain advisory. These signals cannot suppress the complete draft or trigger another paid repair by themselves.";
+        verdictNote = "Revision delivered and internally cleared with advisory evidence. Concrete evidence, study stage and semantic force passed; non-blocking rhetorical-marker, voice or soft-length signals remain visible for researcher judgement.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.execution_passed && executionCompliance.preservation_ok) {
         verdictNote = "The first Deep candidate under-executed the structural plan. Automatic Deep execution recovery produced a preservation-safe candidate that now satisfies execution compliance; under-execution was treated as a generation defect, not as a safe stopping point.";
       } else if (authorialExecutionRecoveryUsed && executionCompliance.under_executed) {
@@ -501,9 +508,9 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       }
 
       result.candidate_verdict = {
-        execution: sourceRetainedForSafety ? "no-safe-edit-available" : preservationRelease.review_required ? "completed-for-review" : "completed",
+        execution: sourceRetainedForSafety ? "no-safe-edit-available" : preservationRelease.candidate_may_be_labelled_accepted ? "completed" : "completed-for-review",
         execution_diagnostic: executionCompliance.execution_status || (executionCompliance.execution_passed ? "passed" : "under-executed"),
-        preservation: sourceRetainedForSafety ? "source-preserved" : preservationRelease.hard_failure ? "repair-or-review-required" : preservationRelease.review_required ? "review-required" : "passed",
+        preservation: sourceRetainedForSafety ? "source-preserved" : preservationRelease.hard_failure ? "repair-or-review-required" : !preservationRelease.candidate_may_be_labelled_accepted ? "review-required" : preservationRelease.review_required ? "passed-with-advisory" : "passed",
         residual: sourceRetainedForSafety ? residualVerdict : residualRework?.accepted ? "improved" : "advisory",
         residual_diagnostic: residualVerdict,
         rewrite_chain: result.iterative_rewrite_quality?.available

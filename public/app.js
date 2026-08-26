@@ -453,8 +453,22 @@ async function runAnalyseOnly() {
 }
 
 async function runAnalyseAndRevise(options = {}) {
-  const refinement = options?.refinement === true;
-  const text = refinement ? String(options.candidateText || "").trim() : sourceText.value.trim();
+  const explicitRefinement = options?.refinement === true;
+  const automaticPreflight = !explicitRefinement
+    ? window.AcademicRewriteLineage?.refinementPreflight?.(revisedText.value || "")
+    : null;
+  const sameRootSource = automaticPreflight?.root_source &&
+    String(automaticPreflight.root_source).replace(/\s+/g, " ").trim() === String(sourceText.value || "").replace(/\s+/g, " ").trim();
+  // Once evidence has been saved against the exact visible revision, the main
+  // action must not silently start over from Source and ignore that evidence.
+  // It automatically becomes the same bounded tested-candidate refinement
+  // exposed by the explicit preflight button. A genuinely changed Source still
+  // starts a fresh source run.
+  const automaticRefinement = Boolean(automaticPreflight?.ready && sameRootSource);
+  const refinement = explicitRefinement || automaticRefinement;
+  const text = refinement
+    ? String(explicitRefinement ? options.candidateText || "" : automaticPreflight.candidate_text || "").trim()
+    : sourceText.value.trim();
   if (!refinement && !validateSingleText(text)) return;
   if (refinement) {
     const refinementWords = wordCount(text);
@@ -500,7 +514,11 @@ async function runAnalyseAndRevise(options = {}) {
     const expandEvidence = expandContract?.satisfied
       ? ` Expand contract met: +${formatNumber(Math.max(0, Number(candidateWords || 0) - Number(sourceWords || 0)))} words (minimum +${formatNumber(expandContract.minimum_addition_words)}).`
       : "";
-    const refinementPrefix = refinement ? "Feedback-guided candidate refinement completed. " : "";
+    const refinementPrefix = refinement
+      ? automaticRefinement
+        ? "Saved detector evidence was automatically applied to the exact tested candidate. "
+        : "Feedback-guided candidate refinement completed. "
+      : "";
     const openingAudit = data.candidate_history?.feedback_opening_change_audit;
     const openingEvidence = refinement && openingAudit?.available
       ? openingAudit.materially_reconstructed
@@ -560,7 +578,7 @@ async function loadDetectorHealth() {
     const data = await res.json();
     const statuses = data.providers.map((p) => `${p.label}: ${p.state}`).join(" · ");
     disclaimerEl.textContent =
-      "Third-party classifier output is evaluation evidence, not proof of authorship. When you save a result against the exact revision currently shown, the Feedback-guided refinement preflight can use it to refine that tested candidate while retaining the original as the preservation anchor. The ordinary Analyse & Revise button does not silently attach candidate feedback. Unsaved, stale or unlinked observations are not used. Provider status: " + statuses;
+      "Third-party classifier output is evaluation evidence, not proof of authorship. When you save a result against the exact revision currently shown, the next Analyse & Revise action automatically refines that tested candidate and applies its linked evidence while retaining the original as the preservation anchor. The explicit refinement button remains available in the preflight panel. Unsaved, stale or unlinked observations are not used. Provider status: " + statuses;
   } catch {
     disclaimerEl.textContent = "Could not load detector provider status.";
   }

@@ -119,13 +119,23 @@ test("feedback-guided refinement edits the tested candidate without replacing th
   const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const lineage = fs.readFileSync(new URL("../public/rewriteLineage.js", import.meta.url), "utf8");
   const ui = fs.readFileSync(new URL("../public/candidateRefinementUI.js", import.meta.url), "utf8");
-  assert.match(app, /refinement \? String\(options\.candidateText/);
+  assert.match(app, /explicitRefinement \? options\.candidateText/);
+  assert.match(app, /automaticPreflight\.candidate_text/);
   assert.match(app, /refinementMode: refinement \? "tested_candidate" : "source"/);
   assert.match(lineage, /MAX_FEEDBACK_REFINEMENTS = 2/);
   assert.match(lineage, /refinementPreflight\(candidateText\)/);
   assert.match(ui, /Refine this tested revision/);
   assert.match(ui, /Permanent meaning\/evidence anchor/);
   assert.doesNotMatch(ui, /sourceText[^\n]*\.value\s*=/);
+});
+
+test("the main revision action automatically applies saved evidence for the exact visible candidate", () => {
+  const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  assert.match(app, /automaticPreflight/);
+  assert.match(app, /automaticPreflight\?\.ready && sameRootSource/);
+  assert.match(app, /automaticPreflight\.candidate_text/);
+  assert.match(app, /refinementMode: refinement \? "tested_candidate" : "source"/);
+  assert.match(app, /Saved detector evidence was automatically applied/);
 });
 
 test("detector screenshots can be read as a bounded multi-image evidence bundle", () => {
@@ -186,12 +196,13 @@ test("feedback refinement capacity cannot be lower than a valid expanded editor 
   assert.match(app, /singleRefinementWordLimit: 3000/);
 });
 
-test("Editor policy copy describes the explicit tested-candidate refinement loop without the retired absolute prohibition", () => {
+test("Editor policy copy describes automatic exact-candidate feedback refinement without the retired prohibition", () => {
   const app = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const screenshotRoute = fs.readFileSync(new URL("../server/routes/detectorScan.js", import.meta.url), "utf8");
   assert.doesNotMatch(app, /never fed automatically into generation/i);
-  assert.match(app, /Feedback-guided refinement preflight can use it to refine that tested candidate/i);
-  assert.match(app, /ordinary Analyse & Revise button does not silently attach candidate feedback/i);
+  assert.match(app, /the next Analyse & Revise action automatically refines that tested candidate/i);
+  assert.match(app, /Saved detector evidence was automatically applied to the exact tested candidate/i);
+  assert.doesNotMatch(app, /ordinary Analyse & Revise button does not silently attach candidate feedback/i);
   assert.match(screenshotRoute, /saved_candidate_link_feeds_next_rewrite_planner: true/);
   assert.match(screenshotRoute, /screenshot_read_alone_feeds_generation: false/);
 });

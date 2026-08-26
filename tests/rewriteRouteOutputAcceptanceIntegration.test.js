@@ -20,6 +20,10 @@ test("completed-output acceptance runs after residual recovery and before final 
   assert.ok(verdictIndex > acceptanceIndex);
 });
 
+test("post-rewrite diagnostics always inspect the candidate actually returned", () => {
+  assert.match(route, /residualRework\?\.after \|\| residualRework\?\.before \|\| analyseResidualWriting\(result\.revised_text\)/);
+});
+
 test("a complete preservation-review candidate is retained instead of converted to an empty non-edit", () => {
   const acceptanceIndex = route.indexOf("const baseOutputAcceptance = auditOutputAcceptance({");
   const reviewIndex = route.indexOf("candidate_retained_for_review: true");

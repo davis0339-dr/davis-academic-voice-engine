@@ -65,6 +65,32 @@ test("semantic-force auditing is local rather than triggered by unrelated docume
   assert.equal(unsafe.causality_changes.length, 1);
 });
 
+test("a negated universal is a qualification, not an unsupported certainty increase", () => {
+  const sourceText = [
+    "The interviews will examine why relationships appear, disappear or remain weak once creditors assess governance.",
+    "Governance that disciplines managers for shareholders does not necessarily protect creditors.",
+  ].join(" ");
+  const revisedText = [
+    "Interviews will investigate variation in creditor assessments of governance.",
+    "Yet governance that disciplines managers on behalf of shareholders does not always protect creditors.",
+  ].join(" ");
+  const report = analyseRhetoricalSemanticPreservation(sourceText, revisedText, { lengthPreference: "auto" });
+  assert.equal(report.modality_changes.length, 0);
+});
+
+test("semantic-force auditing does not borrow a modal from the next source sentence", () => {
+  const sourceText = [
+    "These aggregates show the scale of financing decisions within which creditors judge governance characteristics.",
+    "The reason governance can enter a credit decision begins with the structure of debt itself.",
+  ].join(" ");
+  const revisedText = [
+    "These aggregates establish the scale of financing decisions within which creditors evaluate governance characteristics.",
+    "Debt structure explains why governance enters a credit decision.",
+  ].join(" ");
+  const report = analyseRhetoricalSemanticPreservation(sourceText, revisedText, { lengthPreference: "auto" });
+  assert.equal(report.modality_changes.length, 0);
+});
+
 test("associational language cannot become influence or prediction without author permission", () => {
   const sourceText = "Within this sample, board oversight is linked to financing outcomes.";
   for (const revisedText of [

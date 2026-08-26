@@ -63,7 +63,7 @@
       ? "Test this exact revision externally, then save at least one result against it."
       : preflight.remaining_refinements <= 0
         ? "The two bounded feedback-guided refinements have been used. Compare the retained versions instead of creating an uncontrolled rewrite chain."
-        : `${preflight.observation_count} saved detector observation(s) are linked to Revision V${preflight.generation}.`;
+        : `${preflight.observation_count} saved detector observation(s) are linked to Revision V${preflight.generation}. The next Analyse & Revise action will apply them automatically to this exact revision.`;
 
     panel.innerHTML = `
       <div class="candidate-refinement-title">

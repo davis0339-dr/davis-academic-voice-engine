@@ -28,6 +28,7 @@ const TRANSITION_OPENING = /^(?:across|within|elsewhere|in|from|turning to|by co
 const COMPLEMENTARY_PLACE = /^[A-Z][A-Za-z.-]+(?:\s+[A-Z][A-Za-z.-]+){0,3}\s+(?:provides|offers|presents|illustrates)\s+(?:a\s+)?(?:complementary|contrasting|parallel|different)\b/;
 const MODAL_RE = /\b(may|might|could|can|appears?|seems?|suggests?|indicates?|likely|possibly|potentially)\b/gi;
 const ASSERTIVE_RE = /\b(demonstrates?|proves?|establishes?|determines?|always|necessarily|clearly shows?|confirms?)\b/gi;
+const NEGATED_ASSERTIVE_RE = /\b(?:not|never)\s+(?:always|necessarily)\b|\b(?:does|do|did|can|could|may|might|will|would|should)\s+not\s+(?:demonstrate|prove|establish|determine|confirm)\b/gi;
 const CAUSAL_RE = /\b(causes?|determines?|drives?|produces?|influences?|shapes?|affects?|predicts?|results? in|leads? to)\b/gi;
 const ASSOCIATION_RE = /\b(associated with|related to|linked to|correlat(?:es|ed|ion)|relationship with)\b/gi;
 const EQUALITY_RE = /\b(equally|equivalent|the same as|to the same extent|identical)\b/gi;
@@ -135,6 +136,15 @@ function bestSentenceMatch(source, candidates) {
   return best;
 }
 
+function bestSingleSentenceMatch(source, candidates) {
+  let best = { score: 0, candidate: null };
+  for (const candidate of candidates) {
+    const score = coverage(source.tokens, candidate.tokens);
+    if (score > best.score) best = { score, candidate };
+  }
+  return best;
+}
+
 function relationClauses(sentence) {
   return String(sentence || "").split(/\s+(?:but|yet|whereas|while|although|though|because|therefore|however|nevertheless|rather than)\s+/i)
     .map((part) => part.trim()).filter((part) => wordCount(part) >= 4);
@@ -155,16 +165,19 @@ function semanticChanges(sourceText, revisedText) {
   const sourceRecords = sentenceRecords(sourceText);
   const revisedRecords = sentenceRecords(revisedText);
   const localModalityStrengthening = revisedRecords.some((record) => {
-    if (!hasMatch(ASSERTIVE_RE, record.sentence) || hasMatch(MODAL_RE, record.sentence)) return false;
-    const match = bestSentenceMatch(record, sourceRecords);
-    return match.score >= 0.28 && hasMatch(MODAL_RE, match.candidate?.sentence || "") && !hasMatch(ASSERTIVE_RE, match.candidate?.sentence || "");
+    if (!hasMatch(ASSERTIVE_RE, record.sentence) || hasMatch(NEGATED_ASSERTIVE_RE, record.sentence) || hasMatch(MODAL_RE, record.sentence)) return false;
+    // Semantic force belongs to the proposition-bearing sentence itself. Do
+    // not borrow a modal from an adjacent source sentence merely because the
+    // coverage matcher can use pairs to recognise a merged rewrite.
+    const match = bestSingleSentenceMatch(record, sourceRecords);
+    return match.score >= 0.42 && hasMatch(MODAL_RE, match.candidate?.sentence || "") && !hasMatch(ASSERTIVE_RE, match.candidate?.sentence || "");
   });
   if (localModalityStrengthening) {
     changes.push({ type: "modality_or_certainty", detail: "A locally matched qualified proposition appears to have been restated with stronger certainty." });
   }
   const localCausalityStrengthening = revisedRecords.some((record) => {
     if (!hasMatch(CAUSAL_RE, record.sentence)) return false;
-    const match = bestSentenceMatch(record, sourceRecords);
+    const match = bestSingleSentenceMatch(record, sourceRecords);
     const sourceSentence = match.candidate?.sentence || "";
     return match.score >= 0.28 && hasMatch(ASSOCIATION_RE, sourceSentence) && !hasMatch(CAUSAL_RE, sourceSentence);
   });
@@ -174,7 +187,7 @@ function semanticChanges(sourceText, revisedText) {
   const equalityIntroducedLocally = revisedRecords
     .filter((record) => /\b(?:equally|equivalent|the same as|to the same extent|identical)\b/i.test(record.sentence))
     .some((record) => {
-      const match = bestSentenceMatch(record, sourceRecords);
+      const match = bestSingleSentenceMatch(record, sourceRecords);
       return match.score >= 0.2 && !/\b(?:equally|equivalent|the same as|to the same extent|identical)\b/i.test(match.candidate?.sentence || "");
     });
   if (equalityIntroducedLocally) {
@@ -182,7 +195,7 @@ function semanticChanges(sourceText, revisedText) {
   }
   const localScopeGeneralisation = revisedRecords.some((record) => {
     if (!hasMatch(UNIVERSAL_RE, record.sentence)) return false;
-    const match = bestSentenceMatch(record, sourceRecords);
+    const match = bestSingleSentenceMatch(record, sourceRecords);
     const sourceSentence = match.candidate?.sentence || "";
     return match.score >= 0.28 && hasMatch(SCOPE_RE, sourceSentence) && !hasMatch(UNIVERSAL_RE, sourceSentence);
   });

@@ -96,6 +96,15 @@ test("complete unresolved preservation work returns a review status rather than 
   assert.equal(status, "preservation_review_required");
 });
 
+test("non-blocking preservation advice does not downgrade an internally safe candidate", () => {
+  const status = preservationCandidateStatus({
+    compliance: { preservation_ok: true, execution_passed: true },
+    preservationRelease: { review_required: true, repair_required: false, candidate_may_be_labelled_accepted: true },
+    outputAcceptance: { reasons: [] },
+  });
+  assert.equal(status, "accepted");
+});
+
 test("an otherwise cleared draft that misses Expand is returned for length review", () => {
   const status = preservationCandidateStatus({
     compliance: { preservation_ok: true },
