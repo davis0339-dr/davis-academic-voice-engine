@@ -162,6 +162,7 @@
     const opening = report.candidate_profiles?.opening_two_paragraphs || {};
     const consensus = report.detector_consensus || {};
     const obs = consensus.observations || [];
+    const reportedPatternInstances = Number(consensus.reported_pattern_instance_count) || 0;
     const flagged = report.flagged_sentence_analysis || {};
     const reference = report.corpus_reference || {};
     const flaggedSummary = flagged.available ? `
@@ -182,6 +183,7 @@
           <div><span>AI/paraphrase votes</span><strong>${escapeHtml(consensus.ai_or_paraphrase_votes ?? 0)}</strong></div>
           <div><span>Human votes</span><strong>${escapeHtml(consensus.human_votes ?? 0)}</strong></div>
           <div><span>Cross-detector disagreement</span><strong>${consensus.disagreement ? "YES" : "no"}</strong></div>
+          <div><span>Reported writing-pattern instances</span><strong>${escapeHtml(reportedPatternInstances)}</strong></div>
         </div>
         ${obs.length ? `<div class="research-observation-strip">${obs.map((o) => `<span>${escapeHtml(o.detector)}${o.version ? ` ${escapeHtml(o.version)}` : ""}: ${escapeHtml(o.classification || "n/a")}${Number.isFinite(o.ai_score) ? ` (${escapeHtml(o.ai_score)}% AI)` : ""}</span>`).join("")}</div>` : ""}
         <h4>Sentence-highlight distribution</h4>${flaggedSummary}

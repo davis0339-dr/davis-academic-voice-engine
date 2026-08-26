@@ -5,7 +5,7 @@
   const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
   const MAX_PDF_BYTES = 5 * 1024 * 1024;
   const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "application/pdf"]);
-  const MAX_FILES = 6;
+  const MAX_FILES = 10;
   let pendingFiles = [];
   let extractedObservations = [];
 
@@ -97,6 +97,7 @@
       flaggedSentenceIndices: Array.isArray(observation.flaggedSentenceIndices) ? observation.flaggedSentenceIndices : [],
       flaggedExcerpts: Array.isArray(observation.flaggedExcerpts) ? observation.flaggedExcerpts : [],
       highlightedPassages: Array.isArray(observation.highlightedPassages) ? observation.highlightedPassages : [],
+      patternFindings: Array.isArray(observation.patternFindings) ? observation.patternFindings : [],
       notes: observation.notes || null,
       recordedAt: new Date().toISOString(),
       evidenceSource: "uploaded_detector_report",
@@ -136,6 +137,9 @@
         ${Array.isArray(observation.highlightedPassages) && observation.highlightedPassages.length
           ? `<details><summary>${esc(observation.highlightedPassages.length)} colour-coded passage(s) extracted</summary><ul>${observation.highlightedPassages.slice(0, 30).map((passage) => `<li><strong>${esc(passage.classification || "uncertain")}</strong>${passage.colour ? ` · ${esc(passage.colour)}` : ""}${passage.page ? ` · page ${esc(passage.page)}` : ""}: “${esc(passage.text)}”</li>`).join("")}</ul></details>`
           : '<p class="warning-text">No sentence-level colour passages were extracted. This file currently supplies only document-level evidence and cannot guide local targeting.</p>'}
+        ${Array.isArray(observation.patternFindings) && observation.patternFindings.length
+          ? `<details open><summary>${esc(observation.patternFindings.length)} named writing pattern(s) extracted</summary><ul>${observation.patternFindings.slice(0, 30).map((finding) => `<li><strong>${esc(finding.label)}</strong>${finding.reportedCount !== null && finding.reportedCount !== undefined && Number.isFinite(Number(finding.reportedCount)) ? ` · ${esc(finding.reportedCount)} reported instance(s)` : ""}${finding.likelihoodText ? ` · ${esc(finding.likelihoodText)}` : ""}${finding.description ? `<div>${esc(finding.description)}</div>` : ""}${Array.isArray(finding.instances) && finding.instances.length ? `<div class="muted">${esc(finding.instances.length)} legible instance(s) mapped for local analysis.</div>` : ""}</li>`).join("")}</ul></details>`
+          : ""}
       </div>`).join("") + '<button id="saveGatewayDetectorResultsBtn" class="primary" type="button">Save and link this evidence bundle</button>';
     $("saveGatewayDetectorResultsBtn")?.addEventListener("click", () => {
       if (!extractedObservations.length) return;

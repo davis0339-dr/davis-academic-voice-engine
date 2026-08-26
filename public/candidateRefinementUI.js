@@ -27,8 +27,13 @@
     if (Number.isFinite(Number(row.aiScore))) bits.push(`AI ${row.aiScore}%`);
     const passageCount = Array.isArray(row.highlightedPassages) ? row.highlightedPassages.length : 0;
     const targetCount = Array.isArray(row.flaggedExcerpts) ? row.flaggedExcerpts.length : 0;
+    const patternCount = (row.patternFindings || []).reduce((sum, finding) => {
+      if (finding?.reportedCount !== null && finding?.reportedCount !== undefined && Number.isFinite(Number(finding.reportedCount))) return sum + Number(finding.reportedCount);
+      return sum + (Array.isArray(finding?.instances) ? finding.instances.length : 0);
+    }, 0);
     if (passageCount) bits.push(`${passageCount} colour passage${passageCount === 1 ? "" : "s"}`);
     if (targetCount) bits.push(`${targetCount} local target${targetCount === 1 ? "" : "s"}`);
+    if (patternCount) bits.push(`${patternCount} reported pattern instance${patternCount === 1 ? "" : "s"}`);
     return bits.join(" · ");
   }
 

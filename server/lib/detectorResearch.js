@@ -263,6 +263,19 @@ function normalizeObservation(observation = {}) {
   const explicitExcerpts = Array.isArray(observation.flaggedExcerpts)
     ? observation.flaggedExcerpts.map((value) => String(value || "").trim().slice(0, 500)).filter(Boolean)
     : [];
+  const patternFindings = Array.isArray(observation.patternFindings)
+    ? observation.patternFindings.filter((finding) => finding && typeof finding === "object" && !Array.isArray(finding)).map((finding) => ({
+        label: String(finding.label || "").trim().slice(0, 120),
+        description: finding.description ? String(finding.description).trim().slice(0, 500) : null,
+        reported_count: Number.isInteger(Number(finding.reportedCount)) && Number(finding.reportedCount) >= 0 ? Math.min(1000, Number(finding.reportedCount)) : null,
+        likelihood_text: finding.likelihoodText ? String(finding.likelihoodText).trim().slice(0, 160) : null,
+        instances: (finding.instances || []).filter((instance) => instance && typeof instance === "object" && !Array.isArray(instance)).map((instance) => ({
+          text: String(instance.text || "").trim().slice(0, 500),
+          page: Number.isInteger(Number(instance.page)) && Number(instance.page) > 0 ? Number(instance.page) : null,
+        })).filter((instance) => instance.text).slice(0, 60),
+      })).filter((finding) => finding.label).slice(0, 30)
+    : [];
+  const patternExcerpts = patternFindings.flatMap((finding) => finding.instances).map((instance) => instance.text);
   return {
     detector: String(observation.detector || "unknown").slice(0, 80),
     version: observation.version ? String(observation.version).slice(0, 80) : null,
@@ -273,14 +286,35 @@ function normalizeObservation(observation = {}) {
     flagged_sentence_indices: Array.isArray(observation.flaggedSentenceIndices)
       ? observation.flaggedSentenceIndices.map(Number).filter((n) => Number.isInteger(n) && n >= 0).slice(0, 1000)
       : [],
-    flagged_excerpts: [...new Set([...explicitExcerpts, ...uploadedPassages])].slice(0, 100),
+    flagged_excerpts: [...new Set([...explicitExcerpts, ...uploadedPassages, ...patternExcerpts])].slice(0, 100),
     highlighted_passage_count: uploadedPassages.length,
+    pattern_findings: patternFindings,
+    reported_pattern_instance_count: patternFindings.reduce((sum, finding) => sum + (Number.isFinite(finding.reported_count) ? finding.reported_count : finding.instances.length), 0),
     notes: observation.notes ? String(observation.notes).slice(0, 1000) : null,
   };
 }
 
+function aggregateReportedPatterns(observations = []) {
+  const merged = new Map();
+  observations.flatMap((observation) => observation.pattern_findings || []).forEach((finding) => {
+    const key = String(finding.label || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!key) return;
+    const current = merged.get(key) || { ...finding, instances: [] };
+    const counts = [current.reported_count, finding.reported_count].filter(Number.isFinite);
+    current.reported_count = counts.length ? Math.max(...counts) : null;
+    const instanceMap = new Map((current.instances || []).map((instance) => [instance.text.toLowerCase().replace(/\s+/g, " "), instance]));
+    (finding.instances || []).forEach((instance) => instanceMap.set(instance.text.toLowerCase().replace(/\s+/g, " "), instance));
+    current.instances = [...instanceMap.values()].slice(0, 60);
+    if ((!current.description || String(finding.description || "").length > current.description.length) && finding.description) current.description = finding.description;
+    if (!current.likelihood_text && finding.likelihood_text) current.likelihood_text = finding.likelihood_text;
+    merged.set(key, current);
+  });
+  return [...merged.values()].slice(0, 30);
+}
+
 function observationConsensus(observations) {
   const normalized = observations.map(normalizeObservation);
+  const reportedPatterns = aggregateReportedPatterns(normalized);
   const aiScores = normalized.map((o) => o.ai_score).filter(Number.isFinite);
   const labels = normalized.map((o) => String(o.classification || "").toLowerCase()).filter(Boolean);
   const aiVotes = labels.filter((label) => /\bai\b|generated|paraphras/.test(label) && !/human/.test(label)).length;
@@ -291,6 +325,9 @@ function observationConsensus(observations) {
     ai_or_paraphrase_votes: aiVotes,
     human_votes: humanVotes,
     disagreement: aiVotes > 0 && humanVotes > 0,
+    reported_patterns: reportedPatterns,
+    reported_pattern_count: reportedPatterns.length,
+    reported_pattern_instance_count: reportedPatterns.reduce((sum, finding) => sum + (Number.isFinite(finding.reported_count) ? finding.reported_count : finding.instances.length), 0),
     observations: normalized,
   };
 }

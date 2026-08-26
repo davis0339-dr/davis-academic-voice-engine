@@ -159,6 +159,48 @@ test("rewrite accepts bounded candidate-linked feedback and rejects stale-shaped
   assert.equal(invalidRes.statusCode, 400);
 });
 
+test("rewrite accepts bounded detector pattern findings and rejects malformed pattern payloads", () => {
+  const valid = mockReq({
+    method: "POST",
+    path: "/rewrite",
+    body: {
+      text: "Academic source.",
+      detectorFeedback: {
+        candidateId: "b".repeat(24),
+        observations: [{
+          detector: "GPTZero",
+          classification: "ai",
+          patternFindings: [{
+            label: "Everything in threes",
+            reportedCount: 7,
+            likelihoodText: "1.6x more likely used by AI",
+            instances: [{ text: "board independence, board size and audit independence", page: 3 }],
+          }],
+        }],
+      },
+    },
+  });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({
+    method: "POST",
+    path: "/rewrite",
+    body: {
+      text: "Academic source.",
+      detectorFeedback: {
+        candidateId: "b".repeat(24),
+        observations: [{ detector: "GPTZero", patternFindings: [{ label: "x", instances: "not-an-array" }] }],
+      },
+    },
+  });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("malformed pattern evidence must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
+});
+
 test("rewrite accepts only explicit source or tested-candidate refinement modes", () => {
   const valid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Candidate text.", refinementMode: "tested_candidate" } });
   const validRes = mockRes();

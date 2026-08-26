@@ -45,6 +45,7 @@
       flaggedSentenceIndices: Array.isArray(observation.flaggedSentenceIndices) ? observation.flaggedSentenceIndices : [],
       flaggedExcerpts: Array.isArray(observation.flaggedExcerpts) ? observation.flaggedExcerpts : [],
       highlightedPassages: Array.isArray(observation.highlightedPassages) ? observation.highlightedPassages : [],
+      patternFindings: Array.isArray(observation.patternFindings) ? observation.patternFindings : [],
       notes: observation.notes || null,
       recordedAt: new Date().toISOString(),
     };

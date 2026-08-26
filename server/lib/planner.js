@@ -284,7 +284,7 @@ function buildParagraphPlan(diagnostics, intent, naturalisation) {
         actions.push(PARAGRAPH_ACTIONS.REDUCE_SIGNPOSTING);
       } else if (signal.id === "closure_regularisation") {
         actions.push(PARAGRAPH_ACTIONS.REMOVE_REDUNDANT_CLOSURE);
-      } else if (["aphoristic_compression", "rhetorical_symmetry"].includes(signal.id)) {
+      } else if (["aphoristic_compression", "rhetorical_symmetry", "triadic_enumeration_saturation"].includes(signal.id)) {
         actions.push(PARAGRAPH_ACTIONS.REBUILD_DISCOURSE);
       }
       reasons.push(signal.interpretation);

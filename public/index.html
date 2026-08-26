@@ -164,9 +164,9 @@
     <section id="detectorScreenshotGateway" class="detector-screenshot-card detector-screenshot-gateway">
       <div class="detector-gateway-title">
         <h4>Upload external detector result report</h4>
-        <span class="detector-gateway-version">Detector Gateway v1.1.0</span>
+        <span class="detector-gateway-version">Detector Gateway v1.2.0</span>
       </div>
-      <p class="muted">Choose or drop up to six detector-result files: PNG/JPEG screenshots (maximum 2 MB each) or full PDF reports (maximum 5 MB each). A complete PDF is usually preferable to many screenshots because it can retain the overall score and flagged passages in one file, although a multi-page PDF may consume more provider input credit than one screenshot. Review the extracted values before linking them to the exact revision. Each file uses one language-model provider call; the call count is shown before you start. Reading never runs automatically. Manual score entry is free.</p>
+      <p class="muted">Choose or drop up to ten detector-result files: PNG/JPEG screenshots (maximum 2 MB each) or full PDF reports (maximum 5 MB each). Use the downloaded PDF for the overall score and colour evidence. If that PDF omits an Advanced or writing-pattern page, add screenshots of those named pattern cards to the same bundle so their labels, counts and examples are not lost. Review the extracted values before linking them to the exact revision. Each file uses one language-model provider call; the call count is shown before you start. Reading never runs automatically. Manual score entry is free.</p>
       <div class="detector-gateway-controls">
         <label>Detector shown in report
           <select id="detectorScreenshotDetector">
@@ -185,7 +185,7 @@
         <button id="chooseDetectorEvidenceScreenshotBtn" type="button">Choose detector report file(s)</button>
         <button id="analyseDetectorScreenshotBtn" class="primary" type="button">Read selected report file(s)</button>
       </div>
-      <div id="detectorScreenshotDropZone" tabindex="0" role="button" aria-label="Drop detector report files">Drop up to six PNG/JPEG/PDF detector reports here, click to choose files, or focus this box and paste an image from the clipboard.</div>
+      <div id="detectorScreenshotDropZone" tabindex="0" role="button" aria-label="Drop detector report files">Drop up to ten PNG/JPEG/PDF detector reports here, click to choose files, or focus this box and paste an image from the clipboard.</div>
       <span id="detectorScreenshotStatus" class="file-status">No detector-result report selected.</span>
       <div id="detectorScreenshotPreview"></div>
     </section>

@@ -196,6 +196,22 @@ function validateDetectorObservation(observation) {
       if (passage.page !== undefined && passage.page !== null && (!Number.isInteger(Number(passage.page)) || Number(passage.page) < 1)) return false;
     }
   }
+  if (observation.patternFindings !== undefined) {
+    if (!Array.isArray(observation.patternFindings) || observation.patternFindings.length > 30) return false;
+    for (const finding of observation.patternFindings) {
+      if (!finding || typeof finding !== "object" || Array.isArray(finding)) return false;
+      if (typeof finding.label !== "string" || finding.label.length > 120) return false;
+      if (finding.description !== undefined && finding.description !== null && (typeof finding.description !== "string" || finding.description.length > 500)) return false;
+      if (finding.likelihoodText !== undefined && finding.likelihoodText !== null && (typeof finding.likelihoodText !== "string" || finding.likelihoodText.length > 160)) return false;
+      if (finding.reportedCount !== undefined && finding.reportedCount !== null && (!Number.isInteger(Number(finding.reportedCount)) || Number(finding.reportedCount) < 0 || Number(finding.reportedCount) > 1000)) return false;
+      if (!Array.isArray(finding.instances) || finding.instances.length > 60) return false;
+      for (const instance of finding.instances) {
+        if (!instance || typeof instance !== "object" || Array.isArray(instance)) return false;
+        if (typeof instance.text !== "string" || instance.text.length > 500) return false;
+        if (instance.page !== undefined && instance.page !== null && (!Number.isInteger(Number(instance.page)) || Number(instance.page) < 1)) return false;
+      }
+    }
+  }
   return true;
 }
 

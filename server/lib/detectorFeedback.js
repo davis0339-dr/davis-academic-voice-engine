@@ -53,8 +53,36 @@ function normaliseObservation(row = {}) {
       colour: value.colour ? String(value.colour).slice(0, 40) : null,
       page: Number.isInteger(Number(value.page)) && Number(value.page) > 0 ? Number(value.page) : null,
     })).filter((value) => value.text).slice(0, 120),
+    patternFindings: (row.patternFindings || []).filter((value) => value && typeof value === "object" && !Array.isArray(value)).map((value) => ({
+      label: String(value.label || "").trim().slice(0, 120),
+      description: value.description ? String(value.description).trim().slice(0, 500) : null,
+      reportedCount: Number.isInteger(Number(value.reportedCount)) && Number(value.reportedCount) >= 0 ? Math.min(1000, Number(value.reportedCount)) : null,
+      likelihoodText: value.likelihoodText ? String(value.likelihoodText).trim().slice(0, 160) : null,
+      instances: (value.instances || []).filter((instance) => instance && typeof instance === "object" && !Array.isArray(instance)).map((instance) => ({
+        text: String(instance.text || "").trim().slice(0, 500),
+        page: Number.isInteger(Number(instance.page)) && Number(instance.page) > 0 ? Number(instance.page) : null,
+      })).filter((instance) => instance.text).slice(0, 60),
+    })).filter((value) => value.label).slice(0, 30),
     notes: row.notes ? String(row.notes).slice(0, 1000) : null,
   };
+}
+
+function mergePatternFindings(findings = []) {
+  const merged = new Map();
+  findings.forEach((finding) => {
+    const key = String(finding?.label || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!key) return;
+    const current = merged.get(key) || { ...finding, instances: [] };
+    if ((!current.description || String(finding.description || "").length > current.description.length) && finding.description) current.description = finding.description;
+    if (!current.likelihoodText && finding.likelihoodText) current.likelihoodText = finding.likelihoodText;
+    const counts = [current.reportedCount, finding.reportedCount].filter(Number.isFinite);
+    current.reportedCount = counts.length ? Math.max(...counts) : null;
+    const instanceMap = new Map((current.instances || []).map((instance) => [instance.text.toLowerCase().replace(/\s+/g, " "), instance]));
+    (finding.instances || []).forEach((instance) => instanceMap.set(instance.text.toLowerCase().replace(/\s+/g, " "), instance));
+    current.instances = [...instanceMap.values()].slice(0, 60);
+    merged.set(key, current);
+  });
+  return [...merged.values()].slice(0, 30);
 }
 
 function mapExcerptTargets(candidateText, excerpts = []) {
@@ -148,15 +176,21 @@ export function resolveDetectorFeedback(feedback, history = {}, exactCandidateTe
   const machinePassages = observations.flatMap((row) => row.highlightedPassages || [])
     .filter((row) => row.classification === "ai" || row.classification === "ai_paraphrased");
   const highlightedExcerpts = machinePassages.map((row) => row.text);
+  // The same detector card may appear in an overview screenshot and several
+  // detail screenshots. Merge by label and take the highest visible count so a
+  // multi-file evidence bundle cannot multiply one seven-instance finding.
+  const reportedPatterns = mergePatternFindings(observations.flatMap((row) => row.patternFindings || []));
+  const patternInstanceExcerpts = reportedPatterns.flatMap((finding) => finding.instances || []).map((instance) => instance.text);
   const excerptMappings = mapExcerptTargets(priorCandidate.candidate_text, [
     ...observations.flatMap((row) => row.flaggedExcerpts),
     ...highlightedExcerpts,
+    ...patternInstanceExcerpts,
   ]);
   excerptMappings.forEach((mapping) => flaggedIndices.push(mapping.sentence_index));
   const targetParagraphIndices = [...new Set(paragraphs
     .filter((paragraph) => flaggedIndices.some((index) => index >= paragraph.firstSentence && index <= paragraph.lastSentence))
     .map((paragraph) => paragraph.blockIndex))];
-  const flaggedExcerpts = [...new Set([...observations.flatMap((row) => row.flaggedExcerpts), ...highlightedExcerpts])].slice(0, 40);
+  const flaggedExcerpts = [...new Set([...observations.flatMap((row) => row.flaggedExcerpts), ...highlightedExcerpts, ...patternInstanceExcerpts])].slice(0, 60);
 
   return {
     version: "candidate-linked-detector-feedback-v2",
@@ -172,6 +206,9 @@ export function resolveDetectorFeedback(feedback, history = {}, exactCandidateTe
     highlighted_passage_count: observations.reduce((sum, row) => sum + (row.highlightedPassages?.length || 0), 0),
     mapped_highlight_count: excerptMappings.length,
     excerpt_mappings: excerptMappings,
+    reported_patterns: reportedPatterns,
+    reported_pattern_count: reportedPatterns.length,
+    reported_pattern_instance_count: reportedPatterns.reduce((sum, finding) => sum + (Number.isFinite(finding.reportedCount) ? finding.reportedCount : finding.instances.length), 0),
     observations,
   };
 }
@@ -189,6 +226,11 @@ export function detectorFeedbackPromptBlock(profile) {
     ...evidence,
     profile.target_paragraph_indices.length ? `Prior-candidate paragraph targets: ${profile.target_paragraph_indices.join(", ")}.` : "The observation applies to the completed prior candidate rather than isolated sentences.",
     `Colour/passage mapping: ${profile.mapped_highlight_count || 0} passage target(s) mapped to the tested candidate${profile.highlighted_passage_count ? ` from ${profile.highlighted_passage_count} extracted coloured passage(s)` : ""}.`,
+    ...(profile.reported_patterns?.length ? [
+      "Detector-reported recurring writing patterns (observational evidence, not an authorship verdict):",
+      ...profile.reported_patterns.map((finding) => `- ${finding.label}${Number.isFinite(finding.reportedCount) ? `: ${finding.reportedCount} reported instance(s)` : ""}${finding.likelihoodText ? `; ${finding.likelihoodText}` : ""}${finding.description ? `. ${finding.description}` : ""}`),
+      "Respond to recurrence, not to the mere existence of a legitimate construction. Preserve fixed taxonomies, formal variable lists and logically necessary contrasts. Where one pattern recurs across otherwise different propositions, redistribute the information architecture while retaining every listed item and relationship.",
+    ] : []),
     ...(profile.flagged_excerpts.length ? ["Detector-highlight excerpts:", ...profile.flagged_excerpts.map((text) => `- ${text}`)] : []),
     "Treat this as failed-output evidence: do not return the same sentence alignment, paragraph openings, editorial pivots, evidence choreography or compressed synthesis with cosmetic synonym changes.",
     "OPENING CHECK: in Deep feedback-guided reconstruction, the first two substantive prose paragraphs must receive explicit scrutiny. If they remain near-verbatim or preserve the same opening-sentence sequence, rebuild their information packaging from the protected propositions. Do not alter formal headings, research questions or fixed institutional formulae merely to create distance.",

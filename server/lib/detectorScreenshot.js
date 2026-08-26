@@ -85,6 +85,15 @@ Return ONLY valid JSON with this exact shape:
   "highlightedPassages": [
     {"text": string, "classification": "ai"|"ai_paraphrased"|"mixed"|"human"|"uncertain", "colour": string|null, "page": number|null}
   ],
+  "patternFindings": [
+    {
+      "label": string,
+      "description": string|null,
+      "reportedCount": number|null,
+      "likelihoodText": string|null,
+      "instances": [{"text": string, "page": number|null}]
+    }
+  ],
   "visibleSummary": string,
   "confidence": "high"|"medium"|"low",
   "warnings": string[]
@@ -95,6 +104,8 @@ Rules:
 - flaggedSentenceIndices must be zero-based and included only when the report explicitly numbers sentences; otherwise return [].
 - Inspect every visible report page for colour-coded or distinctly classified manuscript passages, not only the overall score panel.
 - highlightedPassages must record each legible highlighted passage separately. Copy enough contiguous wording to map it back to the tested manuscript (normally 6-40 words), record the explicit AI/mixed/human classification, the visible colour name when discernible, and the one-based PDF page number when available.
+- Some detector interfaces show named writing-pattern cards such as repeated list architecture, contrast templates, sentence-opening habits or other explainable structural tendencies. Record every explicitly named card in patternFindings, including its visible count, description, likelihood/comparison text and each legible linked instance. Preserve the detector's wording; do not invent a pattern name or infer a count.
+- patternFindings are observational writing-pattern evidence, not proof of authorship. An isolated instance can be legitimate. Record it accurately and allow the downstream recurrence analysis to decide whether it warrants intervention.
 - flaggedExcerpts must contain the text of passages explicitly marked as AI or AI-paraphrased. Do not include green/human passages as rewrite targets.
 - Return empty passage arrays only when the report genuinely contains no legible passage-level highlighting. State that limitation in warnings; do not imply that the colour layer was analysed when only the overall score was read.
 - If the report uses a label such as AI, Mixed, Human, AI paraphrased, or uncertain, map it conservatively.
@@ -141,6 +152,30 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
   const machinePassageExcerpts = highlightedPassages
     .filter((row) => row.classification === "ai" || row.classification === "ai_paraphrased")
     .map((row) => cleanString(row.text, 280));
+  const patternFindings = Array.isArray(parsed.patternFindings)
+    ? parsed.patternFindings.map((row) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+        const label = cleanString(row.label, 120);
+        if (!label) return null;
+        const reportedCount = Number(row.reportedCount);
+        const instances = Array.isArray(row.instances)
+          ? row.instances.map((instance) => {
+              if (!instance || typeof instance !== "object" || Array.isArray(instance)) return null;
+              const text = cleanString(instance.text, 500);
+              if (!text) return null;
+              const page = Number(instance.page);
+              return { text, page: Number.isInteger(page) && page > 0 ? page : null };
+            }).filter(Boolean).slice(0, 60)
+          : [];
+        return {
+          label,
+          description: cleanString(row.description, 500),
+          reportedCount: Number.isInteger(reportedCount) && reportedCount >= 0 ? Math.min(1000, reportedCount) : null,
+          likelihoodText: cleanString(row.likelihoodText, 160),
+          instances,
+        };
+      }).filter(Boolean).slice(0, 30)
+    : [];
   return {
     detector: canonicalDetectorName(parsed.detector),
     version: cleanString(parsed.version, 80),
@@ -151,6 +186,7 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
     flaggedSentenceIndices,
     flaggedExcerpts: [...new Set([...flaggedExcerpts, ...machinePassageExcerpts])].slice(0, 100),
     highlightedPassages,
+    patternFindings,
     visibleSummary: cleanString(parsed.visibleSummary, 1000) || "Detector report analysed; no additional explicit summary was returned.",
     confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
     warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map((x) => cleanString(x, 500)).filter(Boolean).slice(0, 10) : [],

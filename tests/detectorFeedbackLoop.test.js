@@ -132,7 +132,7 @@ test("detector screenshots can be read as a bounded multi-image evidence bundle"
   const html = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   const gateway = fs.readFileSync(new URL("../public/detectorScreenshotGateway.js", import.meta.url), "utf8");
   assert.match(html, /type="file" multiple/);
-  assert.match(gateway, /MAX_FILES = 6/);
+  assert.match(gateway, /MAX_FILES = 10/);
   assert.match(gateway, /Save and link this evidence bundle/);
   assert.match(gateway, /Nothing is linked until that button is pressed/);
   assert.match(gateway, /if \(!preflight\?\.exact_candidate\)/);
