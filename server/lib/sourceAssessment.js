@@ -14,7 +14,7 @@ function clamp01(value) {
 }
 
 function regularityLabel(score) {
-  return score >= 0.66 ? "high" : score >= 0.34 ? "moderate" : "low";
+  return score >= 0.66 ? "high" : score >= 0.35 ? "moderate" : "low";
 }
 
 function calibrateTextureWithDiscourseForensics(textureAssessment, forensics) {

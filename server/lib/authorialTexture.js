@@ -93,7 +93,7 @@ function machineLanguagePressure(diagnostics) {
 }
 
 function regularityLabel(score) {
-  return score >= 0.66 ? "high" : score >= 0.34 ? "moderate" : "low";
+  return score >= 0.66 ? "high" : score >= 0.35 ? "moderate" : "low";
 }
 
 function sentenceLengthMetrics(sentences) {
