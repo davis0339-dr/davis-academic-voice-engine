@@ -5,6 +5,7 @@ import {
   MAX_DETECTOR_REPORT_PDF_BYTES,
   validateDetectorScreenshotPayload,
   normaliseDetectorScreenshotAnalysis,
+  mergeDetectorScreenshotAnalyses,
 } from "../server/lib/detectorScreenshot.js";
 
 test("accepts PNG/JPEG screenshots and rejects unsupported report types", () => {
@@ -103,4 +104,24 @@ test("canonicalises branded detector labels returned with interface suffixes", (
     warnings: [],
   }));
   assert.equal(parsed.detector, "GPTZero");
+});
+
+test("merges segmented pattern and passage evidence without duplicate targets", () => {
+  const merged = mergeDetectorScreenshotAnalyses(
+    {
+      detector: "GPTZero", classification: "ai", aiScore: 100, humanScore: 0, paraphrasedScore: 0,
+      flaggedSentenceIndices: [], flaggedExcerpts: [], highlightedPassages: [],
+      patternFindings: [{ label: "Everything in threes", description: "Triads", reportedCount: 7, likelihoodText: "1.6x", instances: [{ text: "a, b, and c", page: 3 }] }],
+      visibleSummary: "Patterns extracted.", confidence: "high", warnings: [],
+    },
+    {
+      detector: "GPTZero", classification: "ai", aiScore: 100, humanScore: 0, paraphrasedScore: 0,
+      flaggedSentenceIndices: [], flaggedExcerpts: [],
+      highlightedPassages: [{ text: "The same detector target", classification: "ai", colour: "purple", page: 2 }, { text: "The same detector target", classification: "ai", colour: "purple", page: 2 }],
+      patternFindings: [], visibleSummary: "Passages extracted.", confidence: "high", warnings: [],
+    }
+  );
+  assert.equal(merged.patternFindings.length, 1);
+  assert.equal(merged.highlightedPassages.length, 1);
+  assert.deepEqual(merged.flaggedExcerpts, ["The same detector target"]);
 });

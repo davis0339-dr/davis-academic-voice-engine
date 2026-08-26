@@ -67,10 +67,21 @@ export function validateDetectorScreenshotPayload({ mimeType, fileBase64, imageB
   };
 }
 
-export function detectorScreenshotPrompt() {
+export function detectorScreenshotPrompt({ extractionMode = "complete", compact = false } = {}) {
+  const modeInstruction = extractionMode === "overview_patterns"
+    ? "EXTRACTION PHASE: return the overall result and every named writing-pattern card with its legible instances. Return highlightedPassages and flaggedExcerpts as empty arrays in this phase."
+    : extractionMode === "highlighted_passages"
+      ? "EXTRACTION PHASE: return every distinct colour-coded or explicitly classified manuscript passage. Return patternFindings as an empty array in this phase. Repeat the overall scores only if clearly visible."
+      : "EXTRACTION PHASE: return the complete overall result, named writing-pattern evidence and colour-coded passage evidence in one response.";
+  const compactInstruction = compact
+    ? "Use compact JSON. Keep each copied passage or pattern instance to the shortest contiguous 6-24 word excerpt that still maps unambiguously to the report. Do not repeat duplicate excerpts."
+    : "Keep copied passages concise while preserving enough contiguous wording to map them to the tested manuscript.";
   return `You are reading ONE user-supplied external AI-writing detector result file. It may be a result screenshot or a full PDF report. The purpose is research logging and source-versus-revision analysis.
 
 Extract only information explicitly supported by the supplied file. Do not infer missing scores and do not claim authorship. For a multi-page PDF, inspect the overall result AND every page that visibly contains colour-coded or distinctly classified manuscript passages.
+
+${modeInstruction}
+${compactInstruction}
 
 Return ONLY valid JSON with this exact shape:
 {
@@ -190,5 +201,56 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
     visibleSummary: cleanString(parsed.visibleSummary, 1000) || "Detector report analysed; no additional explicit summary was returned.",
     confidence: ["high", "medium", "low"].includes(parsed.confidence) ? parsed.confidence : "low",
     warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map((x) => cleanString(x, 500)).filter(Boolean).slice(0, 10) : [],
+  };
+}
+
+function confidenceRank(value) {
+  return value === "high" ? 3 : value === "medium" ? 2 : value === "low" ? 1 : 0;
+}
+
+export function mergeDetectorScreenshotAnalyses(...values) {
+  const observations = values.filter(Boolean);
+  if (!observations.length) return null;
+  const firstValue = (key) => observations.find((row) => row?.[key] !== null && row?.[key] !== undefined && row?.[key] !== "")?.[key] ?? null;
+  const passageMap = new Map();
+  for (const row of observations.flatMap((item) => item.highlightedPassages || [])) {
+    const key = `${String(row.text || "").toLowerCase()}|${row.page || ""}|${row.classification || ""}`;
+    if (!passageMap.has(key)) passageMap.set(key, row);
+  }
+  const patternMap = new Map();
+  for (const finding of observations.flatMap((item) => item.patternFindings || [])) {
+    const key = String(finding.label || "").trim().toLowerCase();
+    if (!key) continue;
+    const existing = patternMap.get(key);
+    if (!existing) {
+      patternMap.set(key, { ...finding, instances: [...(finding.instances || [])] });
+      continue;
+    }
+    const instanceMap = new Map([...existing.instances, ...(finding.instances || [])].map((row) => [`${String(row.text || "").toLowerCase()}|${row.page || ""}`, row]));
+    existing.instances = [...instanceMap.values()].slice(0, 60);
+    if (existing.reportedCount === null && finding.reportedCount !== null) existing.reportedCount = finding.reportedCount;
+    if (!existing.description && finding.description) existing.description = finding.description;
+    if (!existing.likelihoodText && finding.likelihoodText) existing.likelihoodText = finding.likelihoodText;
+  }
+  const highlightedPassages = [...passageMap.values()].slice(0, 120);
+  const explicitTargets = observations.flatMap((row) => row.flaggedExcerpts || []);
+  const passageTargets = highlightedPassages
+    .filter((row) => row.classification === "ai" || row.classification === "ai_paraphrased")
+    .map((row) => row.text);
+  const bestConfidence = observations.map((row) => row.confidence).sort((a, b) => confidenceRank(b) - confidenceRank(a))[0] || "low";
+  return {
+    detector: firstValue("detector") || "Other",
+    version: firstValue("version"),
+    classification: firstValue("classification"),
+    aiScore: firstValue("aiScore"),
+    humanScore: firstValue("humanScore"),
+    paraphrasedScore: firstValue("paraphrasedScore"),
+    flaggedSentenceIndices: [...new Set(observations.flatMap((row) => row.flaggedSentenceIndices || []))].slice(0, 1000),
+    flaggedExcerpts: [...new Set([...explicitTargets, ...passageTargets].filter(Boolean))].slice(0, 100),
+    highlightedPassages,
+    patternFindings: [...patternMap.values()].slice(0, 30),
+    visibleSummary: observations.map((row) => row.visibleSummary).filter(Boolean).join(" ").slice(0, 1000),
+    confidence: bestConfidence,
+    warnings: [...new Set(observations.flatMap((row) => row.warnings || []).filter(Boolean))].slice(0, 10),
   };
 }

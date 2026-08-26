@@ -128,6 +128,7 @@
     preview.innerHTML = observations.map((observation, index) => `
       <div class="detector-gateway-result">
         <div><strong>${esc(observation.detector || "Detector result")} · report file ${index + 1}</strong><span>${esc(observation.classification || "uncertain")}</span></div>
+        ${observation.extraction?.complete ? `<p class="proof-line">Complete report extraction · ${observation.extraction.segmented_recovery_used ? "segmented pattern + passage recovery" : observation.extraction.syntax_repair_used ? "JSON syntax recovered" : "single complete pass"} · ${esc(observation.extraction.provider_calls || 1)} provider call(s)</p>` : ""}
         <div class="detector-gateway-metrics">
           ${Number.isFinite(Number(observation.aiScore)) ? `<span>AI <strong>${esc(observation.aiScore)}%</strong></span>` : ""}
           ${Number.isFinite(Number(observation.humanScore)) ? `<span>Human <strong>${esc(observation.humanScore)}%</strong></span>` : ""}
@@ -178,7 +179,7 @@
       extractedObservations = [];
       for (let index = 0; index < selected.length; index += 1) {
         const { file, mimeType } = selected[index];
-        status(`Reading detector file ${index + 1} of ${selected.length}…`);
+        status(`Reading detector file ${index + 1} of ${selected.length} completely… Large PDF reports are automatically re-read in bounded pattern and passage phases if one response reaches its output limit.`);
         const imageBase64 = await fileToBase64(file);
         const response = await fetch("/api/detector-screenshot", {
           method: "POST",
@@ -188,14 +189,16 @@
         const data = await response.json();
         if (!response.ok) throw new Error(`Detector file ${index + 1}: ${data.message || data.error || "analysis failed"}`);
         const observation = { ...(data.observation || {}) };
+        observation.extraction = data.extraction || null;
+        observation.providerUsage = data.provider_usage || null;
         const selectedDetector = $("detectorScreenshotDetector")?.value || "auto";
         observation.detector = selectedDetector !== "auto" ? selectedDetector : canonicalDetector(observation.detector);
-        observation.notes = `${mimeType === "application/pdf" ? "PDF report" : "Screenshot"} extraction (${observation.confidence || "unknown"} confidence): ${observation.visibleSummary || ""}`.slice(0, 1000);
+        observation.notes = `${mimeType === "application/pdf" ? "PDF report" : "Screenshot"} complete extraction (${observation.confidence || "unknown"} confidence; ${observation.extraction?.strategy || "single_pass"}): ${observation.visibleSummary || ""}`.slice(0, 1000);
         extractedObservations.push(observation);
       }
       populateManualForm(extractedObservations[extractedObservations.length - 1]);
       renderExtracted(extractedObservations);
-      status(`Read ${extractedObservations.length} detector report file${extractedObservations.length === 1 ? "" : "s"}. Review the extracted evidence, then click “Save and link this evidence bundle”. Nothing is linked until that button is pressed.`);
+      status(`Completely read ${extractedObservations.length} detector report file${extractedObservations.length === 1 ? "" : "s"}. Review the extracted scores, colours, passages and named patterns, then click “Save and link this evidence bundle”. Nothing is linked until that button is pressed.`);
     } catch (err) {
       status(err.message || "Screenshot analysis failed.", true);
     }

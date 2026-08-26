@@ -4,9 +4,8 @@ import { buildSourceRevisionComparison } from "../lib/detectorComparison.js";
 import { detectorEvidenceSummary } from "../lib/detectorEvidenceBase.js";
 import {
   validateDetectorScreenshotPayload,
-  detectorScreenshotPrompt,
-  normaliseDetectorScreenshotAnalysis,
 } from "../lib/detectorScreenshot.js";
+import { extractDetectorReportObservation } from "../lib/detectorReportExtraction.js";
 import { llmProvider, HealthState } from "../lib/llmProvider.js";
 
 export const detectorScanRouter = Router();
@@ -81,21 +80,15 @@ detectorScanRouter.post("/detector-screenshot", async (req, res) => {
           type: "image",
           source: { type: "base64", media_type: validated.mimeType, data: validated.fileBase64 },
         };
-    const response = await llmProvider.callAnthropic({
-      system: "Extract only explicitly supported information from the supplied detector-result screenshot or PDF report. Return the requested JSON only.",
-      messages: [{
-        role: "user",
-        content: [
-          reportContent,
-          { type: "text", text: detectorScreenshotPrompt() },
-        ],
-      }],
-      maxTokens: 1400,
+    const { observation, extraction } = await extractDetectorReportObservation({
+      provider: llmProvider,
+      reportContent,
+      mimeType: validated.mimeType,
     });
-
-    const observation = normaliseDetectorScreenshotAnalysis(response.text);
     return res.json({
       observation,
+      extraction,
+      provider_usage: llmProvider.usageSnapshot(),
       evidence_file: {
         mimeType: validated.mimeType,
         bytes: validated.bytes,
@@ -119,6 +112,13 @@ detectorScanRouter.post("/detector-screenshot", async (req, res) => {
     }
     if (["UNSUPPORTED_REPORT_TYPE", "BAD_REPORT_DATA"].includes(err?.code)) {
       return res.status(400).json({ error: err.code, message: err.message, requestId: req.requestId });
+    }
+    if (err?.code === "DETECTOR_REPORT_STRUCTURE_RECOVERY_FAILED") {
+      return res.status(502).json({
+        error: err.code,
+        message: "The detector report could not be completely structured after high-capacity and segmented recovery. No partial evidence was saved and no incomplete result was presented as complete.",
+        requestId: req.requestId,
+      });
     }
     const state = err?.healthState || HealthState.PROVIDER_ERROR;
     const httpStatus =

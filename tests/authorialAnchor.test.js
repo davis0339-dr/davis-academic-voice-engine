@@ -23,6 +23,7 @@ test("authorial calibration is an expression-only contract with no content trans
   const block = authorialAnchorPromptBlock(sample);
   assert.match(block, /RESEARCHER-AUTHORED CALIBRATION SAMPLE/);
   assert.match(block, /never copy, paraphrase or import a fact, claim, example, citation/i);
+  assert.match(block, /comparable academic purpose and level matter more than topic match/i);
   assert.match(block, /MINIMAL-AUTHORIAL-CORRECTION RULE/);
   assert.match(block, /Correct clear grammar without optimising every acceptable sentence/i);
   assert.match(block, /Measured calibration profile/);

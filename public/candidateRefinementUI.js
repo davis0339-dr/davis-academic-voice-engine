@@ -117,9 +117,19 @@
       </div>
       ${preflight.observations.length ? `<div class="candidate-refinement-evidence">${preflight.observations.map((row) => `<span>${esc(observationLabel(row))}</span>`).join("")}</div>` : ""}
       <p class="muted">This action edits the tested revision while auditing facts, citations, numbers, qualifications, study design and final length against the retained original. It starts a paid reconstruction request and may use bounded preservation or residual calls. It does not contact the detector vendor.</p>
-      <label class="candidate-authorial-anchor"><strong>Your own writing sample</strong>
-        <span>Paste ${ANCHOR_MIN_WORDS}-${ANCHOR_MAX_WORDS} words that you wrote without AI assistance. It calibrates reasoning order and sentence construction; its facts and phrases must never be inserted into the manuscript.</span>
-        <textarea id="authorialAnchorText" rows="7" maxlength="12000" placeholder="Paste a representative passage from your own writing…">${esc(anchor.text)}</textarea>
+      <label class="candidate-authorial-anchor"><strong>Researcher voice calibration — Your own writing sample</strong>
+        <span>This is not a request for more source material. Paste ${ANCHOR_MIN_WORDS}-${ANCHOR_MAX_WORDS} continuous words that you genuinely wrote without AI generation, paraphrasing or rewriting. The best sample comes from a similar academic task and level; it does not need to discuss the same topic. Its facts and phrases must never be inserted into the manuscript.</span>
+        <details class="candidate-authorial-guide" open>
+          <summary>What should I paste, and how should it relate to this manuscript?</summary>
+          <div class="candidate-authorial-guide-grid">
+            <div><strong>Best evidence</strong><span>Two to five connected paragraphs from earlier academic work in which you explain, compare, qualify or develop an argument in your normal way.</span></div>
+            <div><strong>Topic relationship</strong><span>A different topic is often safer. Similar academic purpose and level matter more than matching the subject because no facts or phrases may transfer.</span></div>
+            <div><strong>Same-project material</strong><span>Acceptable only when you wrote it independently and it is not copied from the Source, Revised output, an AI draft or a detector-targeted rewrite.</span></div>
+            <div><strong>Do not use</strong><span>References, quotations, tables, questionnaires, bullet lists, institutional templates, abstracts dominated by fixed wording, or prose another model has polished.</span></div>
+          </div>
+          <p>The engine uses the sample to compare reasoning order, explanation depth, clause loading, sentence boundaries, qualification habits and closure style. It is forbidden from importing the sample's claims, evidence, citations, examples or topic language.</p>
+        </details>
+        <textarea id="authorialAnchorText" rows="9" maxlength="12000" placeholder="Paste 2-5 connected paragraphs that show how you normally explain or argue in academic prose. A different topic is fine; genuine authorship and a comparable academic purpose matter most.">${esc(anchor.text)}</textarea>
         <small id="authorialAnchorStatus">${esc(anchor.count)} words · ${anchor.valid ? "ready" : `needs ${ANCHOR_MIN_WORDS}-${ANCHOR_MAX_WORDS} words`}</small>
       </label>
       <button id="refineTestedCandidateBtn" class="primary" type="button" ${(preflight.ready && anchor.valid) ? "" : "disabled"}>Refine this tested revision</button>
@@ -161,7 +171,7 @@
     .candidate-refinement-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.6rem;margin:.8rem 0}.candidate-refinement-grid>div{padding:.65rem;background:rgba(4,10,18,.38);border-radius:7px}.candidate-refinement-grid span{display:block;font-size:.76rem;opacity:.72}.candidate-refinement-grid strong{display:block;margin-top:.25rem}
     .candidate-refinement-evidence{display:flex;gap:.45rem;flex-wrap:wrap;margin:.7rem 0}.candidate-refinement-evidence span{padding:.3rem .5rem;border:1px solid #4f8f78;border-radius:999px;font-size:.82rem}
     .candidate-version-history{margin-top:.8rem}.candidate-version-row{margin:.5rem 0}.candidate-version-row textarea{width:100%;margin-top:.45rem}
-    .candidate-authorial-anchor{display:grid;gap:.42rem;margin:.9rem 0;padding:.8rem;border:1px solid #4f8f78;border-radius:8px}.candidate-authorial-anchor span,.candidate-authorial-anchor small{color:var(--muted)}.candidate-authorial-anchor textarea{width:100%;box-sizing:border-box}
+    .candidate-authorial-anchor{display:grid;gap:.52rem;margin:.9rem 0;padding:.9rem;border:1px solid #4f8f78;border-radius:8px}.candidate-authorial-anchor span,.candidate-authorial-anchor small{color:var(--muted)}.candidate-authorial-anchor textarea{width:100%;box-sizing:border-box}.candidate-authorial-guide{padding:.65rem;border:1px solid rgba(79,143,120,.55);border-radius:7px;background:rgba(4,10,18,.28)}.candidate-authorial-guide summary{cursor:pointer;font-weight:700}.candidate-authorial-guide-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.55rem;margin:.65rem 0}.candidate-authorial-guide-grid>div{padding:.55rem;border-left:3px solid #4f8f78;background:rgba(20,54,45,.22)}.candidate-authorial-guide-grid strong,.candidate-authorial-guide-grid span{display:block}.candidate-authorial-guide-grid span{margin-top:.22rem;font-size:.84rem}.candidate-authorial-guide p{margin:.55rem 0 0;color:var(--muted);font-size:.86rem}
   `;
   document.head.appendChild(style);
 

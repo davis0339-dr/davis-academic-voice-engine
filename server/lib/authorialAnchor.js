@@ -54,6 +54,7 @@ export function authorialAnchorPromptBlock(value) {
     "",
     "--- RESEARCHER-AUTHORED CALIBRATION SAMPLE ---",
     "The sample below was supplied as writing genuinely authored by the researcher. It is calibration evidence for expression only; it is not evidence for the manuscript's subject matter.",
+    "SAMPLE RELATION RULE: comparable academic purpose and level matter more than topic match. A different-topic passage is valid and often safer. Same-project material is valid only when independently written by the researcher and not copied from the source, a prior candidate or model-polished prose.",
     "NON-TRANSFER RULE: never copy, paraphrase or import a fact, claim, example, citation, quotation, proper noun or topic-specific phrase from this sample into the revision.",
     "CALIBRATE WHAT THE RESEARCHER ACTUALLY CONTROLS: reasoning order, how much explanation is made explicit, clause loading, sentence-boundary choices, recurring terminology, qualification habits, and whether a passage closes explicitly or carries a point forward.",
     "MINIMAL-AUTHORIAL-CORRECTION RULE: preserve the tested candidate's valid research content, but do not replace the researcher's observable reasoning habits with newly invented framing, balanced contrasts, tidy three-part packaging, or a polished concluding sentence. Correct clear grammar without optimising every acceptable sentence.",

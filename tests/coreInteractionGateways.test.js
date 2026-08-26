@@ -30,6 +30,8 @@ test("Detector gateway directly opens device files, supports drop-paste and pers
   assert.match(js, /academicVoice:detector-observation-saved/);
   assert.match(js, /MAX_PDF_BYTES = 5 \* 1024 \* 1024/);
   assert.match(js, /fileBase64/);
+  assert.match(js, /Large PDF reports are automatically re-read in bounded pattern and passage phases/);
+  assert.match(js, /Complete report extraction/);
 });
 
 test("Deep Authorial cannot coexist silently with Moderate intensity in the browser controls", () => {
