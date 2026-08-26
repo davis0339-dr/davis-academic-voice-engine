@@ -19,4 +19,13 @@ test("rewrite lineage wrapper injects root-source metadata only on rewrite POSTs
   assert.match(script, /rootSourceText/);
   assert.match(script, /sourceGeneration/);
   assert.match(script, /localStorage/);
+  assert.match(script, /recoverEditorState\(\)/);
+});
+
+test("candidate refinement UI safely restores a retained tested revision after refresh", () => {
+  const script = fs.readFileSync(new URL("../public/candidateRefinementUI.js", import.meta.url), "utf8");
+  assert.match(script, /restoreRetainedCandidate\(\)/);
+  assert.match(script, /recoverEditorState/);
+  assert.match(script, /currentSource && currentSource !== normalise\(retained\.root_source\)/);
+  assert.match(script, /revised\.value = retained\.last_revision/);
 });

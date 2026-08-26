@@ -37,6 +37,24 @@
     return bits.join(" · ");
   }
 
+  function restoreRetainedCandidate() {
+    const source = $("sourceText");
+    const revised = $("revisedText");
+    const retained = window.AcademicRewriteLineage?.recoverEditorState?.();
+    if (!source || !revised || !retained?.root_source || !retained?.last_revision) return false;
+    const normalise = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const currentSource = normalise(source.value);
+    // Never replace text the researcher has changed. Recovery is permitted only
+    // when Source is empty or still equals the retained root, and Revised is
+    // empty after a page/deployment refresh.
+    if (normalise(revised.value) || (currentSource && currentSource !== normalise(retained.root_source))) return false;
+    if (!currentSource) source.value = retained.root_source;
+    revised.value = retained.last_revision;
+    source.dispatchEvent(new Event("input", { bubbles: true }));
+    revised.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+
   function render() {
     const panel = candidatePanel();
     if (!panel) return;
@@ -112,6 +130,10 @@
   ["academicVoice:detector-observation-saved", "academicVoice:rewrite-lineage-updated"].forEach((name) => window.addEventListener(name, render));
   $("lengthPreference")?.addEventListener("change", render);
   document.querySelector('.tab-header[data-tab="detectorqa"]')?.addEventListener("click", () => setTimeout(render, 0));
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render, { once: true });
-  else render();
+  const initialise = () => {
+    restoreRetainedCandidate();
+    render();
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialise, { once: true });
+  else initialise();
 })();

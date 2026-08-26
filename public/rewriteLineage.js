@@ -131,8 +131,10 @@
     if (!body || typeof body.text !== "string") return upstreamFetch(input, init);
 
     const lineage = resolveLineage(body.text);
-    // Detector evidence is deliberately opt-in. Attach it only after the
-    // researcher presses the explicit tested-candidate refinement control.
+    // Detector evidence is attached only when the request is explicitly marked
+    // as a tested-candidate refinement. The editor can set that mode through
+    // either the dedicated refinement control or the automatic exact-candidate
+    // handoff after linked evidence has been saved.
     const linkedObservations = body.refinementMode === "tested_candidate"
       ? linkedObservationsFor(body.text)
       : [];
@@ -190,6 +192,16 @@
     },
     versionHistory() {
       return readState()?.versions || [];
+    },
+    recoverEditorState() {
+      const state = readState();
+      if (!state) return null;
+      return {
+        root_source: state.root_source,
+        last_revision: state.last_revision,
+        candidate_id: state.candidate_id,
+        generation: state.generation,
+      };
     },
   };
 })();
