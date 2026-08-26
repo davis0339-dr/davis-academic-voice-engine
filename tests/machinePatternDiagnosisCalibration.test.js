@@ -24,7 +24,11 @@ test("corroborated machine-pattern layers classify the AI benchmark as high pres
 test("the human benchmark remains low pressure and separated from the AI benchmark", () => {
   const ai = assessSourceBeforeRewrite({ text: aiBenchmark, styleFilters: {} }).authorial_texture.machine_pattern_regularity;
   const human = assessSourceBeforeRewrite({ text: humanBenchmark, styleFilters: {} }).authorial_texture.machine_pattern_regularity;
-  assert.equal(human.label, "low");
+  assert.equal(
+    human.label,
+    "low",
+    `expected the verified human benchmark to remain low pressure; ${JSON.stringify({ score: human.score, components: human.components, signals: human.signals, evidence: human.evidence })}`
+  );
   assert.ok(ai.score >= human.score + 0.30, `expected useful separation; ai=${ai.score}, human=${human.score}`);
 });
 
