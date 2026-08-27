@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Academic Voice Engine — Source-Grounded Authoring</title>
+<link rel="stylesheet" href="/styles.css" />
+<style>
+  .workspace-nav{display:flex;gap:.6rem;align-items:center;margin-left:auto;flex-wrap:wrap}.workspace-nav a{display:inline-flex;align-items:center;padding:.42rem .7rem;border:1px solid #465b74;border-radius:999px;text-decoration:none;color:inherit;font-size:.86rem}.workspace-nav a.active{border-color:#62e0b0;background:rgba(98,224,176,.08)}
+  .source-shell{max-width:1500px;margin:0 auto;padding:1rem 1.25rem 3rem;color-scheme:dark}.source-card{margin:.8rem 0;padding:1rem;border:1px solid #35475a;border-radius:14px;background:#141a21}.source-card h2,.source-card h3{margin-top:.1rem}.muted{color:#9aabba}.entry-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem}.entry-choice{display:block;padding:.8rem;border:1px solid #405269;border-radius:10px;background:#10171e}.entry-choice input{margin-right:.45rem}.source-shell textarea,.source-shell input[type="text"]{width:100%;box-sizing:border-box;background:#0d1319;color:#edf2f7;border:1px solid #3a4a5c;border-radius:8px;padding:.65rem}.source-shell textarea:focus,.source-shell input:focus{border-color:#6b9cff;box-shadow:0 0 0 3px rgba(91,141,239,.17);outline:none}.action-row{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.7rem 0}.source-shell button,.file-button{background:#18212b;border:1px solid #44566a;color:#edf2f7;font-weight:650}.source-shell button.primary{background:#4f7fe0;border-color:#6c99ef}.source-shell button:disabled{opacity:.5}.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(1px,1px,1px,1px)!important}.source-list{display:grid;gap:.6rem}.source-item{display:grid;grid-template-columns:1fr minmax(220px,1fr) auto;gap:.6rem;align-items:center;padding:.65rem;border:1px solid #344354;border-radius:9px;background:#111820}.source-item strong{overflow-wrap:anywhere}.assembly-section{margin:1rem 0;padding:.9rem;border:1px solid #3a4c60;border-radius:12px;background:#10171e}.assembly-section h3{margin:.1rem 0 .8rem}.assembly-block{position:relative;margin:.65rem 0;padding:.75rem;border-radius:9px}.assembly-block.extract{border-left:4px solid #62e0b0;background:#13211d}.assembly-block.link{border-left:4px solid #6b9cff;background:#111a25}.block-label{display:flex;justify-content:space-between;gap:.6rem;margin-bottom:.45rem;font-size:.78rem;color:#aab8c8}.extract-text{white-space:pre-wrap;line-height:1.55}.link textarea{min-height:72px}.assembly-output{min-height:260px}.proof{padding:.7rem;border-left:4px solid #62e0b0;background:rgba(98,224,176,.08)}.warning{padding:.7rem;border-left:4px solid #e7b85b;background:rgba(231,184,91,.08)}@media(max-width:850px){.entry-grid{grid-template-columns:1fr}.source-item{grid-template-columns:1fr}.workspace-nav{width:100%;margin-left:0}.topbar{flex-wrap:wrap}.source-shell{padding:.75rem}}
+</style>
+<script>window.AVE_WORKSPACE="source-grounded-authoring";</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Academic Voice Engine <span class="tag">Source-Grounded Authoring</span></div>
+  <a id="sourceBuildBadge" class="build-badge" href="#" target="_blank" rel="noopener">build: pending</a>
+  <nav class="workspace-nav" aria-label="Voice Engine workspaces">
+    <a href="/editor">Editor + Detector</a>
+    <a href="/studio">Research &amp; Evidence Studio</a>
+    <a class="active" href="/source-authoring">Source-Grounded Authoring</a>
+  </nav>
+</header>
+
+<main class="source-shell">
+  <section class="source-card">
+    <h2>Build from the studies themselves</h2>
+    <p>Use a researcher guide, template or existing draft to retrieve relevant source wording, order the extracts and create a rough linked manuscript. Extract wording is locked; only the connecting text is editable.</p>
+    <p class="muted">Paper reading happens in this browser. Local matching uses no model credits. Guided ordering uses one compact provider call after local retrieval.</p>
+  </section>
+
+  <section class="source-card">
+    <h3>1. Choose how this manuscript begins</h3>
+    <div class="entry-grid">
+      <label class="entry-choice"><input type="radio" name="entryMode" value="template" /> <strong>Follow a template</strong><br><span class="muted">Use an institutional template, chapter pattern or completed example as the structure.</span></label>
+      <label class="entry-choice"><input type="radio" name="entryMode" value="rebuild" /> <strong>Rebuild an existing draft</strong><br><span class="muted">Retain its intended sections while replacing weak evidence development with source extracts.</span></label>
+      <label class="entry-choice"><input type="radio" name="entryMode" value="develop" checked /> <strong>Develop a manuscript</strong><br><span class="muted">Begin from the researcher’s guide, topic, questions or section brief.</span></label>
+    </div>
+    <div class="action-row">
+      <label class="file-button" for="structureFile">Upload template, draft or guide</label>
+      <input id="structureFile" class="visually-hidden" type="file" accept=".txt,.md,.markdown,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+      <span id="structureStatus" class="muted">or paste it below</span>
+    </div>
+    <textarea id="structureText" rows="10" placeholder="Paste the template, existing draft, researcher guide, research questions or section instructions that should govern the source extraction."></textarea>
+  </section>
+
+  <section class="source-card">
+    <h3>2. Add the relevant studies</h3>
+    <div class="action-row">
+      <label class="file-button" for="studyFiles">Upload studies</label>
+      <input id="studyFiles" class="visually-hidden" type="file" multiple accept=".txt,.md,.markdown,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+      <span id="studyStatus" class="muted">TXT, DOCX or text-based PDF · up to 12 studies per assembly</span>
+    </div>
+    <div id="sourceList" class="source-list"><p class="muted">No studies loaded yet.</p></div>
+  </section>
+
+  <section class="source-card">
+    <h3>3. Extract, order and link</h3>
+    <p class="muted">Both paths preserve selected extracts exactly. Guided ordering spends at most one provider call and never sends entire papers to the model; only locally retrieved candidate passages are considered.</p>
+    <div class="action-row">
+      <button id="buildLocalBtn" class="primary" type="button">Build with local matching · 0 model calls</button>
+      <button id="buildGuidedBtn" type="button">Build with guided ordering · maximum 1 call</button>
+      <button id="clearSourceAuthoringBtn" type="button">Clear workspace</button>
+    </div>
+    <div id="sourceAuthoringStatus" class="status-message" aria-live="polite"></div>
+    <div id="assemblyWorkspace"></div>
+  </section>
+
+  <section id="handoffCard" class="source-card" hidden>
+    <h3>4. Review and continue</h3>
+    <p class="proof">Every green extract remains verbatim and locked. Edit only the blue connecting passages, rearrange the evidence if necessary, then rebuild the preview.</p>
+    <textarea id="assembledDraft" class="assembly-output" readonly></textarea>
+    <div class="action-row">
+      <button id="refreshDraftBtn" type="button">Refresh assembled preview</button>
+      <button id="sendSourceEditorBtn" class="primary" type="button">Send to source-preserving Editor review</button>
+      <button id="sendSourceStudioBtn" type="button">Continue later in Research Studio</button>
+    </div>
+  </section>
+</main>
+
+<script src="/safeDom.js"></script>
+<script src="/fileImport.js?v=4.0.0"></script>
+<script src="/sourceGroundedAuthoringUI.js?v=1.0.0"></script>
+</body>
+</html>
