@@ -565,6 +565,15 @@ export async function rewrite({
     paragraph_plan_summary: analysis.plan.paragraphSummary,
     planner_version: analysis.plan.plannerVersion,
     planner_scope_policy_version: analysis.plan.scopePolicyVersion || null,
+    human_discourse_evidence: analysis.plan.humanDiscourseEvidence
+      ? {
+          version: analysis.plan.humanDiscourseEvidence.version,
+          profiles: analysis.plan.humanDiscourseEvidence.profiles,
+          selected_move_ids: analysis.plan.humanDiscourseEvidence.selectedMoves.map((move) => move.id),
+          paragraph_assignments: analysis.plan.humanDiscourseEvidence.paragraphAssignments,
+          note: analysis.plan.humanDiscourseEvidence.note,
+        }
+      : null,
     external_detector_feedback_execution: analysis.plan.externalFeedbackExecution || null,
     planner_sequence: analysis.plan.sequence,
     preservation,

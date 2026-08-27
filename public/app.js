@@ -257,10 +257,14 @@ function renderPlan(plan) {
   const summary = Object.entries(plan.summary)
     .map(([level, count]) => `${level}: ${count}`)
     .join(" · ");
-  $("tab-changes").innerHTML = `<p><strong>Plan summary:</strong> ${summary}</p>${items}`;
+  const human = plan.humanDiscourseEvidence;
+  const humanProof = human
+    ? `<p class="proof-line"><strong>Human-thesis reasoning evidence:</strong> ${human.profileIds.length} profiles · ${human.selectedMoves.length} retrieved moves · ${human.paragraphAssignments.length} paragraph assignments. Retrieval is by rhetorical job; thesis wording and errors are not imitation targets.</p>`
+    : "";
+  $("tab-changes").innerHTML = `${humanProof}<p><strong>Plan summary:</strong> ${summary}</p>${items}`;
 }
 
-function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, build) {
+function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, build, humanDiscourseEvidence) {
   renderPlan(plan);
   const flags = (editSummary.flags_for_author || []).length
     ? `<p><strong>Flagged for author:</strong> ${editSummary.flags_for_author.join("; ")}</p>`
@@ -269,8 +273,12 @@ function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, 
   const proofLine = na
     ? `<p class="proof-line">Applied to this request: level=<strong>${na.level}</strong> · cadence profile=${na.cadence_targeting ? "on" : "off"} · syntactic diversity=${na.syntactic_diversity ? "on" : "off"} · measured family sources=${na.human_family_measured_sources}${build?.commitShort ? ` · build <a href="${build.githubUrl}" target="_blank" rel="noopener">${build.commitShort}</a>` : ""}</p>`
     : "";
+  const humanProof = humanDiscourseEvidence
+    ? `<p class="proof-line"><strong>Human-thesis reasoning applied:</strong> ${humanDiscourseEvidence.profiles?.length || 0} profiles · ${humanDiscourseEvidence.selected_move_ids?.length || 0} retrieved moves · ${humanDiscourseEvidence.paragraph_assignments?.length || 0} paragraph assignments.</p>`
+    : "";
   $("tab-changes").innerHTML =
     proofLine +
+    humanProof +
     `<p><strong>Model edit summary:</strong> kept ${editSummary.kept}, micro-edits ${editSummary.micro_edits}, restructures ${editSummary.sentence_restructures}, split/merge ${editSummary.split_or_merge}, paragraph reorders ${editSummary.paragraph_reorders}</p>${flags}` +
     $("tab-changes").innerHTML;
 }
@@ -502,7 +510,7 @@ async function runAnalyseAndRevise(options = {}) {
     renderProfile(data.style_profile_used);
     const rejectedPreservation = data.execution_compliance?.rejected_preservation_failure?.preservation;
     renderPreservation(data.preservation || rejectedPreservation || {}, data.preservation_release, data.preservation_chain);
-    renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
+    renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build, data.human_discourse_evidence);
     renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
     const acceptanceReasons = data.output_acceptance?.reasons || [];
     const lengthContractMissed = acceptanceReasons.includes("expand_length_contract_missed") || acceptanceReasons.includes("deep_auto_developmental_compression");

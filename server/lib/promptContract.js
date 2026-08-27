@@ -20,7 +20,7 @@ export const MANDATORY_REVISION_GUARDRAILS = Object.freeze([
   "[G07 NO-INVENTION] Reconstruction may clarify and reorganise only supplied intellectual content. Do not manufacture facts, findings, mechanisms, citations, local realities or stronger propositions. Put possible additions in additional_inputs for researcher confirmation or verification.",
   "[G08 DEEP-NOT-DELETION] Rewrite depth controls how extensively authorised expression may be rebuilt; it does not authorise deeper deletion. Deep reconstruction must change discourse and syntax where diagnosed while preserving the protected proposition/evidence/function ledger.",
   "[G09 HUMAN-TEXTURE] Human academic texture comes from reasoning-led variation, purposeful complexity, disciplined transitions, interpretation and qualification. Never simulate it with errors, fragments, arbitrary synonyms, fake informality, random quirks or forced short sentences.",
-  "[G10 PRESERVATION-OVERRIDES] If a stylistic, cadence, concision, grammar or naturalisation instruction conflicts with rhetorical or semantic preservation, preservation wins. If the requested length is maintain/normal, brevity has no independent value.",
+  "[G10 PRESERVATION-OVERRIDES] If style, cadence, concision or grammar conflicts with factual, evidential, epistemic or rhetorical preservation, preservation wins. This protects the research, not machine-shaped wording or source sentence shells. In authorised Aggressive/Deep reconstruction, source phraseology, sentence boundaries and paragraph choreography may be replaced while protected meaning and relationships survive. If length is maintain/normal, brevity has no independent value.",
   "[G11 PRESERVE-ONCE] Preserve each distinct proposition and rhetorical function once. Do not write a reconstructed version and then retain or lightly edit the source sentence beside it as a preservation precaution. Preservation protects intellectual content, not duplicate sentence realizations.",
 ]);
 
@@ -142,6 +142,7 @@ const NATURALISATION_FIDELITY = {
       "- Let some sentences depend naturally on neighbouring sentences instead of making every sentence a self-contained abstract-style statement.",
       "- Natural repetition of technical terms and writer-preferred disciplinary phrasing is acceptable. Do not disguise construct repetition through forced synonyms.",
       "- Break source sentence skeletons when the intervention plan calls for substantive restructuring. Changing punctuation or one or two words is not enough.",
+      "- A polished or grammatically correct source passage is not thereby authorial. Where machine-language, discourse-regularity, candidate-linked feedback or the paragraph plan diagnoses reconstruction, do not preserve its wording out of caution; rebuild from its protected propositions and assigned human-discourse move.",
       "- Where the source contains a visible rhetorical scaffold, preserve its intellectual distinctions but rebuild the presentation so the reasoning, not the labels, organises the prose.",
       "- Do not insert idioms, metaphors or local references as decorative humanising devices. If an existing source phrase, disciplinary expression or contextually grounded example carries the writer's voice, it may be preserved or naturally integrated.",
       "- Never introduce grammatical errors, misspellings, wrong words or broken syntax to seem human. The text must remain defensible to an examiner.",
@@ -170,22 +171,67 @@ function uniqueDiagnosticRequirements(plan) {
   for (const item of plan.items || []) {
     for (const reason of item.reasons || []) add(reason);
   }
-  return reasons.slice(0, 14).map((reason) => reason.slice(0, 360));
+  return reasons.slice(0, 6).map((reason) => reason.slice(0, 260));
 }
 
 function compactReasons(reasons, limit = 2) {
   return [...new Set((reasons || []).map((reason) => String(reason).trim()).filter(Boolean))]
     .slice(0, limit)
-    .map((reason) => reason.slice(0, 260));
+    .map((reason) => reason.slice(0, 200));
 }
 
 function compactParagraphPlan(plan) {
   return (plan?.paragraphPlan || []).map((item) => ({
-    paragraphBlockIndex: item.paragraphBlockIndex,
+    paragraphBlockIndex: item.blockIndex,
     primaryAction: item.primaryAction,
-    actions: (item.actions || []).slice(0, 4),
-    reasons: compactReasons(item.reasons, 3),
+    actions: (item.actions || []).slice(0, 3),
+    reasons: compactReasons(item.reasons, 2),
   }));
+}
+
+function humanDiscourseEvidenceBlock(plan) {
+  const evidence = plan?.humanDiscourseEvidence;
+  if (!evidence?.selectedMoves?.length) return "";
+  const frequency = new Map();
+  for (const row of evidence.paragraphAssignments || []) {
+    for (const id of row.moveIds || []) frequency.set(id, (frequency.get(id) || 0) + 1);
+  }
+  const rankedMoves = [...evidence.selectedMoves].sort((a, b) =>
+    (frequency.get(b.id) || 0) - (frequency.get(a.id) || 0) || a.id.localeCompare(b.id)
+  );
+  const promptMoves = [];
+  for (const profileId of evidence.profileIds || []) {
+    const representative = rankedMoves.find((move) => move.profileId === profileId);
+    if (representative && !promptMoves.includes(representative)) promptMoves.push(representative);
+  }
+  for (const move of rankedMoves) {
+    if (promptMoves.length >= 3) break;
+    if (!promptMoves.includes(move)) promptMoves.push(move);
+  }
+  const includedMoveIds = new Set(promptMoves.map((move) => move.id));
+  const moveCatalog = promptMoves.map((move) => [
+    move.id,
+    move.profileId,
+    move.instruction.slice(0, 220),
+  ]);
+  const targetBlocks = new Set((plan.items || [])
+    .filter((item) => !["KEEP", "MICRO_EDIT"].includes(item.level))
+    .map((item) => item.paragraphBlockIndex)
+    .filter(Number.isInteger));
+  const assignments = (evidence.paragraphAssignments || [])
+    .map((row) => ({ ...row, moveIds: (row.moveIds || []).filter((id) => includedMoveIds.has(id)) }))
+    .filter((row) => row.moveIds.length && targetBlocks.has(row.blockIndex))
+    .map((row) => [row.blockIndex, row.rhetoricalJob, row.moveIds]);
+  return [
+    "--- THREE-THESIS HUMAN DISCOURSE EVIDENCE (operational; reasoning moves, never phrase imitation) ---",
+    `Corpus version: ${evidence.version}`,
+    `Profiles available: ${(evidence.profileIds || []).join(", ")}`,
+    "Rows are [block, rhetorical job, move ids]. Apply them only inside authorised paragraph scope. Transfer the reasoning operation, never thesis wording, errors, fixed enumeration, invented content or ornamental roughness. Preserve research facts and epistemic strength, not machine-shaped sentence shells.",
+    `Move catalog: ${JSON.stringify(moveCatalog)}`,
+    `Paragraph assignments: ${JSON.stringify(assignments)}`,
+    "Before returning the candidate, verify that authorised paragraphs exhibit the assigned reasoning operation rather than the source's sentence alignment with cleaner synonyms.",
+    "--- END THREE-THESIS HUMAN DISCOURSE EVIDENCE ---",
+  ].join("\n");
 }
 
 function compactSentencePlan(plan) {
@@ -257,6 +303,7 @@ export function buildSystemPrompt({ sourceText, lengthAnchorText, minimumExpansi
     ].join("\n"),
     "",
     mandatoryGuardrailBlock(plan),
+    humanDiscourseEvidenceBlock(plan),
     plan.argumentativeSufficiency
       ? `Argumentative sufficiency: ${plan.argumentativeSufficiency.development_need || "n/a"} development need; score ${plan.argumentativeSufficiency.development_score ?? "n/a"}. ${plan.argumentativeSufficiency.guardrail || ""}`
       : "",
