@@ -199,20 +199,16 @@ function humanDiscourseEvidenceBlock(plan) {
   const rankedMoves = [...evidence.selectedMoves].sort((a, b) =>
     (frequency.get(b.id) || 0) - (frequency.get(a.id) || 0) || a.id.localeCompare(b.id)
   );
-  const promptMoves = [];
-  for (const profileId of evidence.profileIds || []) {
-    const representative = rankedMoves.find((move) => move.profileId === profileId);
-    if (representative && !promptMoves.includes(representative)) promptMoves.push(representative);
-  }
-  for (const move of rankedMoves) {
-    if (promptMoves.length >= 3) break;
-    if (!promptMoves.includes(move)) promptMoves.push(move);
-  }
+  // Every retrieved move is now communicated to generation. The previous
+  // three-row compression silently discarded most paragraph-specific corpus
+  // guidance and reduced each thesis to one representative characteristic.
+  const promptMoves = rankedMoves.slice(0, 16);
   const includedMoveIds = new Set(promptMoves.map((move) => move.id));
   const moveCatalog = promptMoves.map((move) => [
     move.id,
     move.profileId,
-    move.instruction.slice(0, 220),
+    move.instruction.slice(0, 120),
+    move.caution.slice(0, 45),
   ]);
   const targetBlocks = new Set((plan.items || [])
     .filter((item) => !["KEEP", "MICRO_EDIT"].includes(item.level))
@@ -226,7 +222,7 @@ function humanDiscourseEvidenceBlock(plan) {
     "--- THREE-THESIS HUMAN DISCOURSE EVIDENCE (operational; reasoning moves, never phrase imitation) ---",
     `Corpus version: ${evidence.version}`,
     `Profiles available: ${(evidence.profileIds || []).join(", ")}`,
-    "Rows are [block, rhetorical job, move ids]. Apply them only inside authorised paragraph scope. Transfer the reasoning operation, never thesis wording, errors, fixed enumeration, invented content or ornamental roughness. Preserve research facts and epistemic strength, not machine-shaped sentence shells.",
+    "Rows are [block, rhetorical job, move ids]. Apply only in authorised scope. Transfer reasoning, never thesis wording, errors, invented content or ornamental roughness.",
     `Move catalog: ${JSON.stringify(moveCatalog)}`,
     `Paragraph assignments: ${JSON.stringify(assignments)}`,
     "Before returning the candidate, verify that authorised paragraphs exhibit the assigned reasoning operation rather than the source's sentence alignment with cleaner synonyms.",

@@ -70,12 +70,13 @@ function compactMove(move) {
   };
 }
 
-export function selectHumanDiscourseGuidance(diagnostics, paragraphPlan, { maxMovesPerParagraph = 2 } = {}) {
+export function selectHumanDiscourseGuidance(diagnostics, paragraphPlan, { maxMovesPerParagraph = 1 } = {}) {
   const blocks = diagnostics?.text_structure?.blocks || [];
   const planByBlock = new Map((paragraphPlan || []).map((row) => [row.blockIndex, row]));
   let sectionJob = null;
   const assignments = [];
   const selectedIds = new Set();
+  const profileUsage = new Map(HUMAN_DISCOURSE_PROFILES.map((profile) => [profile.id, 0]));
 
   for (const block of blocks) {
     if (block.type === "heading") {
@@ -89,7 +90,7 @@ export function selectHumanDiscourseGuidance(diagnostics, paragraphPlan, { maxMo
     const ranked = HUMAN_DISCOURSE_MOVES
       .map((move) => ({ move, score: scoreMove(move, job, actions) }))
       .filter((row) => row.score > 0)
-      .sort((a, b) => b.score - a.score || a.move.id.localeCompare(b.move.id));
+      .sort((a, b) => b.score - a.score || (profileUsage.get(a.move.profileId) || 0) - (profileUsage.get(b.move.profileId) || 0) || a.move.id.localeCompare(b.move.id));
 
     const chosen = [];
     const usedProfiles = new Set();
@@ -100,6 +101,7 @@ export function selectHumanDiscourseGuidance(diagnostics, paragraphPlan, { maxMo
       )) continue;
       chosen.push(row.move);
       usedProfiles.add(row.move.profileId);
+      profileUsage.set(row.move.profileId, (profileUsage.get(row.move.profileId) || 0) + 1);
       selectedIds.add(row.move.id);
     }
 
@@ -114,16 +116,20 @@ export function selectHumanDiscourseGuidance(diagnostics, paragraphPlan, { maxMo
   return {
     version: HUMAN_DISCOURSE_PROFILES_VERSION,
     profileIds: HUMAN_DISCOURSE_PROFILES.map((profile) => profile.id),
-    profiles: HUMAN_DISCOURSE_PROFILES.map(({ id, author, sourceFile, strongestContribution, caveat }) => ({
+    profiles: HUMAN_DISCOURSE_PROFILES.map(({ id, author, sourceFile, strongestContribution, longitudinalArchitecture, preserve, adapt, avoid, caveat }) => ({
       id,
       author,
       sourceFile,
       strongestContribution,
+      longitudinalArchitecture,
+      preserve: [...(preserve || [])],
+      adapt: [...(adapt || [])],
+      avoid: [...(avoid || [])],
       caveat: caveat || null,
     })),
     globalRules: [...HUMAN_DISCOURSE_GLOBAL_RULES],
     selectedMoves: HUMAN_DISCOURSE_MOVES.filter((move) => selectedIds.has(move.id)).map(compactMove),
     paragraphAssignments: assignments,
-    note: "The engine retrieves thesis-derived reasoning operations by rhetorical job. It must not imitate author-specific wording, errors or surface habits.",
+    note: "The engine retrieves thesis-derived reasoning operations by rhetorical job and carries each thesis's longitudinal argument architecture and Preserve/Adapt/Avoid boundaries. It must not imitate author-specific wording, errors or surface habits.",
   };
 }

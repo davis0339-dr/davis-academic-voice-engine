@@ -128,7 +128,7 @@
     preview.innerHTML = observations.map((observation, index) => `
       <div class="detector-gateway-result">
         <div><strong>${esc(observation.detector || "Detector result")} · report file ${index + 1}</strong><span>${esc(observation.classification || "uncertain")}</span></div>
-        ${observation.extraction?.complete ? `<p class="proof-line">Complete report extraction · ${observation.extraction.segmented_recovery_used ? "segmented pattern + passage recovery" : observation.extraction.syntax_repair_used ? "JSON syntax recovered" : "single complete pass"} · ${esc(observation.extraction.provider_calls || 1)} provider call(s)</p>` : ""}
+        ${observation.extraction?.complete ? `<p class="proof-line">Complete report extraction · ${observation.extraction.page_coverage_audited ? `page-audited: ${esc((observation.extraction.pages_inspected || []).join(", "))} of ${esc(observation.extraction.report_page_count)} page(s) inspected; passage evidence on page(s) ${esc((observation.extraction.pages_with_passage_evidence || []).join(", ") || "none")}` : observation.extraction.segmented_recovery_used ? "segmented pattern + passage recovery" : observation.extraction.syntax_repair_used ? "JSON syntax recovered" : "single complete pass"} · ${esc(observation.extraction.provider_calls || 1)} provider call(s)</p>` : ""}
         <div class="detector-gateway-metrics">
           ${Number.isFinite(Number(observation.aiScore)) ? `<span>AI <strong>${esc(observation.aiScore)}%</strong></span>` : ""}
           ${Number.isFinite(Number(observation.humanScore)) ? `<span>Human <strong>${esc(observation.humanScore)}%</strong></span>` : ""}
@@ -190,6 +190,9 @@
         if (!response.ok) throw new Error(`Detector file ${index + 1}: ${data.message || data.error || "analysis failed"}`);
         const observation = { ...(data.observation || {}) };
         observation.extraction = data.extraction || null;
+        observation.reportPageCount = observation.reportPageCount || data.extraction?.report_page_count || null;
+        observation.pagesInspected = observation.pagesInspected?.length ? observation.pagesInspected : (data.extraction?.pages_inspected || []);
+        observation.pagesWithPassageEvidence = observation.pagesWithPassageEvidence?.length ? observation.pagesWithPassageEvidence : (data.extraction?.pages_with_passage_evidence || []);
         observation.providerUsage = data.provider_usage || null;
         const selectedDetector = $("detectorScreenshotDetector")?.value || "auto";
         observation.detector = selectedDetector !== "auto" ? selectedDetector : canonicalDetector(observation.detector);

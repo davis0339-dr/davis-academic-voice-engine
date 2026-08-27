@@ -71,7 +71,9 @@ export function detectorScreenshotPrompt({ extractionMode = "complete", compact 
   const modeInstruction = extractionMode === "overview_patterns"
     ? "EXTRACTION PHASE: return the overall result and every named writing-pattern card with its legible instances. Return highlightedPassages and flaggedExcerpts as empty arrays in this phase."
     : extractionMode === "highlighted_passages"
-      ? "EXTRACTION PHASE: return every distinct colour-coded or explicitly classified manuscript passage. Return patternFindings as an empty array in this phase. Repeat the overall scores only if clearly visible."
+      ? "EXTRACTION PHASE: inspect the PDF page by page and return every distinct colour-coded or explicitly classified manuscript passage. Return patternFindings as an empty array in this phase. Record the total report page count, every page inspected, and every page containing passage evidence. Repeat the overall scores only if clearly visible."
+      : extractionMode === "page_audit"
+        ? "EXTRACTION PHASE: audit page coverage only, then return any coloured passages missed earlier. Record the total report page count, every page inspected, and every page containing passage evidence. Return patternFindings as an empty array."
       : "EXTRACTION PHASE: return the complete overall result, named writing-pattern evidence and colour-coded passage evidence in one response.";
   const compactInstruction = compact
     ? "Use compact JSON. Keep each copied passage or pattern instance to the shortest contiguous 6-24 word excerpt that still maps unambiguously to the report. Do not repeat duplicate excerpts."
@@ -91,6 +93,9 @@ Return ONLY valid JSON with this exact shape:
   "aiScore": number|null,
   "humanScore": number|null,
   "paraphrasedScore": number|null,
+  "reportPageCount": number|null,
+  "pagesInspected": number[],
+  "pagesWithPassageEvidence": number[],
   "flaggedSentenceIndices": number[],
   "flaggedExcerpts": string[],
   "highlightedPassages": [
@@ -114,6 +119,7 @@ Rules:
 - Scores are percentages from 0 to 100 only when explicitly shown.
 - flaggedSentenceIndices must be zero-based and included only when the report explicitly numbers sentences; otherwise return [].
 - Inspect every visible report page for colour-coded or distinctly classified manuscript passages, not only the overall score panel.
+- For a PDF, reportPageCount must be the file's total page count; pagesInspected must list every one-based page actually inspected; pagesWithPassageEvidence must list each page on which colour-coded or distinctly classified manuscript text was found. A page without colour evidence still belongs in pagesInspected.
 - highlightedPassages must record each legible highlighted passage separately. Copy enough contiguous wording to map it back to the tested manuscript (normally 6-40 words), record the explicit AI/mixed/human classification, the visible colour name when discernible, and the one-based PDF page number when available.
 - Some detector interfaces show named writing-pattern cards such as repeated list architecture, contrast templates, sentence-opening habits or other explainable structural tendencies. Record every explicitly named card in patternFindings, including its visible count, description, likelihood/comparison text and each legible linked instance. Preserve the detector's wording; do not invent a pattern name or infer a count.
 - patternFindings are observational writing-pattern evidence, not proof of authorship. An isolated instance can be legitimate. Record it accurately and allow the downstream recurrence analysis to decide whether it warrants intervention.
@@ -140,6 +146,13 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
   const parsed = extractJson(modelText);
   const allowed = new Set(["ai", "ai_paraphrased", "mixed", "human", "uncertain"]);
   const classification = allowed.has(parsed.classification) ? parsed.classification : null;
+  const reportPageCountValue = Number(parsed.reportPageCount);
+  const reportPageCount = Number.isInteger(reportPageCountValue) && reportPageCountValue > 0 ? Math.min(500, reportPageCountValue) : null;
+  const normalisePages = (value) => Array.isArray(value)
+    ? [...new Set(value.map(Number).filter((page) => Number.isInteger(page) && page > 0 && page <= 500))].sort((a, b) => a - b)
+    : [];
+  const pagesInspected = normalisePages(parsed.pagesInspected);
+  const pagesWithPassageEvidence = normalisePages(parsed.pagesWithPassageEvidence);
   const flaggedSentenceIndices = Array.isArray(parsed.flaggedSentenceIndices)
     ? [...new Set(parsed.flaggedSentenceIndices.map(Number).filter((n) => Number.isInteger(n) && n >= 0))].slice(0, 1000)
     : [];
@@ -194,6 +207,12 @@ export function normaliseDetectorScreenshotAnalysis(modelText) {
     aiScore: clampScore(parsed.aiScore),
     humanScore: clampScore(parsed.humanScore),
     paraphrasedScore: clampScore(parsed.paraphrasedScore),
+    reportPageCount,
+    pagesInspected,
+    pagesWithPassageEvidence: [...new Set([
+      ...pagesWithPassageEvidence,
+      ...highlightedPassages.map((row) => row.page).filter(Number.isInteger),
+    ])].sort((a, b) => a - b),
     flaggedSentenceIndices,
     flaggedExcerpts: [...new Set([...flaggedExcerpts, ...machinePassageExcerpts])].slice(0, 100),
     highlightedPassages,
@@ -245,6 +264,9 @@ export function mergeDetectorScreenshotAnalyses(...values) {
     aiScore: firstValue("aiScore"),
     humanScore: firstValue("humanScore"),
     paraphrasedScore: firstValue("paraphrasedScore"),
+    reportPageCount: Math.max(...observations.map((row) => Number(row.reportPageCount) || 0), 0) || null,
+    pagesInspected: [...new Set(observations.flatMap((row) => row.pagesInspected || []))].sort((a, b) => a - b),
+    pagesWithPassageEvidence: [...new Set(observations.flatMap((row) => row.pagesWithPassageEvidence || []))].sort((a, b) => a - b),
     flaggedSentenceIndices: [...new Set(observations.flatMap((row) => row.flaggedSentenceIndices || []))].slice(0, 1000),
     flaggedExcerpts: [...new Set([...explicitTargets, ...passageTargets].filter(Boolean))].slice(0, 100),
     highlightedPassages,

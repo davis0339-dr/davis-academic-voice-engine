@@ -2,7 +2,7 @@
 // human doctoral theses. These records describe reasoning behaviour. They are
 // not phrase banks, authorship classifiers, or instructions to reproduce errors.
 
-export const HUMAN_DISCOURSE_PROFILES_VERSION = "human-thesis-discourse-v1";
+export const HUMAN_DISCOURSE_PROFILES_VERSION = "human-thesis-discourse-v2";
 
 export const HUMAN_DISCOURSE_PROFILES = Object.freeze([
   {
@@ -13,6 +13,10 @@ export const HUMAN_DISCOURSE_PROFILES = Object.freeze([
     discipline: ["Finance", "Corporate Governance"],
     profileEvidence: "researcher-supplied page-linked whole-thesis analysis",
     strongestContribution: "institutionally grounded explanation and result-to-mechanism development",
+    longitudinalArchitecture: "recognised disturbance -> regional relevance -> local institutional manifestation -> research problem -> three empirical strands -> interpreted findings -> convergence/divergence -> implementable recommendations",
+    preserve: ["explanatory distance", "institutional mechanisms", "problem consequences", "country/respondent divergence", "method limitations", "concrete implementation detail"],
+    adapt: ["explicit conjunctions", "lexical recurrence", "source-led literature reporting", "long causal chains"],
+    avoid: ["untested causal certainty", "citation inventory", "formulaic result openings", "copied institutional wording", "grammar imitation"],
   },
   {
     id: "abdulkarim-2012",
@@ -22,6 +26,10 @@ export const HUMAN_DISCOURSE_PROFILES = Object.freeze([
     discipline: ["Accounting", "Disclosure"],
     profileEvidence: "researcher-supplied page-linked whole-thesis analysis",
     strongestContribution: "visible methodological deliberation, competing explanations, and progressive recurrence",
+    longitudinalArchitecture: "contextual mismatch -> competing definitions/theories -> mechanism and contradictory evidence -> gap/hypothesis -> proxy and method compromise -> result against expectation -> multiple explanations -> bounded implication",
+    preserve: ["reasoning distance", "competing explanations", "progressive recurrence", "method trade-offs", "research friction", "null and opposite-direction findings"],
+    adapt: ["roadmaps", "enumeration", "recursive explanation", "source-by-source literature reporting", "prospective contribution claims"],
+    avoid: ["automatic triads", "formulaic hypothesis endings", "unsupported causality", "citation dumping", "manufactured roughness"],
   },
   {
     id: "rugangira-2012",
@@ -32,6 +40,10 @@ export const HUMAN_DISCOURSE_PROFILES = Object.freeze([
     profileEvidence: "researcher-supplied page-linked whole-thesis analysis",
     strongestContribution: "thesis-wide movement from theoretical disagreement through operationalisation and robustness to qualified policy consequence",
     caveat: "Chapter 4 derives from a jointly authored publication; its micro-style must not be treated as uniquely author-specific.",
+    longitudinalArchitecture: "institutional problem -> theoretical disagreement -> accumulated empirical gap -> operational question -> evidence -> alternative explanations -> robustness/qualification -> policy consequence",
+    preserve: ["visible inferential labour", "competing mechanisms", "technical lexical continuity", "failed hypotheses", "stage-appropriate restraint", "limitations that constrain conclusions"],
+    adapt: ["enumeration", "concept recurrence", "institutional illustration", "citation clustering", "interpretive continuation across paragraphs"],
+    avoid: ["causal overreach", "speculation presented as finding", "sign-direction shortcuts", "policy certainty beyond identification", "grammar imitation"],
   },
 ]);
 
@@ -46,6 +58,42 @@ export const HUMAN_DISCOURSE_MOVES = Object.freeze([
     caution: "Use only contextual material already supplied. Do not invent a country condition, institution, event or causal chain.",
   },
   {
+    id: "adeoye-problem-to-consequence-chain",
+    profileId: "adeoye-2013",
+    jobs: ["introduction", "background", "problem"],
+    actions: ["REBUILD_DISCOURSE", "EXPLAIN_MECHANISM", "DEVELOP_EVIDENCE"],
+    evidencePages: [15, 16, 17, 23, 29, 30],
+    instruction: "After locating the problem, expose the supplied consequences for relevant actors or institutions so significance is developed rather than merely asserted.",
+    caution: "Keep each consequence traceable to the source; do not extend a plausible chain beyond the supplied evidence.",
+  },
+  {
+    id: "adeoye-method-limit-as-design-reality",
+    profileId: "adeoye-2013",
+    jobs: ["methodology", "method", "limitations"],
+    actions: ["QUALIFY_EVIDENCE", "EXPLAIN_MECHANISM", "EXPAND_FROM_EXISTING_CONTENT"],
+    evidencePages: [68, 69, 70, 109, 110, 111, 112, 113, 114, 115, 116],
+    instruction: "Explain how access, instrument or respondent constraints shape what the design can establish, while retaining the practical research process that makes the choice auditable.",
+    caution: "Research friction is relevant only when it explains a design choice or evidential boundary; do not add diary detail.",
+  },
+  {
+    id: "adeoye-citation-as-complication",
+    profileId: "adeoye-2013",
+    jobs: ["literature", "theory", "discussion"],
+    actions: ["DEVELOP_EVIDENCE", "QUALIFY_EVIDENCE", "REBUILD_DISCOURSE"],
+    evidencePages: [35, 48, 49, 50, 51, 52, 53, 54, 267, 268, 269, 270],
+    instruction: "Give sources distinct jobs—support, contradiction, contextual qualification or result comparison—and organise the paragraph around their relationship rather than their chronological appearance.",
+    caution: "Do not erase study-level differences or convert a divided literature into artificial consensus.",
+  },
+  {
+    id: "adeoye-empirical-problem-to-remedy-detail",
+    profileId: "adeoye-2013",
+    jobs: ["conclusion", "discussion"],
+    actions: ["DEVELOP_EVIDENCE", "EXPLAIN_MECHANISM", "QUALIFY_EVIDENCE"],
+    evidencePages: [267, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284],
+    instruction: "Where the source supplies a recommendation, connect the empirical problem to the proposed institutional remedy and its implementation detail before stating the expected benefit.",
+    caution: "Do not make a recommendation more certain or more specific than the study evidence permits.",
+  },
+  {
     id: "adeoye-gap-through-existing-work",
     profileId: "adeoye-2013",
     jobs: ["literature", "gap", "problem"],
@@ -55,6 +103,42 @@ export const HUMAN_DISCOURSE_MOVES = Object.freeze([
     caution: "Do not create extra gap dimensions or claim novelty that the supplied literature does not establish.",
   },
   {
+    id: "abdulkarim-theory-to-contested-hypothesis",
+    profileId: "abdulkarim-2012",
+    jobs: ["theory", "literature", "gap"],
+    actions: ["BUILD_GAP", "DEVELOP_EVIDENCE", "QUALIFY_EVIDENCE"],
+    evidencePages: [49, 63, 101, 106, 118, 119],
+    instruction: "Develop a prediction through the theoretical mechanism, relevant evidence and contradictory evidence before stating the remaining empirical question or hypothesis.",
+    caution: "Do not manufacture contradiction or force a directional hypothesis when the source remains non-directional.",
+  },
+  {
+    id: "abdulkarim-construct-proxy-compromise",
+    profileId: "abdulkarim-2012",
+    jobs: ["methodology", "method", "definition"],
+    actions: ["DISTINGUISH_MEASURES", "EXPLAIN_MECHANISM", "QUALIFY_EVIDENCE"],
+    evidencePages: [120, 126, 136, 140, 144, 160, 166, 176, 185, 201],
+    instruction: "Separate the construct from its proxy, show what each available measure captures or loses, and present the selected operationalisation as a constraint-aware compromise.",
+    caution: "Do not rewrite an available proxy as the construct itself or portray rejected measures as simply wrong.",
+  },
+  {
+    id: "abdulkarim-unexpected-result-plural-explanations",
+    profileId: "abdulkarim-2012",
+    jobs: ["results", "discussion"],
+    actions: ["QUALIFY_EVIDENCE", "EXPLAIN_MECHANISM", "REBUILD_DISCOURSE"],
+    evidencePages: [212, 213, 229, 237, 249, 253, 257, 267],
+    instruction: "Identify whether the result is expected, contrary, null or sensitivity-dependent, compare it with prior evidence, and retain multiple provisional explanations when the design cannot choose among them.",
+    caution: "Do not rescue an inconvenient finding by converting a possible explanation into the result itself.",
+  },
+  {
+    id: "abdulkarim-research-friction-to-revision",
+    profileId: "abdulkarim-2012",
+    jobs: ["methodology", "limitations"],
+    actions: ["EXPLAIN_MECHANISM", "QUALIFY_EVIDENCE", "EXPAND_FROM_EXISTING_CONTENT"],
+    evidencePages: [140, 144, 160, 166, 176, 185, 201],
+    instruction: "When supplied, retain the pilot problem, missing data, inaccessible document or coding ambiguity that caused a methodological revision, then state the safeguard or remaining limitation.",
+    caution: "Do not invent process friction merely to make the research narrative appear personal.",
+  },
+  {
     id: "adeoye-result-to-institutional-consequence",
     profileId: "adeoye-2013",
     jobs: ["results", "discussion"],
@@ -62,6 +146,33 @@ export const HUMAN_DISCOURSE_MOVES = Object.freeze([
     evidencePages: [162, 172, 173, 196, 200, 226, 230],
     instruction: "Separate the reported finding from its interpretation, then expose the supplied institutional mechanism and consequence. Make the epistemic step visible before moving to implication.",
     caution: "A plausible institutional story remains interpretation unless the design establishes causality.",
+  },
+  {
+    id: "rugangira-theory-through-actors-incentives",
+    profileId: "rugangira-2012",
+    jobs: ["theory", "literature", "background"],
+    actions: ["EXPLAIN_MECHANISM", "DISTINGUISH_MEASURES", "REBUILD_DISCOURSE"],
+    evidencePages: [64, 65, 67, 107, 108, 109, 111, 112, 113, 114],
+    instruction: "Translate the supplied theory into the relevant actors, incentives, constraints and consequences, then return explicitly to the study relationship or expected direction.",
+    caution: "Do not add actors, incentives or institutional facts absent from the source.",
+  },
+  {
+    id: "rugangira-descriptive-restraint",
+    profileId: "rugangira-2012",
+    jobs: ["results", "methodology", "discussion"],
+    actions: ["QUALIFY_EVIDENCE", "DEVELOP_EVIDENCE"],
+    evidencePages: [84, 85, 86, 88, 89, 95, 96],
+    instruction: "Interpret descriptive patterns and possible institutional explanations, but mark them as preliminary and defer causal or hypothesis judgement to the analysis capable of supporting it.",
+    caution: "A descriptive trend may motivate explanation; it cannot by itself establish the mechanism.",
+  },
+  {
+    id: "rugangira-section-job-governs-development",
+    profileId: "rugangira-2012",
+    jobs: ["introduction", "literature", "methodology", "results", "discussion", "limitations", "conclusion", "exposition"],
+    actions: ["REBUILD_DISCOURSE", "DEVELOP_EVIDENCE"],
+    evidencePages: [14, 32, 75, 137, 177, 216, 224],
+    instruction: "Let the section determine the work: contextualise in introductions, compare in literature, justify in methods, interpret in results, constrain in limitations and synthesise in conclusions.",
+    caution: "Do not impose a uniform claim-evidence-closure paragraph template across unlike sections.",
   },
   {
     id: "adeoye-convergence-divergence-synthesis",
@@ -166,4 +277,3 @@ export const HUMAN_DISCOURSE_GLOBAL_RULES = Object.freeze([
   "Technical lexical recurrence may preserve conceptual continuity. Do not thesaurus-swap constructs merely to create surface distance.",
   "Reject grammar imitation, fixed triads, repeated tidy closures, ornamental hedging, causal overreach and citation inventory as false shortcuts to human voice.",
 ]);
-

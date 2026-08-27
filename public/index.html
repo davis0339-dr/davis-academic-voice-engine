@@ -166,7 +166,7 @@
         <h4>Upload external detector result report</h4>
         <span class="detector-gateway-version">Detector Gateway v1.2.0</span>
       </div>
-      <p class="muted">Choose or drop up to ten detector-result files: PNG/JPEG screenshots (maximum 2 MB each) or full PDF reports (maximum 5 MB each). Use the downloaded PDF for the overall score and colour evidence. If that PDF omits an Advanced or writing-pattern page, add screenshots of those named pattern cards to the same bundle so their labels, counts and examples are not lost. Review the extracted values before linking them to the exact revision. Each file uses one language-model provider call; the call count is shown before you start. Reading never runs automatically. Manual score entry is free.</p>
+      <p class="muted">Choose or drop up to ten detector-result files: PNG/JPEG screenshots (maximum 2 MB each) or full PDF reports (maximum 5 MB each). PDFs are read in separate overview and page-by-page passage passes (normally two provider calls, with one bounded page-audit recovery only when coverage cannot be proved). The saved record shows every page inspected and every page containing colour evidence. If a PDF omits an Advanced or writing-pattern page, add screenshots of those named cards to the same bundle. Review the extracted values before linking them to the exact revision. Reading never runs automatically. Manual score entry is free.</p>
       <div class="detector-gateway-controls">
         <label>Detector shown in report
           <select id="detectorScreenshotDetector">

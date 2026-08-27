@@ -42,5 +42,6 @@ export function preservationCandidateStatus({ compliance, outputAcceptance, sour
   if (preservationRelease?.candidate_may_be_labelled_accepted === false || !compliance?.preservation_ok) return "preservation_review_required";
   if (compliance?.under_executed || compliance?.execution_passed === false) return "execution_review_required";
   if ((outputAcceptance?.reasons || []).includes("expand_length_contract_missed")) return "length_review_required";
+  if (outputAcceptance?.status && outputAcceptance.status !== "pass") return "output_review_required";
   return "accepted";
 }

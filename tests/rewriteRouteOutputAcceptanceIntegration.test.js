@@ -58,10 +58,11 @@ test("tested-candidate refinement keeps the original as history, preservation an
   assert.match(route, /authorialAnchor,/);
 });
 
-test("style and detector-pressure diagnostics cannot block a preservation-safe result", () => {
+test("completed-output defects remain visible and prevent false internal clearance", () => {
   assert.doesNotMatch(route, /return "internal_quality_review_required"/);
-  assert.match(route, /const outputAcceptanceEnforced = false/);
-  assert.match(route, /machine-pattern diagnostics remain visible evidence for refinement rather than hidden vetoes/);
+  assert.match(route, /const outputAcceptanceEnforced = true/);
+  assert.match(route, /feedback_opening_reconstruction_insufficient/);
+  assert.match(route, /FEEDBACK_OPENING_RECONSTRUCTION_INSUFFICIENT/);
 });
 
 test("candidate verdict reports internal acceptance and external-check recommendation", () => {

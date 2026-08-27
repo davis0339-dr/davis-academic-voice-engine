@@ -186,6 +186,12 @@ function validateDetectorObservation(observation) {
     if (!Array.isArray(observation.flaggedExcerpts) || observation.flaggedExcerpts.length > 30) return false;
     if (observation.flaggedExcerpts.some((value) => typeof value !== "string" || value.length > 280)) return false;
   }
+  if (observation.reportPageCount !== undefined && observation.reportPageCount !== null && (!Number.isInteger(Number(observation.reportPageCount)) || Number(observation.reportPageCount) < 1 || Number(observation.reportPageCount) > 500)) return false;
+  for (const field of ["pagesInspected", "pagesWithPassageEvidence"]) {
+    if (observation[field] === undefined) continue;
+    if (!Array.isArray(observation[field]) || observation[field].length > 500) return false;
+    if (observation[field].some((page) => !Number.isInteger(Number(page)) || Number(page) < 1 || Number(page) > 500)) return false;
+  }
   if (observation.highlightedPassages !== undefined) {
     if (!Array.isArray(observation.highlightedPassages) || observation.highlightedPassages.length > 120) return false;
     for (const passage of observation.highlightedPassages) {

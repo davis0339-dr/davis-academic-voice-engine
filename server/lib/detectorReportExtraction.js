@@ -72,7 +72,56 @@ async function extractPhase({ provider, reportContent, extractionMode }) {
   return parsed;
 }
 
+function pdfCoverage(observation) {
+  const total = Number(observation?.reportPageCount);
+  const inspected = new Set(observation?.pagesInspected || []);
+  const missing = Number.isInteger(total) && total > 0
+    ? Array.from({ length: total }, (_, index) => index + 1).filter((page) => !inspected.has(page))
+    : [];
+  return {
+    auditable: Number.isInteger(total) && total > 0,
+    total: Number.isInteger(total) && total > 0 ? total : null,
+    inspected: [...inspected].sort((a, b) => a - b),
+    passagePages: [...new Set(observation?.pagesWithPassageEvidence || [])].sort((a, b) => a - b),
+    missing,
+    complete: Number.isInteger(total) && total > 0 && missing.length === 0,
+  };
+}
+
 export async function extractDetectorReportObservation({ provider, reportContent, mimeType }) {
+  if (mimeType === "application/pdf") {
+    // A syntactically valid single response is not proof that a multi-page PDF
+    // was actually inspected page by page. PDFs therefore use separate overview
+    // and passage passes, followed by a bounded coverage recovery when needed.
+    const overview = await extractPhase({ provider, reportContent, extractionMode: "overview_patterns" });
+    const passages = await extractPhase({ provider, reportContent, extractionMode: "highlighted_passages" });
+    let observation = mergeDetectorScreenshotAnalyses(overview.observation, passages.observation);
+    let coverage = pdfCoverage(observation);
+    let pageAudit = null;
+    if (!coverage.complete) {
+      pageAudit = await extractPhase({ provider, reportContent, extractionMode: "page_audit" });
+      observation = mergeDetectorScreenshotAnalyses(observation, pageAudit.observation);
+      coverage = pdfCoverage(observation);
+    }
+    if (!coverage.complete) {
+      throw extractionError(`Detector PDF page audit is incomplete${coverage.missing.length ? `; missing page(s): ${coverage.missing.join(", ")}` : "; total page count was not established"}. No partial evidence was accepted.`);
+    }
+    return {
+      observation,
+      extraction: {
+        complete: true,
+        strategy: pageAudit ? "page_audited_segmented_recovery" : "page_audited_segmented_extraction",
+        provider_calls: 2 + Number(Boolean(pageAudit)) + Number(overview.syntax_repair_used) + Number(passages.syntax_repair_used) + Number(pageAudit?.syntax_repair_used || false),
+        syntax_repair_used: overview.syntax_repair_used || passages.syntax_repair_used || Boolean(pageAudit?.syntax_repair_used),
+        segmented_recovery_used: true,
+        page_coverage_audited: true,
+        report_page_count: coverage.total,
+        pages_inspected: coverage.inspected,
+        pages_with_passage_evidence: coverage.passagePages,
+        missing_pages: [],
+      },
+    };
+  }
   const initial = await provider.callAnthropic({
     system: EXTRACTION_SYSTEM,
     messages: [{

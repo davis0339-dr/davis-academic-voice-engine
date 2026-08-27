@@ -402,8 +402,26 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
           status: "review_required",
           reasons: [...new Set([...(completedOutputAcceptance.reasons || []), "feedback_opening_reconstruction_insufficient"])],
         };
+        // Opening reconstruction is an explicit Deep feedback-plan operation,
+        // not an optional style score. The prior implementation recorded this
+        // failure only in output_acceptance while leaving execution_compliance
+        // passed, which produced the contradictory "internally cleared" UI.
+        executionCompliance = {
+          ...executionCompliance,
+          passed: false,
+          execution_passed: false,
+          execution_status: "under-executed",
+          plan_fidelity_status: "under-executed",
+          plan_fidelity_passed: false,
+          under_executed: true,
+          candidate_status: executionCompliance.preservation_ok ? "execution_under" : "execution_and_preservation_failed",
+          under_execution_codes: [...new Set([...(executionCompliance.under_execution_codes || []), "FEEDBACK_OPENING_RECONSTRUCTION_INSUFFICIENT"])],
+          under_execution_reasons: [...new Set([...(executionCompliance.under_execution_reasons || []), "The first two substantive paragraphs did not execute the explicit feedback-guided reconstruction requirement."])],
+          execution_reasons: [...new Set([...(executionCompliance.execution_reasons || []), "The first two substantive paragraphs did not execute the explicit feedback-guided reconstruction requirement."])],
+          reasons: [...new Set([...(executionCompliance.reasons || []), "The first two substantive paragraphs did not execute the explicit feedback-guided reconstruction requirement."])],
+        };
       }
-      const outputAcceptanceEnforced = false;
+      const outputAcceptanceEnforced = true;
       result.output_acceptance = {
         ...completedOutputAcceptance,
         enforced_for_final_release: outputAcceptanceEnforced,

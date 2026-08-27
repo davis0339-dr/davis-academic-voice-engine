@@ -38,6 +38,9 @@ function paragraphRows(text) {
 }
 
 function normaliseObservation(row = {}) {
+  const normalisePages = (value) => Array.isArray(value)
+    ? [...new Set(value.map(Number).filter((page) => Number.isInteger(page) && page > 0 && page <= 500))].sort((a, b) => a - b)
+    : [];
   return {
     detector: String(row.detector || "External detector").slice(0, 80),
     version: row.version ? String(row.version).slice(0, 80) : null,
@@ -45,6 +48,9 @@ function normaliseObservation(row = {}) {
     aiScore: boundedScore(row.aiScore),
     humanScore: boundedScore(row.humanScore),
     paraphrasedScore: boundedScore(row.paraphrasedScore),
+    reportPageCount: Number.isInteger(Number(row.reportPageCount)) && Number(row.reportPageCount) > 0 ? Number(row.reportPageCount) : null,
+    pagesInspected: normalisePages(row.pagesInspected),
+    pagesWithPassageEvidence: normalisePages(row.pagesWithPassageEvidence),
     flaggedSentenceIndices: [...new Set((row.flaggedSentenceIndices || []).filter(Number.isInteger).filter((n) => n >= 0).slice(0, 250))],
     flaggedExcerpts: (row.flaggedExcerpts || []).filter((value) => typeof value === "string").map((value) => value.trim().slice(0, 280)).filter(Boolean).slice(0, 30),
     highlightedPassages: (row.highlightedPassages || []).filter((value) => value && typeof value === "object" && !Array.isArray(value)).map((value) => ({

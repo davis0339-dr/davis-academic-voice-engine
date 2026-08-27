@@ -212,10 +212,11 @@ test("Editor policy copy describes automatic exact-candidate feedback refinement
   assert.match(screenshotRoute, /screenshot_read_alone_feeds_generation: false/);
 });
 
-test("screenshot extraction discloses its provider-credit cost and manual entry remains free", () => {
+test("report extraction discloses page-audited PDF calls and manual entry remains free", () => {
   const html = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   assert.match(html, /Manual score entry is free/);
-  assert.match(html, /uses one language-model provider call/);
+  assert.match(html, /normally two provider calls/);
+  assert.match(html, /every page inspected/);
   assert.match(html, /never runs automatically/);
 });
 

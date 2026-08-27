@@ -122,3 +122,12 @@ test("a complete near-copy remains visible but cannot be labelled accepted", () 
   });
   assert.equal(status, "execution_review_required");
 });
+
+test("a completed-output review failure cannot be labelled internally accepted", () => {
+  const status = preservationCandidateStatus({
+    compliance: { preservation_ok: true, execution_passed: true },
+    preservationRelease: { candidate_may_be_labelled_accepted: true, review_required: false },
+    outputAcceptance: { status: "review_required", reasons: ["feedback_opening_reconstruction_insufficient"] },
+  });
+  assert.equal(status, "output_review_required");
+});
