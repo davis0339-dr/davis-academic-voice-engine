@@ -123,8 +123,8 @@
     <div id="tab-researchstudio" class="tab-panel active">
       <section class="research-studio-intro">
         <h3>Researcher-led manuscript development</h3>
-        <p>Start from the manuscript and your own understanding. The system can question, map, challenge and reconstruct the work, but the researcher's claims, boundaries, interpretations and decisions remain visible and reviewable.</p>
-        <p class="muted">Workflow: manuscript → researcher reasoning → approved argument map → evidence alignment/challenge → controlled reconstruction → integrity check.</p>
+        <p>Start from the manuscript and your own understanding. The primary path diagnoses exact passages, breaks the intellectual work into author tasks and can place accepted responses into a raw working draft without polishing them.</p>
+        <p class="muted">Primary workflow: manuscript → exact diagnosis → author response → raw working draft → another author review. Argument mapping, evidence alignment and later reconstruction remain optional secondary tools.</p>
       </section>
 
       <div class="research-studio-grid">
@@ -200,8 +200,9 @@
         <div id="researchChallengeResults"></div>
       </section>
 
-      <section class="research-studio-card">
-        <h4>4. Controlled academic reconstruction</h4>
+      <details class="research-studio-card optional-reconstruction">
+        <summary><strong>Optional later step: controlled academic reconstruction</strong></summary>
+        <p class="muted">This is not part of the raw-author path. Open it only after the researcher has developed and approved the argument and intentionally wants a model-produced academic draft.</p>
         <label>Additional constraints (optional)
           <textarea id="researchReconstructConstraints" rows="3" placeholder="e.g. Keep proposal tense; do not introduce a moderator; preserve the negative expected relationship."></textarea>
         </label>
@@ -211,7 +212,7 @@
         </div>
         <textarea id="researchDraft" rows="10" readonly placeholder="The controlled academic reconstruction will appear here."></textarea>
         <div id="researchDraftMeta"></div>
-      </section>
+      </details>
 
       <section class="research-studio-card">
         <h4>5. Argument Integrity Check</h4>
@@ -243,7 +244,7 @@
 <script src="/runtimeGuard.js"></script>
 <script src="/researchStudioCandidateBridge.js"></script>
 <script src="/researchStudioUI.js?v=4.0.0"></script>
-<script src="/researchCoauthoringUI.js?v=4.1.0"></script>
+<script src="/researchCoauthoringUI.js?v=5.0.0"></script>
 <script src="/researchStudioEvidenceGateway.js?v=4.0.1"></script>
 <script src="/researchEvidenceBankUI.js?v=3.2.0"></script>
 <script src="/researchEvidenceUploadRouter.js?v=4.0.1"></script>
