@@ -23,6 +23,42 @@ function headingLike(line) {
   return !/[.!?;:]$/.test(value) && value.split(/\s+/).length <= 12 && /[A-Za-z]/.test(value);
 }
 
+const CITATION_PATTERN = /\((?:[^()]*(?:19|20)\d{2}[a-z]?[^()]*)\)|\b[A-Z][A-Za-z'’\-]+(?:\s+(?:et\s+al\.|and|&)\s+[A-Z][A-Za-z'’\-]+)?\s*\((?:19|20)\d{2}[a-z]?\)/g;
+
+function citationAnchors(value) {
+  return [...new Set(String(value || "").match(CITATION_PATTERN) || [])];
+}
+
+function parentheticalCitation(label) {
+  const value = text(label, 500);
+  if (!value) return "";
+  const unwrapped = value.match(/^\((.*)\)$/)?.[1] || value;
+  const narrative = unwrapped.match(/^(.*?)\s*\(([^()]+)\)$/);
+  return narrative ? `(${narrative[1].trim()}, ${narrative[2].trim()})` : `(${unwrapped})`;
+}
+
+function normalizeBibliographic(source, index = 0) {
+  const title = text(source?.bibliographic?.title || source?.title || source?.name, 500) || `Source ${index + 1}`;
+  const author = text(source?.bibliographic?.author || source?.author, 500);
+  const year = text(source?.bibliographic?.year || source?.year, 20).match(/(?:19|20)\d{2}[a-z]?/i)?.[0] || "";
+  const publication = text(source?.bibliographic?.publication || source?.publication, 500);
+  const doi = text(source?.bibliographic?.doi || source?.doi, 300).replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "");
+  const url = text(source?.bibliographic?.url || source?.url, 500);
+  const suppliedCitation = text(source?.citation, 500);
+  const citation = suppliedCitation || (author && year ? `${author} (${year})` : author || (year ? `${title} (${year})` : title));
+  const parenthetical_citation = suppliedCitation
+    ? parentheticalCitation(suppliedCitation)
+    : author && year ? `(${author}, ${year})` : "";
+  const working_reference = [
+    author,
+    year ? `(${year}).` : "",
+    title ? `${title}.` : "",
+    publication ? `${publication}.` : "",
+    doi ? `https://doi.org/${doi}` : url,
+  ].filter(Boolean).join(" ");
+  return { title, author, year, publication, doi, url, citation, parenthetical_citation, working_reference };
+}
+
 export function deriveAuthoringSections(structureText, entryMode = "develop") {
   const source = text(structureText, 30000);
   const lines = source.split(/\n+/).map((line) => line.trim()).filter(Boolean);
@@ -46,6 +82,11 @@ export function deriveAuthoringSections(structureText, entryMode = "develop") {
     id: `section-${index + 1}`,
     heading: section.heading,
     query: `${section.heading} ${section.body.join(" ").slice(0, 12000)}`,
+    paragraphs: section.body.map((paragraph, paragraphIndex) => ({
+      id: `section-${index + 1}-author-${paragraphIndex + 1}`,
+      text: paragraph,
+      citation_anchors: citationAnchors(paragraph),
+    })),
   }));
 }
 
@@ -69,8 +110,11 @@ function sourceUnits(source, sourceIndex) {
       blocks.push({
         id: `src-${sourceIndex + 1}-extract-${counter}`,
         source_id: source.id,
-        source_title: source.title,
+        source_title: source.bibliographic.title,
         citation: source.citation,
+        parenthetical_citation: source.bibliographic.parenthetical_citation,
+        working_reference: source.bibliographic.working_reference,
+        bibliographic: source.bibliographic,
         locator: page || source.locator || "",
         text: chunk,
       });
@@ -94,23 +138,73 @@ function scoreUnit(section, unit) {
 export function retrieveVerbatimCandidates({ structureText, entryMode, sources, perSection = 10 }) {
   const cleanSources = (Array.isArray(sources) ? sources : []).slice(0, 12).map((source, index) => ({
     id: text(source?.id, 80) || `source-${index + 1}`,
-    title: text(source?.title || source?.name, 300) || `Source ${index + 1}`,
-    citation: text(source?.citation, 500),
+    bibliographic: normalizeBibliographic(source, index),
     locator: text(source?.locator, 200),
     text: text(source?.text, 60000),
-  })).filter((source) => source.text);
+  })).map((source) => ({ ...source, title: source.bibliographic.title, citation: source.bibliographic.citation })).filter((source) => source.text);
   const sections = deriveAuthoringSections(structureText, entryMode);
   const units = cleanSources.flatMap(sourceUnits);
   const retrieved = sections.map((section) => ({
     ...section,
     candidates: units
-      .map((unit) => ({ ...unit, score: scoreUnit(section, unit) }))
+      .map((unit) => ({ ...unit, score: scoreUnit(section, unit) + citationAffinity(section.query, unit) }))
       .filter((unit) => unit.score > 0)
       .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
       .slice(0, perSection)
       .map(({ score, ...unit }) => unit),
   }));
   return { sections, sources: cleanSources, retrieved };
+}
+
+function citationAffinity(paragraph, candidate) {
+  const anchors = citationAnchors(paragraph).join(" ").toLowerCase();
+  if (!anchors) return 0;
+  const bibliographic = candidate.bibliographic || {};
+  let score = 0;
+  if (bibliographic.year && anchors.includes(String(bibliographic.year).toLowerCase())) score += 4;
+  const authorTokens = tokens(bibliographic.author).filter((token) => token.length > 3);
+  if (authorTokens.some((token) => anchors.includes(token))) score += 6;
+  return score;
+}
+
+function selectForAuthorParagraph(paragraph, candidates, used, limit = 2) {
+  return candidates
+    .map((candidate) => ({ candidate, score: scoreUnit({ heading: "", query: paragraph }, candidate) + citationAffinity(paragraph, candidate) }))
+    .filter((row) => row.score > 0 && !used.has(row.candidate.id))
+    .sort((a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id))
+    .slice(0, limit)
+    .map((row) => row.candidate);
+}
+
+function buildExistingStructureSections(retrieval) {
+  const used = new Set();
+  return retrieval.retrieved.map((section) => {
+    const blocks = [];
+    const paragraphs = section.paragraphs || [];
+    for (const paragraph of paragraphs) {
+      blocks.push({
+        id: paragraph.id,
+        type: "author_text",
+        text: paragraph.text,
+        locked: true,
+        citation_anchors: paragraph.citation_anchors,
+      });
+      if (!paragraph.citation_anchors.length) continue;
+      const selected = selectForAuthorParagraph(paragraph.text, section.candidates, used, 2);
+      for (const extract of selected) {
+        used.add(extract.id);
+        blocks.push({
+          id: `${paragraph.id}-alignment-${extract.id}`,
+          type: "link",
+          text: `Source alignment for ${paragraph.citation_anchors.join("; ")}:`,
+          editable: true,
+          alignment_only: true,
+        });
+        blocks.push({ ...extract, type: "extract", locked: true, aligned_to: paragraph.id });
+      }
+    }
+    return { id: section.id, heading: section.heading, blocks };
+  });
 }
 
 function minimalLink(previous, current) {
@@ -121,8 +215,11 @@ function minimalLink(previous, current) {
 
 export function deterministicSourceAssembly(input) {
   const retrieval = retrieveVerbatimCandidates(input);
+  const hasExistingBody = retrieval.sections.some((section) => section.paragraphs?.some((paragraph) => paragraph.text));
+  const hasCitationAnchors = retrieval.sections.some((section) => section.paragraphs?.some((paragraph) => paragraph.citation_anchors?.length));
+  const preserveExisting = input.entryMode === "rebuild" || (input.entryMode === "template" && hasExistingBody && hasCitationAnchors);
   const used = new Set();
-  const sections = retrieval.retrieved.map((section) => {
+  const groundUpSections = retrieval.retrieved.map((section) => {
     let selected = section.candidates.filter((candidate) => !used.has(candidate.id)).slice(0, 5);
     if (!selected.length) selected = section.candidates.slice(0, 3);
     selected.forEach((candidate) => used.add(candidate.id));
@@ -135,17 +232,20 @@ export function deterministicSourceAssembly(input) {
       ]),
     };
   });
+  const sections = preserveExisting ? buildExistingStructureSections(retrieval) : groundUpSections;
   return {
     entry_mode: input.entryMode || "develop",
     sections,
     source_count: retrieval.sources.length,
     extract_count: sections.reduce((sum, section) => sum + section.blocks.filter((block) => block.type === "extract").length, 0),
     assembly_mode: "local_verbatim_retrieval",
+    workflow_mode: preserveExisting ? "existing_structure_citation_alignment" : "ground_up_source_scaffold",
     model_calls: 0,
+    reference_records: retrieval.sources.map((source) => ({ source_id: source.id, ...source.bibliographic })),
     cache_key: createHash("sha256").update(JSON.stringify({
       entryMode: input.entryMode,
       structureText: text(input.structureText, 30000),
-      sources: retrieval.sources.map((source) => [source.title, source.text]),
+      sources: retrieval.sources.map((source) => [source.bibliographic, source.text]),
     })).digest("hex").slice(0, 24),
   };
 }

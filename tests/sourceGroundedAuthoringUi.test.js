@@ -11,7 +11,7 @@ test("source-grounded authoring is a separate three-route workspace", async () =
   assert.match(html, /Develop a manuscript/);
   assert.match(html, /Build with local matching · 0 model calls/);
   assert.match(html, /Build with guided ordering · maximum 1 call/);
-  assert.match(html, /Send to source-preserving Editor review/);
+  assert.match(html, /Send to Editor review · automatic length routing/);
   assert.match(html, /Continue later in Research Studio/);
 });
 
@@ -29,6 +29,26 @@ test("editor handoff blocks the general rewriter but leaves analysis available",
   assert.match(mode, /revise\.disabled = true/);
   assert.doesNotMatch(mode, /analyseOnlyBtn.*disabled/s);
   assert.match(mode, /Analyse Only and detector review remain available/);
+  assert.match(mode, /payload\.targetSurface === "longdoc"/);
+  assert.match(mode, /longdoc\.value = payload\.assembledText/);
+  assert.match(mode, /Nothing was trimmed/);
+  assert.match(mode, /startJob\.disabled = true/);
+});
+
+test("source ingestion exposes bibliographic review and length-aware handoff metadata", async () => {
+  const [html, ui, importer, detector] = await Promise.all([
+    readFile(new URL("public/source-authoring.html", root), "utf8"),
+    readFile(new URL("public/sourceGroundedAuthoringUI.js", root), "utf8"),
+    readFile(new URL("public/fileImport.js", root), "utf8"),
+    readFile(new URL("public/detectorScreenshotGateway.js", root), "utf8"),
+  ]);
+  assert.match(html, /id="referenceWorkspace"/);
+  assert.match(html, /automatic length routing/);
+  assert.match(ui, /targetSurface: wordCount\(draft\) > state\.capabilities\.singleEditorWordLimit \? "longdoc" : "single"/);
+  assert.match(ui, /bibliographic-fields/);
+  assert.match(importer, /pdf\.getMetadata\(\)/);
+  assert.match(detector, /sourceAuthoringCandidate/);
+  assert.match(detector, /complete source-grounded assembly/);
 });
 
 test("all three workspace headers link to one another", async () => {

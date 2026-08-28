@@ -13,6 +13,7 @@ const sources = [
     id: "anderson",
     title: "Anderson et al. (2004)",
     citation: "Anderson et al. (2004)",
+    bibliographic: { author: "Anderson et al.", year: "2004", title: "Boards and the cost of debt", publication: "Journal of Accounting and Economics", doi: "10.1000/example" },
     text: "[Page 4]\n\nCreditors rely on accounting-based numbers when assessing firm health and viability.\n\n[Page 7]\n\nGreater board independence is associated with a lower cost of debt financing.",
   },
   {
@@ -45,7 +46,7 @@ test("local assembly preserves retrieved extracts exactly and spends no model ca
 
 test("guided ordering may reorder IDs but cannot replace extract wording", () => {
   const local = deterministicSourceAssembly({
-    entryMode: "rebuild",
+    entryMode: "develop",
     structureText: "Background of the Problem\nBoard independence and debt cost.",
     sources,
   });
@@ -70,4 +71,43 @@ test("exact-source verification rejects altered extracts", () => {
   const extract = assembly.sections[0].blocks.find((block) => block.type === "extract");
   extract.text = `${extract.text} Added wording.`;
   assert.equal(verifyAssemblyExtracts(assembly, sources).exact, false);
+});
+
+test("existing-draft mode preserves author paragraphs and aligns extracts at citation-bearing locations", () => {
+  const authorParagraph = "Board independence may reduce creditor uncertainty, although the relationship remains conditional (Anderson et al., 2004).";
+  const assembly = deterministicSourceAssembly({
+    entryMode: "rebuild",
+    structureText: `Background of the Problem\n${authorParagraph}`,
+    sources,
+  });
+  assert.equal(assembly.workflow_mode, "existing_structure_citation_alignment");
+  const blocks = assembly.sections[0].blocks;
+  assert.equal(blocks[0].type, "author_text");
+  assert.equal(blocks[0].text, authorParagraph);
+  assert.ok(blocks.some((block) => block.type === "extract" && block.aligned_to === blocks[0].id));
+  assert.equal(verifyAssemblyExtracts(assembly, sources).exact, true);
+});
+
+test("ground-up manuscript mode builds from source evidence instead of retaining guide prose as manuscript text", () => {
+  const guideSentence = "Discuss board independence and creditor uncertainty (Anderson et al., 2004).";
+  const assembly = deterministicSourceAssembly({ entryMode: "develop", structureText: `Background\n${guideSentence}`, sources });
+  assert.equal(assembly.workflow_mode, "ground_up_source_scaffold");
+  assert.equal(assembly.sections.flatMap((section) => section.blocks).some((block) => block.type === "author_text"), false);
+});
+
+test("a substantive template with citation locations preserves its authored body instead of behaving like ground-up mode", () => {
+  const templateParagraph = "Credit pricing reflects governance quality as well as accounting risk (Anderson et al., 2004).";
+  const assembly = deterministicSourceAssembly({ entryMode: "template", structureText: `Introduction\n${templateParagraph}`, sources });
+  assert.equal(assembly.workflow_mode, "existing_structure_citation_alignment");
+  assert.equal(assembly.sections[0].blocks[0].text, templateParagraph);
+  assert.equal(assembly.sections[0].blocks[0].type, "author_text");
+});
+
+test("every extract carries the reviewed bibliographic record and the assembly exposes working references", () => {
+  const assembly = deterministicSourceAssembly({ entryMode: "develop", structureText: "Board independence and debt cost", sources });
+  const extract = assembly.sections.flatMap((section) => section.blocks).find((block) => block.type === "extract" && block.source_id === "anderson");
+  assert.equal(extract.bibliographic.author, "Anderson et al.");
+  assert.equal(extract.bibliographic.year, "2004");
+  assert.equal(extract.parenthetical_citation, "(Anderson et al., 2004)");
+  assert.match(assembly.reference_records.find((record) => record.source_id === "anderson").working_reference, /Journal of Accounting and Economics/);
 });

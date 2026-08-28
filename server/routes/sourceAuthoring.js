@@ -26,6 +26,14 @@ function cleanSources(value) {
     id: cleanString(source?.id, 80) || `source-${index + 1}`,
     title: cleanString(source?.title || source?.name, 300) || `Source ${index + 1}`,
     citation: cleanString(source?.citation, 500),
+    bibliographic: {
+      title: cleanString(source?.bibliographic?.title || source?.title || source?.name, 500),
+      author: cleanString(source?.bibliographic?.author || source?.author, 500),
+      year: cleanString(source?.bibliographic?.year || source?.year, 20),
+      publication: cleanString(source?.bibliographic?.publication || source?.publication, 500),
+      doi: cleanString(source?.bibliographic?.doi || source?.doi, 300),
+      url: cleanString(source?.bibliographic?.url || source?.url, 500),
+    },
     locator: cleanString(source?.locator, 200),
     text: cleanString(source?.text, 60000),
   })).filter((source) => source.text);
@@ -53,6 +61,16 @@ sourceAuthoringRouter.post("/source-authoring/assemble", llmProvider.usageMiddle
     return res.json({ ...local, extraction_verified: verifyAssemblyExtracts(local, sources), persistence: "browser_session", requestId: req.requestId });
   }
 
+  if (local.workflow_mode === "existing_structure_citation_alignment") {
+    return res.json({
+      ...local,
+      warning: "The existing author structure and citation locations were preserved. Alignment was completed locally so a model could not reorder or rewrite the author-developed body.",
+      extraction_verified: verifyAssemblyExtracts(local, sources),
+      persistence: "browser_session",
+      requestId: req.requestId,
+    });
+  }
+
   if (!llmProvider.isConfigured()) {
     return res.json({
       ...local,
@@ -70,6 +88,7 @@ sourceAuthoringRouter.post("/source-authoring/assemble", llmProvider.usageMiddle
       candidates: section.blocks.filter((block) => block.type === "extract").map((block) => ({
         extract_id: block.id,
         source_title: block.source_title,
+        citation: block.citation,
         locator: block.locator,
         text: block.text,
       })),

@@ -127,6 +127,18 @@
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
     const pages = [];
+    let pdfMetadata = {};
+    try {
+      const metadata = await pdf.getMetadata();
+      const info = metadata?.info || {};
+      pdfMetadata = {
+        title: cleanInlineText(info.Title),
+        author: cleanInlineText(info.Author),
+        subject: cleanInlineText(info.Subject),
+        keywords: cleanInlineText(info.Keywords),
+        creationDate: cleanInlineText(info.CreationDate),
+      };
+    } catch {}
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const content = await page.getTextContent();
@@ -149,7 +161,16 @@
     if (!text) {
       throw new Error("No selectable text was found in this PDF. Scanned/image-only PDFs are not supported in this build.");
     }
-    return { text, warnings: [], structure: "pdf_pages", pageCount: pdf.numPages };
+    const doi = text.match(/\b10\.\d{4,9}\/[\-._;()/:A-Z0-9]+\b/i)?.[0]?.replace(/[.,;:]$/, "") || "";
+    const visibleYear = text.slice(0, 8000).match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
+    const metadataYear = pdfMetadata.creationDate.match(/(?:19|20)\d{2}/)?.[0] || "";
+    return {
+      text,
+      warnings: [],
+      structure: "pdf_pages",
+      pageCount: pdf.numPages,
+      metadata: { ...pdfMetadata, year: visibleYear || metadataYear, doi },
+    };
   }
 
   async function readCsv(file) {

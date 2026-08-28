@@ -11,12 +11,12 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 test("Editor serves a core detector report gateway instead of relying only on optional UI", () => {
   const html = read("public/index.html");
   assert.match(html, /id="detectorScreenshotGateway"/);
-  assert.match(html, /Detector Gateway v1\.2\.0/);
+  assert.match(html, /Detector Gateway v1\.3\.0/);
   assert.match(html, /id="detectorScreenshotInput"[^>]*type="file"/);
   assert.match(html, /Choose detector report file\(s\)/);
   assert.match(html, /application\/pdf/);
   assert.match(html, /id="detectorScreenshotDropZone"/);
-  assert.match(html, /detectorScreenshotGateway\.js\?v=1\.2\.0/);
+  assert.match(html, /detectorScreenshotGateway\.js\?v=1\.3\.0/);
 });
 
 test("Detector gateway directly opens device files, supports drop-paste and persists observations", () => {

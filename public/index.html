@@ -165,7 +165,7 @@
     <section id="detectorScreenshotGateway" class="detector-screenshot-card detector-screenshot-gateway">
       <div class="detector-gateway-title">
         <h4>Upload external detector result report</h4>
-        <span class="detector-gateway-version">Detector Gateway v1.2.0</span>
+        <span class="detector-gateway-version">Detector Gateway v1.3.0</span>
       </div>
       <p class="muted">Choose or drop up to ten detector-result files: PNG/JPEG screenshots (maximum 2 MB each) or full PDF reports (maximum 5 MB each). PDFs are read in separate overview and page-by-page passage passes (normally two provider calls, with one bounded page-audit recovery only when coverage cannot be proved). The saved record shows every page inspected and every page containing colour evidence. If a PDF omits an Advanced or writing-pattern page, add screenshots of those named cards to the same bundle. Review the extracted values before linking them to the exact revision. Reading never runs automatically. Manual score entry is free.</p>
       <div class="detector-gateway-controls">
@@ -266,12 +266,12 @@
 <!-- Core controls are mounted directly here. They must remain usable even if later
      optional diagnostics fail to load. -->
 <script src="/safeDom.js"></script>
-<script src="/fileImport.js"></script>
+<script src="/fileImport.js?v=4.1.0"></script>
 <script src="/runtimeGuard.js"></script>
 <script src="/modeControlGuard.js?v=1.0.0"></script>
-<script src="/detectorScreenshotGateway.js?v=1.2.0"></script>
+<script src="/detectorScreenshotGateway.js?v=1.3.0"></script>
 <script src="/app.js"></script>
-<script src="/sourceAuthoringEditorMode.js?v=1.0.0"></script>
+<script src="/sourceAuthoringEditorMode.js?v=1.1.0"></script>
 <script src="/workspaceHandoff.js" defer></script>
 <script src="/optionalFeatures.js" defer></script>
 </body>

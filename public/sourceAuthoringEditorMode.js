@@ -17,31 +17,53 @@
     if (!payload) return;
     const source = document.getElementById("sourceText");
     const revise = document.getElementById("analyseReviseBtn");
-    if (!source || !revise) return;
+    const longdoc = document.getElementById("longdocSource");
+    const startJob = document.getElementById("startJobBtn");
+    if (!source || !revise || !longdoc) return;
 
-    source.value = payload.assembledText;
-    source.readOnly = true;
-    source.dataset.sourceGroundedLocked = "true";
-    source.dispatchEvent(new Event("input", { bubbles: true }));
+    const words = Number(payload.wordCount) || (payload.assembledText.match(/[A-Za-z0-9']+/g) || []).length;
+    const useLongDocument = payload.targetSurface === "longdoc" || words > 1500;
     revise.disabled = true;
     revise.dataset.sourceGroundedLocked = "true";
     revise.textContent = "Revise connections in Source-Grounded Authoring";
 
+    if (useLongDocument) {
+      source.value = "";
+      longdoc.value = payload.assembledText;
+      longdoc.readOnly = true;
+      longdoc.dataset.sourceGroundedLocked = "true";
+      longdoc.dispatchEvent(new Event("input", { bubbles: true }));
+      if (startJob) {
+        startJob.disabled = true;
+        startJob.dataset.sourceGroundedLocked = "true";
+        startJob.textContent = "Source extracts protected · edit connections in Source-Grounded Authoring";
+      }
+      document.querySelectorAll(".tab-header").forEach((node) => node.classList.toggle("active", node.dataset.tab === "longdoc"));
+      document.querySelectorAll(".tab-panel").forEach((node) => node.classList.toggle("active", node.id === "tab-longdoc"));
+    } else {
+      source.value = payload.assembledText;
+      source.readOnly = true;
+      source.dataset.sourceGroundedLocked = "true";
+      source.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
     const banner = document.createElement("section");
     banner.className = "source-grounded-editor-banner";
     const title = document.createElement("strong");
-    title.textContent = `${payload.lockedExtracts.length} verbatim extract(s) protected`;
+    title.textContent = `${payload.lockedExtracts.length} verbatim extract(s) protected · ${words.toLocaleString()} words`;
     const explanation = document.createElement("span");
-    explanation.textContent = " Analyse Only and detector review remain available here. The general rewriter is disabled because it would alter the preserved extracts. Return to the source workspace to edit the connecting passages, then send the updated assembly back.";
+    explanation.textContent = useLongDocument
+      ? " The complete manuscript has been routed to Long Document review because it exceeds the single-section limit. Nothing was trimmed. Rewriting is disabled because it would alter the extracts; detector evidence can still be reviewed, and connections remain editable in Source-Grounded Authoring."
+      : " Analyse Only and detector review remain available here. The general rewriter is disabled because it would alter the preserved extracts. Return to the source workspace to edit the connecting passages, then send the updated assembly back.";
     const back = document.createElement("button");
     back.type = "button";
     back.textContent = "Return to Source-Grounded Authoring";
     back.addEventListener("click", () => { location.href = "/source-authoring"; });
     banner.append(title, explanation, back);
-    source.closest(".pane")?.before(banner);
+    (useLongDocument ? document.getElementById("tab-longdoc") : source.closest(".pane"))?.before(banner);
 
     document.addEventListener("click", (event) => {
-      if (event.target?.id !== "analyseReviseBtn" || !handoff()) return;
+      if (!["analyseReviseBtn", "startJobBtn"].includes(event.target?.id) || !handoff()) return;
       event.preventDefault();
       event.stopImmediatePropagation();
     }, true);

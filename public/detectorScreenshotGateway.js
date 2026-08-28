@@ -2,12 +2,24 @@
   "use strict";
 
   const STORAGE_KEY = "academicVoice.detectorObservations.v1";
+  const SOURCE_AUTHORING_HANDOFF_KEY = "academicVoice.sourceAuthoring.handoff.v1";
   const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
   const MAX_PDF_BYTES = 5 * 1024 * 1024;
   const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "application/pdf"]);
   const MAX_FILES = 10;
   let pendingFiles = [];
   let extractedObservations = [];
+
+  function sourceAuthoringCandidate() {
+    try {
+      const payload = JSON.parse(localStorage.getItem(SOURCE_AUTHORING_HANDOFF_KEY) || "null");
+      return payload?.assembledText && Array.isArray(payload.lockedExtracts) ? payload.assembledText : "";
+    } catch { return ""; }
+  }
+
+  function currentCandidateText() {
+    return $("revisedText")?.value || sourceAuthoringCandidate();
+  }
 
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value ?? "")
@@ -103,7 +115,7 @@
       evidenceSource: "uploaded_detector_report",
     };
     rows.push(window.AcademicRewriteLineage?.annotateObservation
-      ? window.AcademicRewriteLineage.annotateObservation(row, $("revisedText")?.value || "")
+      ? window.AcademicRewriteLineage.annotateObservation(row, currentCandidateText())
       : row);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rows.slice(-20))); } catch {}
   }
@@ -144,15 +156,20 @@
       </div>`).join("") + '<button id="saveGatewayDetectorResultsBtn" class="primary" type="button">Save and link this evidence bundle</button>';
     $("saveGatewayDetectorResultsBtn")?.addEventListener("click", () => {
       if (!extractedObservations.length) return;
-      const candidateText = $("revisedText")?.value || "";
+      const candidateText = currentCandidateText();
       const preflight = window.AcademicRewriteLineage?.refinementPreflight?.(candidateText);
+      const exactSourceAssembly = Boolean(sourceAuthoringCandidate() && candidateText === sourceAuthoringCandidate());
       if (!preflight?.exact_candidate) {
-        status("This evidence cannot be linked because the Revised box no longer contains the exact retained candidate. Restore that revision from version history, then save again.", true);
-        return;
+        if (!exactSourceAssembly) {
+          status("This evidence cannot be linked because the Revised box no longer contains the exact retained candidate. Restore that revision from version history, then save again.", true);
+          return;
+        }
       }
       extractedObservations.forEach(saveObservation);
       populateManualForm(extractedObservations[extractedObservations.length - 1]);
-      status(`Saved and linked ${extractedObservations.length} detector observation${extractedObservations.length === 1 ? "" : "s"} to the exact revision currently shown. The feedback-guided refinement preflight is now ready.`);
+      status(exactSourceAssembly
+        ? `Saved and linked ${extractedObservations.length} detector observation${extractedObservations.length === 1 ? "" : "s"} to the complete source-grounded assembly. The extracts remain protected; use the evidence for review rather than automatic rewriting.`
+        : `Saved and linked ${extractedObservations.length} detector observation${extractedObservations.length === 1 ? "" : "s"} to the exact revision currently shown. The feedback-guided refinement preflight is now ready.`);
       window.dispatchEvent(new CustomEvent("academicVoice:detector-observation-saved", { detail: { observations: extractedObservations } }));
       const button = $("saveGatewayDetectorResultsBtn");
       if (button) { button.disabled = true; button.textContent = "Evidence bundle saved and linked"; }
