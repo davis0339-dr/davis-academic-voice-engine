@@ -23,20 +23,30 @@
     const visible = String(result.text || "").slice(0, 8000);
     const metadata = result.metadata || {};
     const lines = visible.split(/\n+/).map((line) => line.replace(/^\[(?:Page|Line)\s+\d+\]\s*/i, "").trim()).filter(Boolean);
+    const authorLike = (value) => {
+      const candidate = String(value || "").replace(/^by\s+/i, "").replace(/[∗*†‡]+/g, "").trim();
+      if (candidate.length < 5 || candidate.length > 220 || /[?!:]|\b(?:evidence|effect|relationship|analysis|theory|governance|debt|cost|study|quality|firm|board)\b/i.test(candidate)) return false;
+      if (/(?:university|department|school|faculty|downloaded|repository|microsoft|ssrn|http|@)/i.test(candidate)) return false;
+      const pieces = candidate.split(/\s*(?:,|\band\b|&)\s*/i).filter(Boolean);
+      const personName = /^(?:[A-Z][A-Za-z'’\-]+|[A-Z]\.)(?:\s+(?:[A-Z][A-Za-z'’\-]+|[A-Z]\.)){1,4}$/;
+      return (pieces.length >= 2 && pieces.every((piece) => personName.test(piece))) || personName.test(candidate);
+    };
     const credibleTitle = (value) => {
       const candidate = String(value || "").trim();
-      return candidate.length >= 18 && candidate.length <= 300 && !/(?:microsoft word|\.docx?$|\.pdf$|ssrn[#\s-]?\d+|untitled|draft[_-])/i.test(candidate);
+      return candidate.length >= 18 && candidate.length <= 300 && !authorLike(candidate) && !/(?:microsoft word|\.docx?$|\.pdf$|ssrn[#\s-]?\d+|untitled|draft[_-])/i.test(candidate);
     };
     const credibleAuthor = (value) => {
       const candidate = String(value || "").replace(/^by\s+/i, "").trim();
-      return candidate.length >= 5 && candidate.length <= 220 && /\s/.test(candidate) && !/(?:microsoft|university|department|school|faculty|downloaded|repository)/i.test(candidate);
+      return authorLike(candidate);
     };
     const explicitTitle = lines.find((line) => /^title\s*:/i.test(line))?.replace(/^title\s*:\s*/i, "") || "";
     const titleCandidate = lines.slice(0, 45).find((line) => credibleTitle(line) && wordCount(line) >= 4 && wordCount(line) <= 28 && !/[.!?]$/.test(line) && !/(?:abstract|keywords?|journal|volume|copyright|doi|http|electronic copy)/i.test(line)) || "";
     const explicitAuthor = lines.find((line) => /^authors?\s*:/i.test(line))?.replace(/^authors?\s*:\s*/i, "") || "";
     const byline = lines.find((line) => /^by\s+[A-Z][A-Za-z .,'’&\-]{3,180}$/i.test(line)) || "";
+    const titleIndex = lines.indexOf(titleCandidate);
+    const nearbyAuthor = titleIndex >= 0 ? lines.slice(titleIndex + 1, titleIndex + 8).find(credibleAuthor) || "" : "";
     const title = credibleTitle(metadata.title) ? metadata.title : credibleTitle(explicitTitle) ? explicitTitle : titleCandidate;
-    const author = credibleAuthor(metadata.author) ? metadata.author : credibleAuthor(explicitAuthor) ? explicitAuthor : credibleAuthor(byline) ? byline.replace(/^by\s+/i, "") : "";
+    const author = credibleAuthor(metadata.author) ? metadata.author : credibleAuthor(explicitAuthor) ? explicitAuthor : credibleAuthor(byline) ? byline.replace(/^by\s+/i, "") : nearbyAuthor;
     const publicationYear = lines.slice(0, 100).map((line) => line.match(/(?:published|accepted|forthcoming|copyright|©)[^\n]{0,80}\b((?:19|20)\d{2})\b/i)?.[1]).find(Boolean) || "";
     const year = publicationYear || (author && title ? metadata.year || "" : "");
     const doi = metadata.doi || visible.match(/\b10\.\d{4,9}\/[\-._;()/:A-Z0-9]+\b/i)?.[0]?.replace(/[.,;:]$/, "") || "";
@@ -67,6 +77,17 @@
     node.className = error ? "status-message error" : "status-message";
   }
 
+  function updatePreflight() {
+    const target = $("sourcePreflight");
+    if (!target) return;
+    const manuscript = $("structureText")?.value.replace(/\r\n/g, "\n").trim() || "";
+    const visibleLines = manuscript.split("\n").filter((line) => line.trim()).length;
+    const citationGroups = (manuscript.match(/\([^()]*(?:19|20)\d{2}[^()]*\)/g) || []).length;
+    const reviewed = state.sources.filter((source) => source.bibliographic?.metadata_confidence === "researcher_reviewed").length;
+    target.textContent = `Preflight: ${manuscript.length.toLocaleString()} manuscript characters · ${visibleLines.toLocaleString()} non-empty line(s) · ${citationGroups.toLocaleString()} citation group(s) · ${reviewed} of ${state.sources.length} source identity record(s) confirmed.`;
+    target.className = manuscript.length > 500000 ? "warning" : "proof";
+  }
+
   function entryMode() {
     return document.querySelector('input[name="entryMode"]:checked')?.value || "develop";
   }
@@ -85,6 +106,7 @@
       const result = await readFile(file);
       $("structureText").value = result.text;
       label.textContent = `${file.name} loaded · ${result.text.split(/\s+/).filter(Boolean).length.toLocaleString()} words`;
+      updatePreflight();
     } catch (error) {
       label.textContent = error.message;
     } finally {
@@ -108,8 +130,12 @@
       const title = document.createElement("strong");
       title.textContent = `${index + 1}. ${source.fileLabel || source.title}`;
       const confidence = document.createElement("span");
-      confidence.className = source.bibliographic?.metadata_confidence === "needs_review" ? "metadata-confidence warning" : "metadata-confidence";
-      confidence.textContent = source.bibliographic?.metadata_confidence === "needs_review" ? "Bibliographic identity needs review" : "Bibliographic identity recovered — review before use";
+      const updateConfidence = () => {
+        const reviewed = source.bibliographic?.metadata_confidence === "researcher_reviewed";
+        confidence.className = reviewed ? "metadata-confidence" : "metadata-confidence warning";
+        confidence.textContent = reviewed ? "Identity confirmed for citation matching" : "Identity quarantined — review and confirm before citation matching";
+      };
+      updateConfidence();
       const fields = document.createElement("div");
       fields.className = "bibliographic-fields";
       const field = (labelText, key, placeholder) => {
@@ -121,8 +147,11 @@
         input.placeholder = placeholder;
         input.addEventListener("input", () => {
           source.bibliographic[key] = input.value;
-          source.bibliographic.metadata_confidence = "researcher_reviewed";
+          source.bibliographic.metadata_confidence = "manual_edits_pending_review";
           if (["author", "year", "title"].includes(key) && !source.citationManuallyEdited) source.citation = suggestedCitation(source);
+          citation.value = source.citation || "";
+          updateConfidence();
+          updatePreflight();
         });
         label.appendChild(input);
         return label;
@@ -143,6 +172,21 @@
       citation.addEventListener("input", () => { source.citation = citation.value; source.citationManuallyEdited = true; });
       citationLabel.appendChild(citation);
       fields.appendChild(citationLabel);
+      const confirm = document.createElement("button");
+      confirm.type = "button";
+      confirm.textContent = "Confirm source identity";
+      confirm.addEventListener("click", () => {
+        const bib = source.bibliographic || {};
+        if (!bib.title?.trim() || !bib.author?.trim() || !/^(?:19|20)\d{2}[a-z]?$/i.test(bib.year?.trim() || "")) {
+          return setStatus(`${source.fileLabel || source.title}: add a valid article title, author and publication year before confirming.`, true);
+        }
+        bib.metadata_confidence = "researcher_reviewed";
+        if (!source.citationManuallyEdited) source.citation = suggestedCitation(source);
+        citation.value = source.citation;
+        updateConfidence();
+        setStatus(`${source.fileLabel || source.title}: identity confirmed for citation matching.`);
+        updatePreflight();
+      });
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "Remove";
@@ -152,9 +196,12 @@
       });
       const identity = document.createElement("div");
       identity.append(title, confidence);
-      row.append(identity, fields, remove);
+      const actions = document.createElement("div");
+      actions.append(confirm, remove);
+      row.append(identity, fields, actions);
       target.appendChild(row);
     });
+    updatePreflight();
   }
 
   async function importStudies(event) {
@@ -190,6 +237,8 @@
     const structureText = $("structureText").value.trim();
     if (!structureText) return setStatus("Add the template, existing draft or researcher guide first.", true);
     if (!state.sources.length) return setStatus("Upload at least one relevant study first.", true);
+    const reviewed = state.sources.filter((source) => source.bibliographic?.metadata_confidence === "researcher_reviewed").length;
+    if (guided && !reviewed) return setStatus("Confirm at least one source identity before spending a guided-selection call. No model call was made.", true);
     $("buildLocalBtn").disabled = true;
     $("buildGuidedBtn").disabled = true;
     setStatus(guided ? "Retrieving exact passages locally, then using one compact call to order them…" : "Retrieving and arranging exact passages locally…");
@@ -210,7 +259,9 @@
       renderAssembly();
       const warning = data.warning ? ` ${data.warning}` : "";
       const gaps = (data.sections || []).flatMap((section) => section.blocks || []).filter((block) => block.type === "review_note").length;
-      setStatus(`${data.extract_count} substantive exact extract(s) accepted from ${data.source_count} source(s); ${gaps} evidence gap(s) left unfilled rather than matched to unrelated material. Model calls used: ${data.model_calls}.${warning}`);
+      const audit = data.input_audit || {};
+      const preservation = audit.complete ? `${Number(audit.processed_characters || 0).toLocaleString()} of ${Number(audit.submitted_characters || 0).toLocaleString()} characters processed` : "INPUT PRESERVATION FAILED";
+      setStatus(`${preservation}; ${audit.section_count || 0} section(s), ${audit.paragraph_count || 0} paragraph(s), ${audit.citation_anchor_count || 0} citation anchor(s). ${data.extract_count} substantive exact extract(s) accepted from ${data.source_count} source(s); ${gaps} evidence gap(s). ${audit.reviewed_source_identities || 0} source identity record(s) confirmed. Model calls used: ${data.model_calls}.${warning}`, !audit.complete);
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -410,6 +461,7 @@
 
   function init() {
     $("structureFile").addEventListener("change", importStructure);
+    $("structureText").addEventListener("input", updatePreflight);
     $("studyFiles").addEventListener("change", importStudies);
     $("buildLocalBtn").addEventListener("click", () => postAssembly(false));
     $("buildGuidedBtn").addEventListener("click", () => postAssembly(true));
@@ -419,6 +471,7 @@
     $("sendSourceStudioBtn").addEventListener("click", () => handoff("studio"));
     loadBuild();
     restoreLatest();
+    updatePreflight();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true });

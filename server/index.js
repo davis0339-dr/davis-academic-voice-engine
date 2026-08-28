@@ -45,7 +45,7 @@ app.use("/api/research/evidence-enhance-candidate", express.json({ limit: "1mb",
 // Source papers are parsed in the browser and sent as plain text. The server
 // retrieves locally before any optional guided-ordering call, so the model sees
 // only compact candidate passages rather than entire papers.
-app.use("/api/source-authoring", express.json({ limit: "4mb", strict: true, type: "application/json" }));
+app.use("/api/source-authoring", express.json({ limit: "16mb", strict: true, type: "application/json" }));
 // A base64-encoded 5 MB PDF occupies roughly 6.7 MB in JSON.
 app.use("/api/detector-screenshot", express.json({ limit: "8mb", strict: true, type: "application/json" }));
 app.use("/api", express.json({ limit: "512kb", strict: true, type: "application/json" }));

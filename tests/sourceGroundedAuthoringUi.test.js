@@ -43,9 +43,14 @@ test("source ingestion exposes bibliographic review and length-aware handoff met
     readFile(new URL("public/detectorScreenshotGateway.js", root), "utf8"),
   ]);
   assert.match(html, /id="referenceWorkspace"/);
+  assert.match(html, /id="sourcePreflight"/);
   assert.match(html, /automatic length routing/);
   assert.match(ui, /targetSurface: wordCount\(draft\) > state\.capabilities\.singleEditorWordLimit \? "longdoc" : "single"/);
   assert.match(ui, /bibliographic-fields/);
+  assert.match(ui, /Confirm source identity/);
+  assert.match(ui, /INPUT PRESERVATION FAILED/);
+  assert.match(ui, /function updatePreflight/);
+  assert.match(ui, /Confirm at least one source identity before spending a guided-selection call/);
   assert.match(importer, /pdf\.getMetadata\(\)/);
   assert.match(detector, /sourceAuthoringCandidate/);
   assert.match(detector, /complete source-grounded assembly/);

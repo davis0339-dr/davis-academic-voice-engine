@@ -3,6 +3,8 @@ import { llmProvider, HealthState } from "../lib/llmProvider.js";
 import { extractJsonObject } from "../lib/researcherAgency.js";
 import {
   deterministicSourceAssembly,
+  MAX_SOURCE_CHARS,
+  MAX_STRUCTURE_CHARS,
   normalizeGuidedPlan,
   verifyAssemblyExtracts,
 } from "../lib/sourceGroundedAuthoring.js";
@@ -34,6 +36,10 @@ function cleanString(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function completeString(value) {
+  return typeof value === "string" ? value.replace(/\r\n/g, "\n").trim() : "";
+}
+
 function clientAssembly(assembly) {
   const { candidate_pool: _serverOnlyCandidates, ...safe } = assembly || {};
   return safe;
@@ -54,13 +60,22 @@ function cleanSources(value) {
       metadata_confidence: cleanString(source?.bibliographic?.metadata_confidence || source?.metadata_confidence, 30),
     },
     locator: cleanString(source?.locator, 200),
-    text: cleanString(source?.text, 60000),
+    text: completeString(source?.text),
   })).filter((source) => source.text);
 }
 
 sourceAuthoringRouter.post("/source-authoring/assemble", llmProvider.usageMiddleware, async (req, res) => {
   const entryMode = ["template", "rebuild", "develop"].includes(req.body?.entryMode) ? req.body.entryMode : "develop";
-  const structureText = cleanString(req.body?.structureText, 30000);
+  const structureText = completeString(req.body?.structureText);
+  const rawSources = Array.isArray(req.body?.sources) ? req.body.sources.slice(0, 12) : [];
+  if (structureText.length > MAX_STRUCTURE_CHARS) {
+    return res.status(413).json({ error: "MANUSCRIPT_TOO_LARGE", message: `The manuscript contains ${structureText.length.toLocaleString()} characters; the current explicit limit is ${MAX_STRUCTURE_CHARS.toLocaleString()}. Nothing was processed or truncated.`, requestId: req.requestId });
+  }
+  const oversizedSource = rawSources.find((source) => completeString(source?.text).length > MAX_SOURCE_CHARS);
+  if (oversizedSource) {
+    const size = completeString(oversizedSource?.text).length;
+    return res.status(413).json({ error: "SOURCE_TOO_LARGE", message: `${cleanString(oversizedSource?.title || oversizedSource?.name, 120) || "A study"} contains ${size.toLocaleString()} extracted characters; the per-study limit is ${MAX_SOURCE_CHARS.toLocaleString()}. Nothing was processed or truncated.`, requestId: req.requestId });
+  }
   const sources = cleanSources(req.body?.sources);
   const guided = req.body?.guided === true;
 
@@ -73,7 +88,7 @@ sourceAuthoringRouter.post("/source-authoring/assemble", llmProvider.usageMiddle
 
   const local = deterministicSourceAssembly({ entryMode, structureText, sources });
   const candidateCount = (local.candidate_pool || []).reduce((sum, section) => sum + (section.candidates || []).length, 0);
-  if (!local.extract_count && !candidateCount) {
+  if (!local.extract_count && !candidateCount && local.workflow_mode !== "existing_structure_citation_alignment") {
     return res.status(422).json({ error: "NO_RELEVANT_EXTRACTS", message: "No substantive source passages were retrieved. Add clearer section guidance or more closely related studies.", local: clientAssembly(local), requestId: req.requestId });
   }
 
@@ -114,7 +129,7 @@ sourceAuthoringRouter.post("/source-authoring/assemble", llmProvider.usageMiddle
     }));
     const result = await llmProvider.callAnthropic({
       system: GUIDED_ORDERING_SYSTEM,
-      messages: [{ role: "user", content: JSON.stringify({ entry_mode: entryMode, researcher_structure: structureText, sections: compact }) }],
+      messages: [{ role: "user", content: JSON.stringify({ entry_mode: entryMode, sections: compact }) }],
       maxTokens: 4000,
     });
     const guidedAssembly = normalizeGuidedPlan(extractJsonObject(result.text), local);

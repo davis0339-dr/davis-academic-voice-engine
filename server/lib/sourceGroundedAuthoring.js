@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
 
+export const MAX_STRUCTURE_CHARS = 500000;
+export const MAX_SOURCE_CHARS = 1500000;
+
 const STOP = new Set([
   "a", "an", "and", "are", "as", "at", "be", "been", "being", "but", "by", "can", "do", "for", "from",
   "had", "has", "have", "how", "in", "into", "is", "it", "its", "may", "of", "on", "or", "that", "the",
@@ -7,7 +10,7 @@ const STOP = new Set([
   "will", "with", "within", "would", "study", "research", "paper", "section",
 ]);
 
-function text(value, max = 60000) {
+function text(value, max = MAX_SOURCE_CHARS) {
   return typeof value === "string" ? value.replace(/\r\n/g, "\n").trim().slice(0, max) : "";
 }
 
@@ -37,10 +40,29 @@ function headingLike(line) {
   return !/[.!?;:]$/.test(value) && value.split(/\s+/).length <= 12 && /[A-Za-z]/.test(value);
 }
 
-const CITATION_PATTERN = /\((?:[^()]*(?:19|20)\d{2}[a-z]?[^()]*)\)|\b[A-Z][A-Za-z'’\-]+(?:\s+(?:et\s+al\.|and|&)\s+[A-Z][A-Za-z'’\-]+)?\s*\((?:19|20)\d{2}[a-z]?\)/g;
-
 function citationAnchors(value) {
-  return [...new Set(String(value || "").match(CITATION_PATTERN) || [])];
+  const source = String(value || "");
+  const anchors = [];
+  const add = (author, year) => {
+    const cleanAuthor = normalizeSpace(author).replace(/^[,;]+|[,;]+$/g, "");
+    const cleanYear = String(year || "").match(/(?:19|20)\d{2}[a-z]?/i)?.[0] || "";
+    if (!cleanYear || !/[A-Za-z]/.test(cleanAuthor) || /^et\s+al\.?$/i.test(cleanAuthor)) return;
+    anchors.push(`(${cleanAuthor}, ${cleanYear})`);
+  };
+
+  for (const match of source.matchAll(/\(([^()]*?(?:19|20)\d{2}[a-z]?[^()]*)\)/gi)) {
+    for (const part of match[1].split(/\s*;\s*/)) {
+      const year = part.match(/(?:19|20)\d{2}[a-z]?/i)?.[0];
+      if (!year) continue;
+      const author = part.slice(0, part.indexOf(year)).replace(/[,\s]+$/, "");
+      add(author, year);
+    }
+  }
+
+  for (const match of source.matchAll(/\b([A-Z][A-Za-z'’\-]+(?:\s+(?:et\s+al\.|and|&)\s+[A-Z][A-Za-z'’\-]+)?)\s*\(((?:19|20)\d{2}[a-z]?)\)/g)) {
+    add(match[1], match[2]);
+  }
+  return [...new Set(anchors)];
 }
 
 function parentheticalCitation(label) {
@@ -59,10 +81,12 @@ function normalizeBibliographic(source, index = 0) {
   const doi = text(source?.bibliographic?.doi || source?.doi, 300).replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "");
   const url = text(source?.bibliographic?.url || source?.url, 500);
   const suppliedCitation = text(source?.citation, 500);
-  const citation = suppliedCitation || (author && year ? `${author} (${year})` : author || (year ? `${title} (${year})` : title));
-  const parenthetical_citation = suppliedCitation
+  const metadata_confidence = text(source?.bibliographic?.metadata_confidence || source?.metadata_confidence, 30) || "needs_review";
+  const identity_verified = metadata_confidence === "researcher_reviewed" && Boolean(author && year);
+  const citation = suppliedCitation || (identity_verified ? `${author} (${year})` : "");
+  const parenthetical_citation = suppliedCitation && identity_verified
     ? parentheticalCitation(suppliedCitation)
-    : author && year ? `(${author}, ${year})` : "";
+    : identity_verified ? `(${author}, ${year})` : "";
   const working_reference = [
     author,
     year ? `(${year}).` : "",
@@ -70,25 +94,48 @@ function normalizeBibliographic(source, index = 0) {
     publication ? `${publication}.` : "",
     doi ? `https://doi.org/${doi}` : url,
   ].filter(Boolean).join(" ");
-  const metadata_confidence = text(source?.bibliographic?.metadata_confidence || source?.metadata_confidence, 30) || (author && year ? "reviewed_or_complete" : "needs_review");
-  return { title, author, year, publication, doi, url, citation, parenthetical_citation, working_reference, metadata_confidence };
+  return { title, author, year, publication, doi, url, citation, parenthetical_citation, working_reference, metadata_confidence, identity_verified };
 }
 
 export function deriveAuthoringSections(structureText, entryMode = "develop") {
-  const source = text(structureText, 30000);
-  const lines = source.split(/\n{2,}/).flatMap((block) => {
-    const rows = block.split(/\n/).map((line) => line.trim()).filter(Boolean);
-    if (rows.length > 1 && headingLike(rows[0])) return [rows[0], rows.slice(1).join(" ")];
-    return [rows.join(" ")];
-  }).map((line) => line.trim()).filter(Boolean);
+  const source = text(structureText, MAX_STRUCTURE_CHARS);
+  const rawLines = source.split("\n");
+  const lines = [];
+  let paragraph = [];
+  const flushParagraph = () => {
+    const value = normalizeSpace(paragraph.join(" "));
+    if (value) lines.push(value);
+    paragraph = [];
+  };
+  for (const rawLine of rawLines) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      continue;
+    }
+    if (headingLike(line)) {
+      flushParagraph();
+      lines.push(line);
+      continue;
+    }
+    if (paragraph.length && /[.!?][”"']?$/.test(paragraph[paragraph.length - 1])) flushParagraph();
+    paragraph.push(line);
+  }
+  flushParagraph();
   const sections = [];
   let current = null;
   for (const line of lines) {
-    if (headingLike(line) && sections.length < 18) {
+    if (headingLike(line) && sections.length < 64) {
       current = { heading: line, body: [] };
       sections.push(current);
     } else if (current) {
       current.body.push(line);
+    } else {
+      current = {
+        heading: entryMode === "template" ? "Template-guided section" : entryMode === "rebuild" ? "Existing draft development" : "Manuscript development",
+        body: [line],
+      };
+      sections.push(current);
     }
   }
   if (!sections.length) {
@@ -149,7 +196,7 @@ function pageRecords(sourceText) {
   const records = [];
   let current = { page: "", lines: [] };
   const flush = () => { if (current.lines.length) records.push(current); };
-  for (const rawLine of text(sourceText, 60000).split(/\n/)) {
+  for (const rawLine of text(sourceText, MAX_SOURCE_CHARS).split(/\n/)) {
     const marker = rawLine.trim().match(/^\[Page\s+(\d+)\]$/i);
     if (marker) {
       flush();
@@ -243,7 +290,7 @@ export function retrieveVerbatimCandidates({ structureText, entryMode, sources, 
     id: text(source?.id, 80) || `source-${index + 1}`,
     bibliographic: normalizeBibliographic(source, index),
     locator: text(source?.locator, 200),
-    text: text(source?.text, 60000),
+    text: text(source?.text, MAX_SOURCE_CHARS),
   })).map((source) => ({ ...source, title: source.bibliographic.title, citation: source.bibliographic.citation })).filter((source) => source.text);
   const sections = deriveAuthoringSections(structureText, entryMode);
   const units = cleanSources.flatMap(sourceUnits);
@@ -271,6 +318,7 @@ function citationAffinity(paragraph, candidate) {
   const anchors = citationAnchors(paragraph).join(" ").toLowerCase();
   if (!anchors) return { score: 0, matched: false, has_anchors: false };
   const bibliographic = candidate.bibliographic || {};
+  if (!bibliographic.identity_verified) return { score: 0, matched: false, has_anchors: true, identity_unverified: true };
   let score = 0;
   const yearMatch = Boolean(bibliographic.year && anchors.includes(String(bibliographic.year).toLowerCase()));
   if (yearMatch) score += 3;
@@ -397,6 +445,10 @@ export function deterministicSourceAssembly(input) {
     };
   });
   const sections = preserveExisting ? buildExistingStructureSections(retrieval) : groundUpSections;
+  const paragraphCount = retrieval.sections.reduce((sum, section) => sum + (section.paragraphs?.length || 0), 0);
+  const citationAnchorCount = retrieval.sections.reduce((sum, section) => sum + (section.paragraphs || []).reduce((inner, paragraph) => inner + paragraph.citation_anchors.length, 0), 0);
+  const originalStructure = typeof input.structureText === "string" ? input.structureText.replace(/\r\n/g, "\n").trim() : "";
+  const processedStructure = text(input.structureText, MAX_STRUCTURE_CHARS);
   return {
     entry_mode: input.entryMode || "develop",
     sections,
@@ -405,6 +457,17 @@ export function deterministicSourceAssembly(input) {
     assembly_mode: "local_verbatim_retrieval",
     workflow_mode: preserveExisting ? "existing_structure_citation_alignment" : "ground_up_source_scaffold",
     model_calls: 0,
+    input_audit: {
+      submitted_characters: originalStructure.length,
+      processed_characters: processedStructure.length,
+      complete: originalStructure === processedStructure,
+      section_count: retrieval.sections.length,
+      paragraph_count: paragraphCount,
+      citation_anchor_count: citationAnchorCount,
+      source_count: retrieval.sources.length,
+      reviewed_source_identities: retrieval.sources.filter((source) => source.bibliographic.identity_verified).length,
+      identities_needing_review: retrieval.sources.filter((source) => !source.bibliographic.identity_verified).map((source) => source.id),
+    },
     candidate_pool: retrieval.retrieved.map((section) => ({
       section_id: section.id,
       heading: section.heading,
@@ -428,7 +491,7 @@ export function deterministicSourceAssembly(input) {
     reference_records: retrieval.sources.map((source) => ({ source_id: source.id, ...source.bibliographic })),
     cache_key: createHash("sha256").update(JSON.stringify({
       entryMode: input.entryMode,
-      structureText: text(input.structureText, 30000),
+      structureText: processedStructure,
       sources: retrieval.sources.map((source) => [source.bibliographic, source.text]),
     })).digest("hex").slice(0, 24),
   };
@@ -541,7 +604,7 @@ export function normalizeGuidedPlan(raw, localAssembly) {
 }
 
 export function verifyAssemblyExtracts(assembly, sources) {
-  const sourceTexts = new Map((sources || []).map((source) => [source.id, normalizeSpace(text(source.text, 60000).replace(/^\[(?:Page|Line)\s+\d+\]\s*/gim, ""))]));
+  const sourceTexts = new Map((sources || []).map((source) => [source.id, normalizeSpace(text(source.text, MAX_SOURCE_CHARS).replace(/^\[(?:Page|Line)\s+\d+\]\s*/gim, ""))]));
   const failures = [];
   for (const section of assembly?.sections || []) {
     for (const block of section.blocks || []) {
