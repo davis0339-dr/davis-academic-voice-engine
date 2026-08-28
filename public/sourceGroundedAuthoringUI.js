@@ -5,8 +5,8 @@
   const SOURCE_KEY = "academicVoice.workspace.source.v1";
   const REVISED_KEY = "academicVoice.workspace.revised.v1";
   const HANDOFF_KEY = "academicVoice.sourceAuthoring.handoff.v1";
-  const LATEST_KEY = "academicVoice.sourceAuthoring.latest.v1";
-  const CACHE_PREFIX = "academicVoice.sourceAuthoring.plan.";
+  const LATEST_KEY = "academicVoice.sourceAuthoring.latest.v2";
+  const CACHE_PREFIX = "academicVoice.sourceAuthoring.plan.v2.";
   const MAX_FILE_BYTES = 12 * 1024 * 1024;
   const state = {
     sources: [],
@@ -22,10 +22,23 @@
     const stem = file.name.replace(/\.[^.]+$/, "");
     const visible = String(result.text || "").slice(0, 8000);
     const metadata = result.metadata || {};
-    const year = metadata.year || visible.match(/\b(?:19|20)\d{2}\b/)?.[0] || stem.match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
-    const byline = visible.split(/\n+/).map((line) => line.trim()).find((line) => /^by\s+[A-Z][A-Za-z .,'’&\-]{3,180}$/i.test(line));
-    const author = metadata.author || byline?.replace(/^by\s+/i, "") || "";
-    const title = metadata.title || stem;
+    const lines = visible.split(/\n+/).map((line) => line.replace(/^\[(?:Page|Line)\s+\d+\]\s*/i, "").trim()).filter(Boolean);
+    const credibleTitle = (value) => {
+      const candidate = String(value || "").trim();
+      return candidate.length >= 18 && candidate.length <= 300 && !/(?:microsoft word|\.docx?$|\.pdf$|ssrn[#\s-]?\d+|untitled|draft[_-])/i.test(candidate);
+    };
+    const credibleAuthor = (value) => {
+      const candidate = String(value || "").replace(/^by\s+/i, "").trim();
+      return candidate.length >= 5 && candidate.length <= 220 && /\s/.test(candidate) && !/(?:microsoft|university|department|school|faculty|downloaded|repository)/i.test(candidate);
+    };
+    const explicitTitle = lines.find((line) => /^title\s*:/i.test(line))?.replace(/^title\s*:\s*/i, "") || "";
+    const titleCandidate = lines.slice(0, 45).find((line) => credibleTitle(line) && wordCount(line) >= 4 && wordCount(line) <= 28 && !/[.!?]$/.test(line) && !/(?:abstract|keywords?|journal|volume|copyright|doi|http|electronic copy)/i.test(line)) || "";
+    const explicitAuthor = lines.find((line) => /^authors?\s*:/i.test(line))?.replace(/^authors?\s*:\s*/i, "") || "";
+    const byline = lines.find((line) => /^by\s+[A-Z][A-Za-z .,'’&\-]{3,180}$/i.test(line)) || "";
+    const title = credibleTitle(metadata.title) ? metadata.title : credibleTitle(explicitTitle) ? explicitTitle : titleCandidate;
+    const author = credibleAuthor(metadata.author) ? metadata.author : credibleAuthor(explicitAuthor) ? explicitAuthor : credibleAuthor(byline) ? byline.replace(/^by\s+/i, "") : "";
+    const publicationYear = lines.slice(0, 100).map((line) => line.match(/(?:published|accepted|forthcoming|copyright|©)[^\n]{0,80}\b((?:19|20)\d{2})\b/i)?.[1]).find(Boolean) || "";
+    const year = publicationYear || (author && title ? metadata.year || "" : "");
     const doi = metadata.doi || visible.match(/\b10\.\d{4,9}\/[\-._;()/:A-Z0-9]+\b/i)?.[0]?.replace(/[.,;:]$/, "") || "";
     return {
       title,
@@ -34,6 +47,8 @@
       publication: "",
       doi,
       url: "",
+      metadata_confidence: title && author && year ? "auto_complete_review_required" : "needs_review",
+      file_label: stem,
     };
   }
 
@@ -91,7 +106,10 @@
       const row = document.createElement("div");
       row.className = "source-item";
       const title = document.createElement("strong");
-      title.textContent = `${index + 1}. ${source.title}`;
+      title.textContent = `${index + 1}. ${source.fileLabel || source.title}`;
+      const confidence = document.createElement("span");
+      confidence.className = source.bibliographic?.metadata_confidence === "needs_review" ? "metadata-confidence warning" : "metadata-confidence";
+      confidence.textContent = source.bibliographic?.metadata_confidence === "needs_review" ? "Bibliographic identity needs review" : "Bibliographic identity recovered — review before use";
       const fields = document.createElement("div");
       fields.className = "bibliographic-fields";
       const field = (labelText, key, placeholder) => {
@@ -103,6 +121,7 @@
         input.placeholder = placeholder;
         input.addEventListener("input", () => {
           source.bibliographic[key] = input.value;
+          source.bibliographic.metadata_confidence = "researcher_reviewed";
           if (["author", "year", "title"].includes(key) && !source.citationManuallyEdited) source.citation = suggestedCitation(source);
         });
         label.appendChild(input);
@@ -131,7 +150,9 @@
         state.sources.splice(index, 1);
         renderSources();
       });
-      row.append(title, fields, remove);
+      const identity = document.createElement("div");
+      identity.append(title, confidence);
+      row.append(identity, fields, remove);
       target.appendChild(row);
     });
   }
@@ -148,7 +169,8 @@
         const bibliographic = inferredStudyMetadata(file, result);
         state.sources.push({
           id: `source-${Date.now()}-${state.sources.length + 1}`,
-          title: bibliographic.title,
+          title: bibliographic.title || `Source ${state.sources.length + 1}`,
+          fileLabel: file.name,
           citation: bibliographic.author && bibliographic.year ? `${bibliographic.author} (${bibliographic.year})` : "",
           bibliographic,
           text: result.text,
@@ -187,7 +209,8 @@
       } catch {}
       renderAssembly();
       const warning = data.warning ? ` ${data.warning}` : "";
-      setStatus(`${data.extract_count} exact extract(s) arranged from ${data.source_count} source(s). Model calls used: ${data.model_calls}.${warning}`);
+      const gaps = (data.sections || []).flatMap((section) => section.blocks || []).filter((block) => block.type === "review_note").length;
+      setStatus(`${data.extract_count} substantive exact extract(s) accepted from ${data.source_count} source(s); ${gaps} evidence gap(s) left unfilled rather than matched to unrelated material. Model calls used: ${data.model_calls}.${warning}`);
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -230,17 +253,29 @@
           const body = document.createElement("div");
           body.className = "extract-text";
           body.textContent = block.text;
+          const reason = document.createElement("div");
+          reason.className = "selection-reason";
+          const roles = Array.isArray(block.research_functions) ? block.research_functions.join(", ").replaceAll("_", " ") : "substantive evidence";
+          reason.textContent = `${block.relationship || "candidate for section"} · ${roles}. ${block.selection_reason || ""}`.trim();
           const remove = document.createElement("button");
           remove.type = "button";
           remove.textContent = "Remove extract";
           remove.addEventListener("click", () => removeExtract(sectionIndex, blockIndex));
           label.append(left, right);
-          card.append(label, body, remove);
+          card.append(label, body, reason, remove);
         } else if (block.type === "author_text") {
           left.textContent = "AUTHOR TEXT PRESERVED";
           right.textContent = block.citation_anchors?.length ? `citation location: ${block.citation_anchors.join("; ")}` : "existing structure retained";
           const body = document.createElement("div");
           body.className = "extract-text author-text";
+          body.textContent = block.text;
+          label.append(left, right);
+          card.append(label, body);
+        } else if (block.type === "review_note") {
+          left.textContent = "EVIDENCE GAP — NO PASSAGE FORCED";
+          right.textContent = "researcher action required";
+          const body = document.createElement("div");
+          body.className = "extract-text";
           body.textContent = block.text;
           label.append(left, right);
           card.append(label, body);
@@ -269,6 +304,7 @@
   function assembledText() {
     return (state.assembly?.sections || []).map((section) => {
       const body = (section.blocks || []).map((block) => {
+        if (block.type === "review_note") return "";
         const value = block.text?.trim();
         if (!value) return "";
         if (block.type === "extract" && block.parenthetical_citation) return `${value}\n${block.parenthetical_citation}`;

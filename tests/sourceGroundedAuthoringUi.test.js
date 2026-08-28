@@ -9,8 +9,8 @@ test("source-grounded authoring is a separate three-route workspace", async () =
   assert.match(html, /Follow a template/);
   assert.match(html, /Rebuild an existing draft/);
   assert.match(html, /Develop a manuscript/);
-  assert.match(html, /Build with local matching · 0 model calls/);
-  assert.match(html, /Build with guided ordering · maximum 1 call/);
+  assert.match(html, /Map evidence locally · 0 model calls/);
+  assert.match(html, /Deep claim-to-evidence selection · maximum 1 call/);
   assert.match(html, /Send to Editor review · automatic length routing/);
   assert.match(html, /Continue later in Research Studio/);
 });

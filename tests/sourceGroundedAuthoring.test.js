@@ -111,3 +111,63 @@ test("every extract carries the reviewed bibliographic record and the assembly e
   assert.equal(extract.parenthetical_citation, "(Anderson et al., 2004)");
   assert.match(assembly.reference_records.find((record) => record.source_id === "anderson").working_reference, /Journal of Accounting and Economics/);
 });
+
+test("title pages, bylines, URLs and page furniture can never become evidence extracts", () => {
+  const source = {
+    id: "jensen",
+    title: "uploaded-file.pdf",
+    bibliographic: { title: "Theory of the Firm", author: "Michael Jensen and William Meckling", year: "1976" },
+    text: `[Page 1]\n[Line 1] Electronic copy available at: http://ssrn.com/abstract=94043\n[Line 2] Theory of the Firm: Managerial Behavior,\n[Line 3] Agency Costs and Ownership Structure\n[Line 4] Michael C. Jensen and William H. Meckling\n[Line 5] We define an agency relationship as a contract under which a principal engages an agent to perform a service and delegates decision-making authority.\n[Line 6] If both parties are utility maximizers, the agent will not always act in the best interests of the principal.`,
+  };
+  const assembly = deterministicSourceAssembly({ entryMode: "develop", structureText: "Theoretical Foundation\nExplain agency relationships and delegated decision authority.", sources: [source] });
+  const extracts = assembly.sections.flatMap((section) => section.blocks).filter((block) => block.type === "extract");
+  assert.ok(extracts.length > 0);
+  assert.ok(extracts.every((block) => !/Theory of the Firm:|Michael C\. Jensen|ssrn\.com/i.test(block.text)));
+  assert.ok(extracts.every((block) => /Page 1, lines? \d+/i.test(block.locator)));
+});
+
+test("citation-bearing draft text cannot be aligned to a different uploaded author merely because topic words overlap", () => {
+  const wrongSource = {
+    id: "jensen",
+    bibliographic: { title: "Theory of the Firm", author: "Jensen and Meckling", year: "1976" },
+    text: "[Page 6]\nAgency relationships can create monitoring and bonding costs when managers control firm resources and creditors bear risk. These costs affect contractual protection and financing choices.",
+  };
+  const paragraph = "Antitakeover provisions can protect creditors when control changes create uncertainty (Klock et al., 2005).";
+  const assembly = deterministicSourceAssembly({ entryMode: "rebuild", structureText: `Literature Review\n${paragraph}`, sources: [wrongSource] });
+  const blocks = assembly.sections[0].blocks;
+  assert.equal(blocks.some((block) => block.type === "extract"), false);
+  assert.ok(blocks.some((block) => block.type === "review_note" && /Nothing unrelated|abstained|No uploaded source passage/i.test(block.text)));
+});
+
+test("claim-aware alignment records why a passage was selected and what research function it performs", () => {
+  const paragraph = "Board independence may reduce creditor uncertainty (Anderson et al., 2004).";
+  const assembly = deterministicSourceAssembly({ entryMode: "rebuild", structureText: `Literature Review\n${paragraph}`, sources });
+  const extract = assembly.sections[0].blocks.find((block) => block.type === "extract");
+  assert.equal(extract.citation_match, true);
+  assert.ok(extract.matched_claim.includes("Board independence"));
+  assert.ok(extract.selection_reason.length > 20);
+  assert.ok(Array.isArray(extract.research_functions));
+  assert.ok(assembly.evidence_map.some((row) => row.extract_id === extract.id && row.relationship));
+});
+
+test("guided matching is server-gated against a model selecting the wrong cited study", () => {
+  const allSources = [
+    ...sources,
+    {
+      id: "jensen",
+      bibliographic: { title: "Theory of the Firm", author: "Jensen and Meckling", year: "1976" },
+      text: "[Page 6]\nAgency relationships create monitoring costs when managers and creditors have different incentives. Contract design can reduce some of these conflicts.",
+    },
+  ];
+  const paragraph = "Board independence may reduce creditor uncertainty (Anderson et al., 2004).";
+  const local = deterministicSourceAssembly({ entryMode: "rebuild", structureText: `Literature Review\n${paragraph}`, sources: allSources });
+  const authorBlock = local.sections[0].blocks.find((block) => block.type === "author_text");
+  const wrongAssembly = deterministicSourceAssembly({ entryMode: "develop", structureText: "Theoretical Foundation\nExplain agency relationships, monitoring costs and conflicting incentives.", sources: [allSources[2]] });
+  const wrong = wrongAssembly.candidate_pool.flatMap((section) => section.candidates)[0];
+  assert.ok(wrong);
+  wrong.id = "src-3-extract-1";
+  local.candidate_pool[0].candidates.push(wrong);
+  const guided = normalizeGuidedPlan({ matches: [{ paragraph_id: authorBlock.id, extract_id: wrong.id, relationship: "supports", reason: "shared topic words" }] }, local);
+  assert.equal(guided.sections[0].blocks.some((block) => block.type === "extract"), false);
+  assert.ok(guided.sections[0].blocks.some((block) => block.type === "review_note"));
+});

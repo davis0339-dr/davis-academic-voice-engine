@@ -155,21 +155,23 @@
         lastY = y;
       }
       if (current.trim()) lines.push(current.trim());
-      if (lines.length) pages.push(`[Page ${pageNumber}]\n${lines.join("\n")}`);
+      if (lines.length) pages.push(`[Page ${pageNumber}]\n${lines.map((line, index) => `[Line ${index + 1}] ${line}`).join("\n")}`);
     }
     const text = pages.filter(Boolean).join("\n\n").trim();
     if (!text) {
       throw new Error("No selectable text was found in this PDF. Scanned/image-only PDFs are not supported in this build.");
     }
     const doi = text.match(/\b10\.\d{4,9}\/[\-._;()/:A-Z0-9]+\b/i)?.[0]?.replace(/[.,;:]$/, "") || "";
-    const visibleYear = text.slice(0, 8000).match(/\b(?:19|20)\d{2}\b/)?.[0] || "";
-    const metadataYear = pdfMetadata.creationDate.match(/(?:19|20)\d{2}/)?.[0] || "";
+    const frontMatter = text.slice(0, 10000).replace(/^\[(?:Page|Line)\s+\d+\]\s*/gim, "");
+    const visibleYear = frontMatter.match(/(?:published|accepted|forthcoming|copyright|©|current draft|version)\D{0,80}\b((?:19|20)\d{2})\b/i)?.[1]
+      || frontMatter.match(/\b[A-Z][A-Za-z'’\-]+(?:\s+(?:and|&)\s+[A-Z][A-Za-z'’\-]+|\s+et\s+al\.)?\s+((?:19|20)\d{2})\b/)?.[1]
+      || "";
     return {
       text,
       warnings: [],
       structure: "pdf_pages",
       pageCount: pdf.numPages,
-      metadata: { ...pdfMetadata, year: visibleYear || metadataYear, doi },
+      metadata: { ...pdfMetadata, year: visibleYear, fileCreationDate: pdfMetadata.creationDate, doi },
     };
   }
 
