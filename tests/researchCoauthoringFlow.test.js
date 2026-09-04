@@ -20,10 +20,10 @@ test("manuscript-first coauthoring starts independently of the Editor and preser
   assert.match(ui, /existing post-editor framework remains separate and intact/i);
 
   assert.match(studio, /Researcher-led manuscript development/i);
-  assert.match(studio, /manuscript → researcher reasoning → approved argument map → evidence alignment\/challenge → controlled reconstruction → integrity check/i);
+  assert.match(studio, /manuscript → exact diagnosis → author response → raw working draft/i);
   assert.match(studio, /id="researchEvidenceWorkspaceCard"/);
   assert.match(studio, /id="integrityResults"/);
-  assert.match(studio, /researchCoauthoringUI\.js\?v=4\.1\.0/);
+  assert.match(studio, /researchCoauthoringUI\.js\?v=5\.0\.0/);
 });
 
 test("each generated question has a real microphone workflow with local status feedback", () => {
@@ -55,7 +55,7 @@ test("coauthoring keeps typed reasoning fully supported alongside voice", () => 
   assert.match(voice, /avoid reading a generated answer if possible/i);
 });
 
-test("researcher responses are assessed for verification needs and their raw answers feed the argument map", () => {
+test("researcher responses are assessed but raw answers are not automatically sent through prose reconstruction", () => {
   const ui = read("public/researchCoauthoringUI.js");
   const route = read("server/routes/researchStudio.js");
 
@@ -67,14 +67,16 @@ test("researcher responses are assessed for verification needs and their raw ans
   assert.match(route, /does NOT by itself establish an external empirical fact/i);
   assert.match(ui, /writeResponsesIntoResearcherReasoning\(responses\)/);
   assert.match(ui, /Researcher's answer \(\$\{item\.input_mode\}\): \$\{item\.answer\}/);
-  assert.match(ui, /build\.click\(\)/);
+  assert.doesNotMatch(ui, /build\.click\(\)/);
+  assert.match(ui, /\/api\/research\/raw-integrate/);
+  assert.match(ui, /No language model edited the inserted wording/i);
 });
 
 test("manuscript questions are designed to elicit judgment rather than generate the argument for the researcher", () => {
   const route = read("server/routes/researchStudio.js");
   assert.match(route, /\/research\/manuscript-questions/);
-  assert.match(route, /Do not answer the questions yourself/);
-  assert.match(route, /Do not generate an argument for the researcher/);
+  assert.match(route, /Do not answer your own questions/);
+  assert.match(route, /Do not rewrite any sentence/);
   assert.match(route, /verification_sensitivity/);
-  assert.match(route, /The researcher may answer by voice OR by typing/);
+  assert.match(route, /read_back_in_own_words/);
 });

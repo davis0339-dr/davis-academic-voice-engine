@@ -59,7 +59,7 @@
   }
 
   function addManualObservation() {
-    observations.push({
+    const row = {
       detector: $("manualDetector")?.value || "Other",
       version: $("manualDetectorVersion")?.value.trim() || null,
       classification: $("manualDetectorClass")?.value || null,
@@ -68,11 +68,14 @@
       paraphrasedScore: numberOrNull($("manualParaphraseScore")?.value),
       flaggedSentenceIndices: parseFlaggedSentences($("manualFlaggedSentences")?.value),
       notes: $("manualDetectorNotes")?.value.trim() || null,
-    });
+    };
+    observations.push(window.AcademicRewriteLineage?.annotateObservation
+      ? window.AcademicRewriteLineage.annotateObservation(row, $("revisedText")?.value || "")
+      : row);
     observations = observations.slice(-20);
     saveObservations(); renderObservationList();
+    window.dispatchEvent(new CustomEvent("academicVoice:detector-observation-saved", { detail: row }));
     ["manualDetectorVersion", "manualAiScore", "manualHumanScore", "manualParaphraseScore", "manualFlaggedSentences", "manualDetectorNotes"].forEach((id) => { if ($(id)) $(id).value = ""; });
-    runResearch();
   }
 
   function clearObservations() {
@@ -138,6 +141,19 @@
     }).join("");
   }
 
+  function structuralTextureRows(source, candidate, opening) {
+    const rows = [
+      ["Sentence-length bin entropy", "sentence_length_bin_entropy"],
+      ["Local sentence-length movement", "local_sentence_length_movement"],
+      ["Sentence-architecture entropy", "architecture_template_entropy"],
+      ["Architecture-template concentration", "architecture_template_concentration"],
+      ["Paragraph-opening concentration", "paragraph_opening_concentration"],
+      ["Citation-placement concentration", "citation_placement_concentration"],
+      ["Repeated trigram share", "repeated_trigram_share"],
+    ];
+    return rows.map(([label, key]) => `<tr><td>${escapeHtml(label)}</td><td>${metric(source?.structural_texture?.[key], 3)}</td><td>${metric(candidate?.structural_texture?.[key], 3)}</td><td>${metric(opening?.structural_texture?.[key], 3)}</td></tr>`).join("");
+  }
+
   function renderResearch(report) {
     const target = $("detectorResearchResults");
     if (!target || !report) return;
@@ -146,6 +162,7 @@
     const opening = report.candidate_profiles?.opening_two_paragraphs || {};
     const consensus = report.detector_consensus || {};
     const obs = consensus.observations || [];
+    const reportedPatternInstances = Number(consensus.reported_pattern_instance_count) || 0;
     const flagged = report.flagged_sentence_analysis || {};
     const reference = report.corpus_reference || {};
     const flaggedSummary = flagged.available ? `
@@ -153,6 +170,7 @@
         <div><span>Flagged sentence share</span><strong>${pct(flagged.flagged_share)}</strong></div>
         <div><span>Opening 2 prose paragraphs flagged</span><strong>${pct(flagged.opening_two_paragraphs?.flagged_share)}</strong></div>
         <div><span>Remainder flagged</span><strong>${pct(flagged.remainder?.flagged_share)}</strong></div>
+        <div><span>Screenshot excerpts mapped</span><strong>${escapeHtml(flagged.excerpt_matched_sentence_count ?? 0)}</strong></div>
       </div>` : `<p class="muted">${escapeHtml(flagged.reason || "No sentence-level highlights supplied.")}</p>`;
 
     target.innerHTML = `
@@ -165,6 +183,7 @@
           <div><span>AI/paraphrase votes</span><strong>${escapeHtml(consensus.ai_or_paraphrase_votes ?? 0)}</strong></div>
           <div><span>Human votes</span><strong>${escapeHtml(consensus.human_votes ?? 0)}</strong></div>
           <div><span>Cross-detector disagreement</span><strong>${consensus.disagreement ? "YES" : "no"}</strong></div>
+          <div><span>Reported writing-pattern instances</span><strong>${escapeHtml(reportedPatternInstances)}</strong></div>
         </div>
         ${obs.length ? `<div class="research-observation-strip">${obs.map((o) => `<span>${escapeHtml(o.detector)}${o.version ? ` ${escapeHtml(o.version)}` : ""}: ${escapeHtml(o.classification || "n/a")}${Number.isFinite(o.ai_score) ? ` (${escapeHtml(o.ai_score)}% AI)` : ""}</span>`).join("")}</div>` : ""}
         <h4>Sentence-highlight distribution</h4>${flaggedSummary}
@@ -173,6 +192,9 @@
         ${adequacyBlock(opening, "First two substantive prose paragraphs")}
         <p class="muted">Headings, section labels, stand-alone quotations and list items are excluded from the “opening two paragraphs” sample. Low-sample cells are deliberately not interpreted.</p>
         <table class="research-table"><thead><tr><th>Metric</th><th>Source</th><th>Revised</th><th>Revised opening 2 prose paragraphs</th></tr></thead><tbody>${profileRows(source, candidate, opening)}</tbody></table>
+        <h4>Structural texture and local regularity</h4>
+        <p class="muted">These transparent measures identify concentration and repetition patterns for comparison across test runs. They are not an authorship classifier and should be interpreted alongside preservation and writing quality.</p>
+        <table class="research-table"><thead><tr><th>Metric</th><th>Source</th><th>Revised</th><th>Revised opening 2 prose paragraphs</th></tr></thead><tbody>${structuralTextureRows(source, candidate, opening)}</tbody></table>
         <h4>Corpus-relative cadence reference</h4>
         <p class="muted">${escapeHtml(reference.message || "No reference family available.")} These values are descriptive reference statistics, not quality cut-offs or rewrite targets.</p>
         <table class="research-table"><thead><tr><th>Metric</th><th>Revised</th><th>Corpus median</th><th>Corpus IQR</th><th>Position</th></tr></thead><tbody>${referenceRows(reference)}</tbody></table>
@@ -184,10 +206,10 @@
 
   function currentStyleFilters() {
     const value = (id) => $(id)?.value || null;
-    return {
+    return Object.fromEntries(Object.entries({
       document_type: value("documentType"), region: value("region"), degree: value("degree"),
       discipline: value("discipline"), research_mode: value("researchMode"), section: value("section"),
-    };
+    }).filter(([, selected]) => typeof selected === "string" && selected.length > 0));
   }
 
   async function runResearch() {
@@ -230,9 +252,18 @@
   };
 
   loadObservations(); renderObservationList();
+  window.addEventListener("academicVoice:detector-observation-saved", () => {
+    // Screenshot/PDF evidence is persisted by a separate gateway. Reload it
+    // before rendering or analysing so extracted colour passages are not left
+    // in that gateway's private in-memory state while this panel reports zero.
+    loadObservations();
+    renderObservationList();
+    runResearch();
+  });
   $("addDetectorObservationBtn")?.addEventListener("click", addManualObservation);
   $("clearDetectorObservationsBtn")?.addEventListener("click", clearObservations);
   $("analyseDetectorResearchBtn")?.addEventListener("click", runResearch);
+  if (observations.length) window.setTimeout(runResearch, 0);
 
   if (!document.querySelector('script[data-detector-evidence-ui="true"]')) {
     const script = document.createElement("script");

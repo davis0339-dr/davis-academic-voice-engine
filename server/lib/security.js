@@ -182,7 +182,50 @@ function validateDetectorObservation(observation) {
   if (observation.flaggedSentenceIndices !== undefined) {
     if (!Array.isArray(observation.flaggedSentenceIndices) || observation.flaggedSentenceIndices.length > 1000) return false;
   }
+  if (observation.flaggedExcerpts !== undefined) {
+    if (!Array.isArray(observation.flaggedExcerpts) || observation.flaggedExcerpts.length > 30) return false;
+    if (observation.flaggedExcerpts.some((value) => typeof value !== "string" || value.length > 280)) return false;
+  }
+  if (observation.reportPageCount !== undefined && observation.reportPageCount !== null && (!Number.isInteger(Number(observation.reportPageCount)) || Number(observation.reportPageCount) < 1 || Number(observation.reportPageCount) > 500)) return false;
+  for (const field of ["pagesInspected", "pagesWithPassageEvidence"]) {
+    if (observation[field] === undefined) continue;
+    if (!Array.isArray(observation[field]) || observation[field].length > 500) return false;
+    if (observation[field].some((page) => !Number.isInteger(Number(page)) || Number(page) < 1 || Number(page) > 500)) return false;
+  }
+  if (observation.highlightedPassages !== undefined) {
+    if (!Array.isArray(observation.highlightedPassages) || observation.highlightedPassages.length > 120) return false;
+    for (const passage of observation.highlightedPassages) {
+      if (!passage || typeof passage !== "object" || Array.isArray(passage)) return false;
+      if (typeof passage.text !== "string" || passage.text.length > 500) return false;
+      if (passage.classification !== undefined && typeof passage.classification !== "string") return false;
+      if (passage.colour !== undefined && passage.colour !== null && (typeof passage.colour !== "string" || passage.colour.length > 40)) return false;
+      if (passage.page !== undefined && passage.page !== null && (!Number.isInteger(Number(passage.page)) || Number(passage.page) < 1)) return false;
+    }
+  }
+  if (observation.patternFindings !== undefined) {
+    if (!Array.isArray(observation.patternFindings) || observation.patternFindings.length > 30) return false;
+    for (const finding of observation.patternFindings) {
+      if (!finding || typeof finding !== "object" || Array.isArray(finding)) return false;
+      if (typeof finding.label !== "string" || finding.label.length > 120) return false;
+      if (finding.description !== undefined && finding.description !== null && (typeof finding.description !== "string" || finding.description.length > 500)) return false;
+      if (finding.likelihoodText !== undefined && finding.likelihoodText !== null && (typeof finding.likelihoodText !== "string" || finding.likelihoodText.length > 160)) return false;
+      if (finding.reportedCount !== undefined && finding.reportedCount !== null && (!Number.isInteger(Number(finding.reportedCount)) || Number(finding.reportedCount) < 0 || Number(finding.reportedCount) > 1000)) return false;
+      if (!Array.isArray(finding.instances) || finding.instances.length > 60) return false;
+      for (const instance of finding.instances) {
+        if (!instance || typeof instance !== "object" || Array.isArray(instance)) return false;
+        if (typeof instance.text !== "string" || instance.text.length > 500) return false;
+        if (instance.page !== undefined && instance.page !== null && (!Number.isInteger(Number(instance.page)) || Number(instance.page) < 1)) return false;
+      }
+    }
+  }
   return true;
+}
+
+function validateRewriteDetectorFeedback(feedback) {
+  if (!feedback || typeof feedback !== "object" || Array.isArray(feedback)) return false;
+  if (typeof feedback.candidateId !== "string" || !/^[a-f0-9]{24}$/.test(feedback.candidateId)) return false;
+  if (!Array.isArray(feedback.observations) || feedback.observations.length < 1 || feedback.observations.length > 8) return false;
+  return feedback.observations.every(validateDetectorObservation);
 }
 
 export function validateApiPayload(req, res, next) {
@@ -196,12 +239,14 @@ export function validateApiPayload(req, res, next) {
   }
 
   if (path === "/detector-screenshot") {
-    const { mimeType, imageBase64 } = req.body;
-    if (!["image/png", "image/jpeg"].includes(mimeType)) {
-      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector screenshot must be PNG or JPEG.", requestId: req.requestId });
+    const { mimeType, fileBase64, imageBase64 } = req.body;
+    if (!["image/png", "image/jpeg", "application/pdf"].includes(mimeType)) {
+      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector evidence must be PNG, JPEG or PDF.", requestId: req.requestId });
     }
-    if (typeof imageBase64 !== "string" || imageBase64.length === 0 || imageBase64.length > 2_900_000) {
-      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector screenshot payload is missing or exceeds the bounded image envelope.", requestId: req.requestId });
+    const encoded = typeof fileBase64 === "string" ? fileBase64 : imageBase64;
+    const maximumEncodedLength = mimeType === "application/pdf" ? 7_100_000 : 2_900_000;
+    if (typeof encoded !== "string" || encoded.length === 0 || encoded.length > maximumEncodedLength) {
+      return res.status(400).json({ error: "BAD_REQUEST", message: "Detector report payload is missing or exceeds the bounded file envelope.", requestId: req.requestId });
     }
     return next();
   }
@@ -216,22 +261,38 @@ export function validateApiPayload(req, res, next) {
     constraints,
     section,
     observations,
+    detectorFeedback,
+    authorialAnchor,
     styleFilters,
     rewriteIntensity,
     grammarIntensity,
     lengthPreference,
     naturalisation,
+    revisionPurpose,
+    refinementMode,
     label,
   } = req.body;
-  for (const [key, value] of Object.entries({ text, sourceText, candidateText, thoughts, manuscriptContext, researchContext, constraints, section })) {
+  for (const [key, value] of Object.entries({ text, sourceText, candidateText, thoughts, manuscriptContext, researchContext, constraints, section, authorialAnchor })) {
     if (value !== undefined && typeof value !== "string") {
       return res.status(400).json({ error: "BAD_REQUEST", message: `\`${key}\` must be a string.`, requestId: req.requestId });
     }
+  }
+  if (typeof authorialAnchor === "string" && authorialAnchor.length > 12000) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "`authorialAnchor` exceeds the bounded calibration-sample envelope.", requestId: req.requestId });
+  }
+  if (revisionPurpose !== undefined && !["fidelity", "collaborative"].includes(revisionPurpose)) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "`revisionPurpose` must be `fidelity` or `collaborative`.", requestId: req.requestId });
+  }
+  if (refinementMode !== undefined && !["source", "tested_candidate"].includes(refinementMode)) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "`refinementMode` must be `source` or `tested_candidate`.", requestId: req.requestId });
   }
   if (observations !== undefined) {
     if (!Array.isArray(observations) || observations.length > 20 || !observations.every(validateDetectorObservation)) {
       return res.status(400).json({ error: "BAD_REQUEST", message: "Invalid detector observations payload.", requestId: req.requestId });
     }
+  }
+  if (detectorFeedback !== undefined && !validateRewriteDetectorFeedback(detectorFeedback)) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "Invalid candidate-linked detector feedback payload.", requestId: req.requestId });
   }
   for (const [key, value] of Object.entries({ rewriteIntensity, grammarIntensity, lengthPreference, naturalisation, label })) {
     if (value !== undefined && (typeof value !== "string" || value.length > 80)) {

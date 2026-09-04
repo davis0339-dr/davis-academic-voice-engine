@@ -11,6 +11,7 @@
   // here without duplicating the entire editor controller. updateWordCounts then
   // continues to drive limits/buttons using this corrected tokenisation.
   window.wordCount = manuscriptWordCount;
+  window.AcademicManuscriptWordCount = manuscriptWordCount;
 
   function relabel() {
     const source = document.getElementById("sourceWordCount");

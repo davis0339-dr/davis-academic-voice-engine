@@ -45,7 +45,7 @@ test("manual external observations preserve cross-detector disagreement rather t
       { detector: "Independent detector B", version: "manual-test-b", classification: "human", humanScore: 100 },
     ],
   });
-  assert.equal(report.version, "detector-research-v3");
+  assert.equal(report.version, "detector-research-v4");
   assert.equal(report.detector_consensus.detector_count, 2);
   assert.equal(report.detector_consensus.disagreement, true);
   assert.ok(report.research_hypotheses.some((item) => /disagree/i.test(item)));
@@ -86,6 +86,41 @@ test("detector research remains useful with no external observations", () => {
   assert.equal(report.detector_consensus.disagreement, false);
   assert.ok(report.source_profiles.whole_document.word_count > 0);
   assert.equal("authorship_verdict" in report, false);
+});
+
+test("linguistic profile exposes transparent structural-regularity proxies", () => {
+  const profile = linguisticProfile(source);
+  assert.ok(Number.isFinite(profile.structural_texture.sentence_length_bin_entropy));
+  assert.ok(Number.isFinite(profile.structural_texture.architecture_template_concentration));
+  assert.ok(Number.isFinite(profile.structural_texture.citation_placement_entropy));
+  assert.match(profile.structural_texture.note, /not an AI-authorship classifier/i);
+});
+
+test("visibly highlighted screenshot excerpts map back to candidate sentences", () => {
+  const report = buildDetectorResearchReport({
+    candidateText: candidate,
+    observations: [{ detector: "External detector", classification: "ai", flaggedExcerpts: ["reporting integrity and board oversight"] }],
+  });
+  assert.equal(report.flagged_sentence_analysis.available, true);
+  assert.equal(report.flagged_sentence_analysis.excerpt_matched_sentence_count, 1);
+});
+
+test("colour-coded PDF passages feed sentence-level research even when the extractor supplies no legacy excerpt list", () => {
+  const report = buildDetectorResearchReport({
+    candidateText: candidate,
+    observations: [{
+      detector: "GPTZero",
+      classification: "ai",
+      aiScore: 100,
+      highlightedPassages: [
+        { text: "reporting integrity and board oversight", classification: "ai", colour: "orange", page: 4 },
+        { text: "Pricing differences can become economically material", classification: "human", colour: "green", page: 5 },
+      ],
+    }],
+  });
+  assert.equal(report.flagged_sentence_analysis.available, true);
+  assert.equal(report.flagged_sentence_analysis.excerpt_matched_sentence_count, 1);
+  assert.equal(report.detector_consensus.observations[0].highlighted_passage_count, 1);
 });
 
 test("evidence registry separates implemented measurements from deeper planned NLP/statistical measures", () => {

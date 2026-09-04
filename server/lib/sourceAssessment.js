@@ -13,12 +13,18 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 }
 
+function regularityLabel(score) {
+  return score >= 0.66 ? "high" : score >= 0.35 ? "moderate" : "low";
+}
+
 function calibrateTextureWithDiscourseForensics(textureAssessment, forensics) {
   if (!textureAssessment || !forensics?.available) return textureAssessment;
 
   const baseRegularity = Number(textureAssessment.machine_pattern_regularity?.score || 0);
   const forensicRegularity = Number(forensics.score || 0);
-  const calibratedRegularity = Math.max(baseRegularity, forensicRegularity);
+  const machineLanguageRegularity = Number(textureAssessment.machine_pattern_regularity?.components?.modern_machine_language_pressure || 0);
+  let calibratedRegularity = Math.max(baseRegularity, forensicRegularity, machineLanguageRegularity);
+  if (machineLanguageRegularity >= 0.34 && forensicRegularity >= 0.34) calibratedRegularity = Math.max(calibratedRegularity, 0.68);
   if (calibratedRegularity <= baseRegularity + 0.001) {
     return {
       ...textureAssessment,
@@ -54,7 +60,7 @@ function calibrateTextureWithDiscourseForensics(textureAssessment, forensics) {
     machine_pattern_regularity: {
       ...(textureAssessment.machine_pattern_regularity || {}),
       score: Number(calibratedRegularity.toFixed(3)),
-      label: calibratedRegularity >= 0.66 ? "high" : calibratedRegularity >= 0.42 ? "moderate" : "low",
+      label: regularityLabel(calibratedRegularity),
       components: {
         ...(textureAssessment.machine_pattern_regularity?.components || {}),
         cross_paragraph_forensic_regularisation: Number(forensicRegularity.toFixed(3)),

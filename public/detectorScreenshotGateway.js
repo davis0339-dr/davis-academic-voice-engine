@@ -2,10 +2,24 @@
   "use strict";
 
   const STORAGE_KEY = "academicVoice.detectorObservations.v1";
-  const MAX_BYTES = 2 * 1024 * 1024;
-  const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
-  let pendingFile = null;
-  let extractedObservation = null;
+  const SOURCE_AUTHORING_HANDOFF_KEY = "academicVoice.sourceAuthoring.handoff.v1";
+  const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+  const MAX_PDF_BYTES = 5 * 1024 * 1024;
+  const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "application/pdf"]);
+  const MAX_FILES = 10;
+  let pendingFiles = [];
+  let extractedObservations = [];
+
+  function sourceAuthoringCandidate() {
+    try {
+      const payload = JSON.parse(localStorage.getItem(SOURCE_AUTHORING_HANDOFF_KEY) || "null");
+      return payload?.assembledText && Array.isArray(payload.lockedExtracts) ? payload.assembledText : "";
+    } catch { return ""; }
+  }
+
+  function currentCandidateText() {
+    return $("revisedText")?.value || sourceAuthoringCandidate();
+  }
 
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value ?? "")
@@ -23,34 +37,57 @@
   function fileToBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onerror = () => reject(new Error("Could not read the screenshot."));
+      reader.onerror = () => reject(new Error("Could not read the detector report file."));
       reader.onload = () => {
         const text = String(reader.result || "");
         const comma = text.indexOf(",");
-        if (comma < 0) return reject(new Error("Could not decode the screenshot."));
+        if (comma < 0) return reject(new Error("Could not decode the detector report file."));
         resolve(text.slice(comma + 1));
       };
       reader.readAsDataURL(file);
     });
   }
 
-  function validateFile(file) {
-    if (!file) throw new Error("Choose one PNG or JPEG detector-result screenshot first.");
-    if (!ALLOWED_TYPES.has(file.type)) throw new Error("Only PNG or JPEG screenshots are accepted.");
-    if (file.size > MAX_BYTES) throw new Error("Screenshot is larger than 2 MB. Crop or compress the visible result summary and try again.");
-    return file;
+  function normaliseMimeType(file) {
+    if (file?.type) return file.type;
+    return /\.pdf$/i.test(file?.name || "") ? "application/pdf" : "";
   }
 
-  function acceptFile(file) {
+  function validateFile(file) {
+    if (!file) throw new Error("Choose at least one PNG, JPEG or PDF detector-result file first.");
+    const mimeType = normaliseMimeType(file);
+    if (!ALLOWED_TYPES.has(mimeType)) throw new Error("Only PNG/JPEG screenshots and PDF detector reports are accepted.");
+    const maximumBytes = mimeType === "application/pdf" ? MAX_PDF_BYTES : MAX_IMAGE_BYTES;
+    if (file.size > maximumBytes) throw new Error(mimeType === "application/pdf"
+      ? "PDF report is larger than 5 MB. Download a smaller report or split it before uploading."
+      : "Screenshot is larger than 2 MB. Crop or compress the visible result summary and try again.");
+    return { file, mimeType };
+  }
+
+  function acceptFiles(files) {
     try {
-      pendingFile = validateFile(file);
-      status(`Selected: ${pendingFile.name} · ${(pendingFile.size / 1024).toFixed(0)} KB. Press “Read selected screenshot”.`);
+      const selected = [...(files || [])].slice(0, MAX_FILES).map(validateFile);
+      if (!selected.length) throw new Error("Choose at least one PNG, JPEG or PDF detector-result file first.");
+      pendingFiles = selected;
+      const calls = pendingFiles.length;
+      status(`Selected ${calls} detector report file${calls === 1 ? "" : "s"}. Reading them will use ${calls} provider call${calls === 1 ? "" : "s"}.`);
       const drop = $("detectorScreenshotDropZone");
       if (drop) drop.dataset.hasFile = "true";
     } catch (err) {
-      pendingFile = null;
+      pendingFiles = [];
       status(err.message, true);
     }
+  }
+
+  function canonicalDetector(value) {
+    const text = String(value || "").trim();
+    const lower = text.toLowerCase();
+    if (lower.includes("gptzero")) return "GPTZero";
+    if (lower.includes("turnitin")) return "Turnitin";
+    if (lower.includes("copyleaks")) return "Copyleaks";
+    if (lower.includes("originality")) return "Originality.ai";
+    if (lower.includes("stealthwriter")) return "Stealthwriter";
+    return text || "Other";
   }
 
   function loadObservations() {
@@ -62,18 +99,24 @@
 
   function saveObservation(observation) {
     const rows = loadObservations();
-    rows.push({
-      detector: observation.detector || "Other",
+    const row = {
+      detector: canonicalDetector(observation.detector),
       version: observation.version || null,
       classification: observation.classification || "uncertain",
       aiScore: Number.isFinite(Number(observation.aiScore)) ? Number(observation.aiScore) : null,
       humanScore: Number.isFinite(Number(observation.humanScore)) ? Number(observation.humanScore) : null,
       paraphrasedScore: Number.isFinite(Number(observation.paraphrasedScore)) ? Number(observation.paraphrasedScore) : null,
       flaggedSentenceIndices: Array.isArray(observation.flaggedSentenceIndices) ? observation.flaggedSentenceIndices : [],
+      flaggedExcerpts: Array.isArray(observation.flaggedExcerpts) ? observation.flaggedExcerpts : [],
+      highlightedPassages: Array.isArray(observation.highlightedPassages) ? observation.highlightedPassages : [],
+      patternFindings: Array.isArray(observation.patternFindings) ? observation.patternFindings : [],
       notes: observation.notes || null,
       recordedAt: new Date().toISOString(),
-      evidenceSource: "uploaded_detector_screenshot",
-    });
+      evidenceSource: "uploaded_detector_report",
+    };
+    rows.push(window.AcademicRewriteLineage?.annotateObservation
+      ? window.AcademicRewriteLineage.annotateObservation(row, currentCandidateText())
+      : row);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rows.slice(-20))); } catch {}
   }
 
@@ -91,54 +134,97 @@
     if ($("manualDetectorNotes")) $("manualDetectorNotes").value = observation.notes || "";
   }
 
-  function renderExtracted(observation) {
+  function renderExtracted(observations) {
     const preview = $("detectorScreenshotPreview");
     if (!preview) return;
-    preview.innerHTML = `
+    preview.innerHTML = observations.map((observation, index) => `
       <div class="detector-gateway-result">
-        <div><strong>${esc(observation.detector || "Detector result")}</strong><span>${esc(observation.classification || "uncertain")}</span></div>
+        <div><strong>${esc(observation.detector || "Detector result")} · report file ${index + 1}</strong><span>${esc(observation.classification || "uncertain")}</span></div>
+        ${observation.extraction?.complete ? `<p class="proof-line">Complete report extraction · ${observation.extraction.page_coverage_audited ? `page-audited: ${esc((observation.extraction.pages_inspected || []).join(", "))} of ${esc(observation.extraction.report_page_count)} page(s) inspected; passage evidence on page(s) ${esc((observation.extraction.pages_with_passage_evidence || []).join(", ") || "none")}` : observation.extraction.segmented_recovery_used ? "segmented pattern + passage recovery" : observation.extraction.syntax_repair_used ? "JSON syntax recovered" : "single complete pass"} · ${esc(observation.extraction.provider_calls || 1)} provider call(s)</p>` : ""}
         <div class="detector-gateway-metrics">
           ${Number.isFinite(Number(observation.aiScore)) ? `<span>AI <strong>${esc(observation.aiScore)}%</strong></span>` : ""}
           ${Number.isFinite(Number(observation.humanScore)) ? `<span>Human <strong>${esc(observation.humanScore)}%</strong></span>` : ""}
           ${Number.isFinite(Number(observation.paraphrasedScore)) ? `<span>Mixed/paraphrased <strong>${esc(observation.paraphrasedScore)}%</strong></span>` : ""}
         </div>
         ${observation.visibleSummary ? `<p>${esc(observation.visibleSummary)}</p>` : ""}
-        <button id="saveGatewayDetectorResultBtn" class="primary" type="button">Save this external result</button>
-      </div>`;
-    $("saveGatewayDetectorResultBtn")?.addEventListener("click", () => {
-      if (!extractedObservation) return;
-      saveObservation(extractedObservation);
-      populateManualForm(extractedObservation);
-      status(`${extractedObservation.detector || "Detector"} result saved to this browser's external detector evidence.`);
-      window.dispatchEvent(new CustomEvent("academicVoice:detector-observation-saved", { detail: extractedObservation }));
+        ${Array.isArray(observation.highlightedPassages) && observation.highlightedPassages.length
+          ? `<details><summary>${esc(observation.highlightedPassages.length)} colour-coded passage(s) extracted</summary><ul>${observation.highlightedPassages.slice(0, 30).map((passage) => `<li><strong>${esc(passage.classification || "uncertain")}</strong>${passage.colour ? ` · ${esc(passage.colour)}` : ""}${passage.page ? ` · page ${esc(passage.page)}` : ""}: “${esc(passage.text)}”</li>`).join("")}</ul></details>`
+          : '<p class="warning-text">No sentence-level colour passages were extracted. This file currently supplies only document-level evidence and cannot guide local targeting.</p>'}
+        ${Array.isArray(observation.patternFindings) && observation.patternFindings.length
+          ? `<details open><summary>${esc(observation.patternFindings.length)} named writing pattern(s) extracted</summary><ul>${observation.patternFindings.slice(0, 30).map((finding) => `<li><strong>${esc(finding.label)}</strong>${finding.reportedCount !== null && finding.reportedCount !== undefined && Number.isFinite(Number(finding.reportedCount)) ? ` · ${esc(finding.reportedCount)} reported instance(s)` : ""}${finding.likelihoodText ? ` · ${esc(finding.likelihoodText)}` : ""}${finding.description ? `<div>${esc(finding.description)}</div>` : ""}${Array.isArray(finding.instances) && finding.instances.length ? `<div class="muted">${esc(finding.instances.length)} legible instance(s) mapped for local analysis.</div>` : ""}</li>`).join("")}</ul></details>`
+          : ""}
+      </div>`).join("") + '<button id="saveGatewayDetectorResultsBtn" class="primary" type="button">Save and link this evidence bundle</button>';
+    $("saveGatewayDetectorResultsBtn")?.addEventListener("click", () => {
+      if (!extractedObservations.length) return;
+      const candidateText = currentCandidateText();
+      const preflight = window.AcademicRewriteLineage?.refinementPreflight?.(candidateText);
+      const exactSourceAssembly = Boolean(sourceAuthoringCandidate() && candidateText === sourceAuthoringCandidate());
+      if (!preflight?.exact_candidate) {
+        if (!exactSourceAssembly) {
+          status("This evidence cannot be linked because the Revised box no longer contains the exact retained candidate. Restore that revision from version history, then save again.", true);
+          return;
+        }
+      }
+      extractedObservations.forEach(saveObservation);
+      populateManualForm(extractedObservations[extractedObservations.length - 1]);
+      status(exactSourceAssembly
+        ? `Saved and linked ${extractedObservations.length} detector observation${extractedObservations.length === 1 ? "" : "s"} to the complete source-grounded assembly. The extracts remain protected; use the evidence for review rather than automatic rewriting.`
+        : `Saved and linked ${extractedObservations.length} detector observation${extractedObservations.length === 1 ? "" : "s"} to the exact revision currently shown. The feedback-guided refinement preflight is now ready.`);
+      window.dispatchEvent(new CustomEvent("academicVoice:detector-observation-saved", { detail: { observations: extractedObservations } }));
+      const button = $("saveGatewayDetectorResultsBtn");
+      if (button) { button.disabled = true; button.textContent = "Evidence bundle saved and linked"; }
     });
+  }
+
+  function resetForNewCandidate() {
+    if (!extractedObservations.length && !pendingFiles.length) return;
+    extractedObservations = [];
+    pendingFiles = [];
+    const preview = $("detectorScreenshotPreview");
+    if (preview) preview.innerHTML = "";
+    const input = $("detectorScreenshotInput");
+    if (input) input.value = "";
+    const drop = $("detectorScreenshotDropZone");
+    if (drop) delete drop.dataset.hasFile;
+    status("A new revision is now shown. Evidence saved for the previous revision was consumed there; test and upload the new revision before another refinement.");
   }
 
   async function analyseSelected() {
     try {
-      const file = validateFile(pendingFile || $("detectorScreenshotInput")?.files?.[0]);
-      pendingFile = file;
-      status("Reading the visible detector summary…");
-      const imageBase64 = await fileToBase64(file);
-      const response = await fetch("/api/detector-screenshot", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mimeType: file.type, imageBase64 }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || data.error || "Screenshot analysis failed.");
-      const observation = { ...(data.observation || {}) };
-      const selectedDetector = $("detectorScreenshotDetector")?.value || "auto";
-      if (selectedDetector !== "auto") observation.detector = selectedDetector;
-      observation.notes = `Screenshot extraction (${observation.confidence || "unknown"} confidence): ${observation.visibleSummary || ""}`.slice(0, 1000);
-      extractedObservation = observation;
-      populateManualForm(observation);
-      renderExtracted(observation);
-      status("Screenshot read. Verify the extracted values, then save the external result.");
+      const selected = pendingFiles.length ? pendingFiles : [...($("detectorScreenshotInput")?.files || [])].slice(0, MAX_FILES).map(validateFile);
+      if (!selected.length) throw new Error("Choose at least one PNG, JPEG or PDF detector-result file first.");
+      extractedObservations = [];
+      for (let index = 0; index < selected.length; index += 1) {
+        const { file, mimeType } = selected[index];
+        status(`Reading detector file ${index + 1} of ${selected.length} completely… Large PDF reports are automatically re-read in bounded pattern and passage phases if one response reaches its output limit.`);
+        const imageBase64 = await fileToBase64(file);
+        const response = await fetch("/api/detector-screenshot", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mimeType, fileBase64: imageBase64 }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(`Detector file ${index + 1}: ${data.message || data.error || "analysis failed"}`);
+        const observation = { ...(data.observation || {}) };
+        observation.extraction = data.extraction || null;
+        observation.reportPageCount = observation.reportPageCount || data.extraction?.report_page_count || null;
+        observation.pagesInspected = observation.pagesInspected?.length ? observation.pagesInspected : (data.extraction?.pages_inspected || []);
+        observation.pagesWithPassageEvidence = observation.pagesWithPassageEvidence?.length ? observation.pagesWithPassageEvidence : (data.extraction?.pages_with_passage_evidence || []);
+        observation.providerUsage = data.provider_usage || null;
+        const selectedDetector = $("detectorScreenshotDetector")?.value || "auto";
+        observation.detector = selectedDetector !== "auto" ? selectedDetector : canonicalDetector(observation.detector);
+        observation.notes = `${mimeType === "application/pdf" ? "PDF report" : "Screenshot"} complete extraction (${observation.confidence || "unknown"} confidence; ${observation.extraction?.strategy || "single_pass"}): ${observation.visibleSummary || ""}`.slice(0, 1000);
+        extractedObservations.push(observation);
+      }
+      populateManualForm(extractedObservations[extractedObservations.length - 1]);
+      renderExtracted(extractedObservations);
+      status(`Completely read ${extractedObservations.length} detector report file${extractedObservations.length === 1 ? "" : "s"}. Review the extracted scores, colours, passages and named patterns, then click “Save and link this evidence bundle”. Nothing is linked until that button is pressed.`);
     } catch (err) {
       status(err.message || "Screenshot analysis failed.", true);
     }
   }
+
+  window.addEventListener("academicVoice:rewrite-lineage-updated", resetForNewCandidate);
 
   function openPicker() {
     document.querySelector('.tab-header[data-tab="detectorqa"]')?.click();
@@ -157,7 +243,7 @@
     if (!input || !choose || !read || !drop) return;
 
     choose.addEventListener("click", openPicker);
-    input.addEventListener("change", () => acceptFile(input.files?.[0]));
+    input.addEventListener("change", () => acceptFiles(input.files));
     read.addEventListener("click", analyseSelected);
 
     ["dragenter", "dragover"].forEach((eventName) => drop.addEventListener(eventName, (event) => {
@@ -168,19 +254,19 @@
       event.preventDefault();
       drop.classList.remove("dragging");
     }));
-    drop.addEventListener("drop", (event) => acceptFile(event.dataTransfer?.files?.[0]));
+    drop.addEventListener("drop", (event) => acceptFiles(event.dataTransfer?.files));
     drop.addEventListener("click", openPicker);
     drop.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPicker(); }
     });
     drop.addEventListener("paste", (event) => {
       const item = [...(event.clipboardData?.items || [])].find((row) => row.type === "image/png" || row.type === "image/jpeg");
-      if (!item) return status("Clipboard does not contain a PNG/JPEG screenshot.", true);
+      if (!item) return status("Clipboard does not contain a PNG/JPEG screenshot. Choose PDF reports using the file picker.", true);
       event.preventDefault();
-      acceptFile(item.getAsFile());
+      acceptFiles([item.getAsFile()]);
     });
 
-    // This is intentionally delegated: the compact “Upload result screenshot”
+    // This is intentionally delegated: the compact “Upload detector result”
     // button is created later after a rewrite. It must still open a real device
     // picker without depending on an optional enhancer having mounted correctly.
     document.addEventListener("click", (event) => {

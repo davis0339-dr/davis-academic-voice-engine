@@ -268,6 +268,32 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ok-badge { color: var(--good); }
 .bad-badge { color: var(--bad); }
 
+.additional-inputs-panel {
+  margin-bottom: 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  background: rgba(224, 169, 65, 0.08);
+}
+.additional-inputs-panel h3 { margin: 0 0 0.35rem; }
+.additional-input-card {
+  margin-top: 0.7rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.additional-input-card p { margin: 0.4rem 0 0; }
+.additional-input-head { display: flex; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.additional-input-status {
+  color: var(--warn);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.additional-input-evidence { color: var(--warn); }
+
 .detector-disclaimer {
   font-size: 0.78rem;
   color: var(--warn);

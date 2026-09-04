@@ -219,7 +219,7 @@ export function analyseDiscourseRegularity(text, textStructure) {
       profiles: affected,
       sentenceIndices: affected.map((profile) => profile.closingSentenceIndex),
       interpretation: `${Math.round(tidyClosureRatio * 100)}% of narrative paragraphs end with a synthesising or implication-style closure. Repeated rhetorical completion can make otherwise strong prose read as over-engineered.`,
-      action: "Remove redundant local closure where the reasoning is already clear. Allow selected paragraphs to end on evidence, a condition, limitation, measurement distinction, or tension carried into the next paragraph.",
+      action: "First test whether the closure adds a unique interpretation, qualification, implication or cross-paragraph link. Preserve that intellectual function when it does. Only remove or absorb a closure that is semantically and rhetorically duplicate; selected paragraphs may instead end on evidence, a condition, limitation, measurement distinction, or carried-forward tension.",
     }));
   }
 
@@ -347,3 +347,4 @@ export function analyseDiscourseRegularity(text, textStructure) {
     note: "This is a discourse-pattern diagnostic, not an authorship classifier. Formal academic artefacts such as purpose statements, research questions and hypotheses are excluded from cross-paragraph regularity scoring so legitimate institutional form is not penalised.",
   };
 }
+

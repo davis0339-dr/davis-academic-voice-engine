@@ -2,6 +2,7 @@
 // independent of the model's own self-report.
 
 import { extractProtectedSpans } from "./protect.js";
+import { analyseRhetoricalSemanticPreservation } from "./rhetoricalPreservation.js";
 
 function missingFrom(list, haystack) {
   return list.filter((item) => !haystack.includes(item));
@@ -9,6 +10,49 @@ function missingFrom(list, haystack) {
 
 function dedupe(list) {
   return Array.from(new Set(list.filter(Boolean)));
+}
+
+const ATTACHMENT_STOPWORDS = new Set([
+  "the", "and", "that", "this", "with", "from", "were", "was", "are", "for", "into", "their", "which", "while", "have", "has", "been", "study",
+]);
+
+function attachmentTokens(text) {
+  return new Set((String(text || "").toLowerCase().match(/[a-z][a-z'-]{3,}/g) || [])
+    .filter((token) => !ATTACHMENT_STOPWORDS.has(token)));
+}
+
+function attachmentCoverage(sourceText, candidateText) {
+  const source = attachmentTokens(sourceText);
+  const candidate = attachmentTokens(candidateText);
+  if (source.size < 4) return 1;
+  let shared = 0;
+  for (const token of source) if (candidate.has(token)) shared += 1;
+  return shared / source.size;
+}
+
+function attachmentSentences(text) {
+  return String(text || "").match(/[^.!?\n]+(?:[.!?]+|$)/g) || [];
+}
+
+function protectedAttachmentReview(sourceText, revisedText, sourceSpans) {
+  const sourceSentences = attachmentSentences(sourceText);
+  const revisedSentences = attachmentSentences(revisedText);
+  const items = [...(sourceSpans.citations || []), ...(sourceSpans.numbers || []), ...(sourceSpans.monetary || []), ...(sourceSpans.statNotation || [])];
+  const possibleChanges = [];
+  for (const item of dedupe(items)) {
+    const sourceContexts = sourceSentences.filter((sentence) => sentence.includes(item));
+    const revisedContexts = revisedSentences.filter((sentence) => sentence.includes(item));
+    // Citation grammar may legitimately change from parenthetical to narrative;
+    // citation identity is already checked semantically elsewhere. Attachment
+    // review applies only when the same literal form remains locatable.
+    if (!sourceContexts.length || !revisedContexts.length) continue;
+    const best = Math.max(...sourceContexts.flatMap((source) => revisedContexts.map((candidate) => attachmentCoverage(source, candidate))));
+    // This is deliberately sensitive because it is a review cue, not a veto.
+    // A literal value that retains only a generic verb such as "reached" while
+    // moving from one subject to another must be surfaced to the researcher.
+    if (best < 0.3) possibleChanges.push({ item, best_context_coverage: Number(best.toFixed(3)) });
+  }
+  return possibleChanges.slice(0, 12);
 }
 
 function extraNumericLike(sourceSpans, revisedSpans) {
@@ -32,6 +76,7 @@ const NARRATIVE_REFERENCE = /\b(?!(?:Because|Although|Though|While|Whereas|Since
 
 function canonicalAuthor(author) {
   return String(author || "")
+    .replace(/([A-Za-z])['’]s\b/g, "$1")
     .replace(/\[[A-Z0-9&.\-]{2,12}\]/g, " ")
     .replace(/&/g, " and ")
     .replace(/\bet\s+al\.?/gi, " et al ")
@@ -244,7 +289,7 @@ function listCountWarnings(text) {
   return warnings;
 }
 
-export function auditPreservation(sourceText, revisedText, sourceSpans) {
+export function auditPreservation(sourceText, revisedText, sourceSpans, options = {}) {
   const spans = sourceSpans || extractProtectedSpans(sourceText);
   const revisedSpans = extractProtectedSpans(revisedText);
   const warnings = [];
@@ -335,14 +380,36 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     });
   }
 
+  const attachmentReview = protectedAttachmentReview(sourceText, revisedText, spans);
+  if (attachmentReview.length > 0) {
+    warnings.push({
+      type: "claim_attachment_review",
+      detail: `Protected values or citations remain present, but their surrounding claim vocabulary changed substantially: ${attachmentReview.map((item) => item.item).join(", ")}. Verify that each item still supports the same proposition. This is review evidence, not an automatic factual-failure verdict.`,
+    });
+  }
+
+  const rhetoricalSemantic = analyseRhetoricalSemanticPreservation(sourceText, revisedText, {
+    lengthPreference: options.lengthPreference,
+  });
+  if (!rhetoricalSemantic.passed) {
+    warnings.push({
+      type: "rhetorical_semantic_preservation",
+      detail: `The revision may have lost propositions or intellectual functions, altered semantic force, or exceeded the selected length architecture. Preserved propositions: ${rhetoricalSemantic.source_propositions_preserved}/${rhetoricalSemantic.source_propositions_total}; length ratio: ${rhetoricalSemantic.overall_length_ratio}.`,
+    });
+  } else if (!rhetoricalSemantic.length_within_soft_range) {
+    warnings.push({
+      type: "length_range_review",
+      detail: `The source/revision length ratio is ${rhetoricalSemantic.overall_length_ratio}, outside the ${rhetoricalSemantic.length_soft_range[0]}-${rhetoricalSemantic.length_soft_range[1]} soft range. The text passed substantive preservation, but the departure should have an intellectual reason.`,
+    });
+  }
+
   const newFactualClaimsDetected =
     newCitations.length > 0 ||
     newNumbers.length > 0 ||
     missingRanges.length > 0 ||
     introducedListCountWarnings.length > 0 ||
     !studyStage.ok ||
-    !researcherVoice.ok ||
-    !documentStructure.ok;
+    rhetoricalSemantic.unsupported_additions.length > 0;
 
   return {
     numbers_ok: numbersOk,
@@ -357,7 +424,11 @@ export function auditPreservation(sourceText, revisedText, sourceSpans) {
     document_structure_ok: documentStructure.ok,
     document_structure: documentStructure,
     list_counts_ok: introducedListCountWarnings.length === 0,
+    claim_attachment_review: attachmentReview,
+    rhetorical_semantic_ok: rhetoricalSemantic.passed,
+    rhetorical_semantic_preservation: rhetoricalSemantic,
     new_factual_claims_detected: newFactualClaimsDetected,
     warnings,
   };
 }
+

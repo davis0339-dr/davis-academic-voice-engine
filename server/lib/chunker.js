@@ -9,7 +9,7 @@ import { countWords } from "../config/limits.js";
 const DEFAULT_TARGET_WORDS = 800;
 const HARD_MAX_MULTIPLIER = 1.25;
 
-const PASSTHROUGH_HEADING = /^(?:research questions? and hypotheses|research question\s*\d+|study alignment|definitions|conceptual model|operationali[sz]ation of variables|data analysis plan|proposed schedule|references|table\s*\d+\b|figure\s*\d+\b)/i;
+const PASSTHROUGH_HEADING = /^(?:objectives? of (?:the )?study|research objectives?|research questions?(?: and hypotheses)?|research hypotheses?|research question\s*\d+|purpose statement|study alignment|definitions|conceptual model|operationali[sz]ation of variables|data analysis plan|proposed schedule|references|table\s*\d+\b|figure\s*\d+\b)/i;
 const STANDALONE_INSTITUTIONAL = /^(?:Section|Chapter)\s+\d+(?:\.\d+)*$/i;
 
 function wordCount(text) {
@@ -100,9 +100,15 @@ function lastSentenceTail(text, maxChars = 240) {
   return (sentenceStart >= 0 ? tail.slice(sentenceStart) : tail).trim();
 }
 
+function firstSentenceHead(text, maxChars = 240) {
+  if (!text) return "";
+  const first = splitSentences(text)[0] || String(text).slice(0, maxChars);
+  return first.slice(0, maxChars).trim();
+}
+
 function isFormalPassthrough(heading, body) {
-  if (heading && (PASSTHROUGH_HEADING.test(heading.trim()) || STANDALONE_INSTITUTIONAL.test(heading.trim()))) return true;
-  if (/\bH0?\d+[a-z]?\s*:/i.test(body || "") || /\bH1\d*[a-z]?\s*:/i.test(body || "")) return true;
+  const cleanedHeading = String(heading || "").trim().replace(/^(?:#{1,6}\s*|\d+(?:\.\d+)*\s+)/, "");
+  if (heading && (PASSTHROUGH_HEADING.test(cleanedHeading) || STANDALONE_INSTITUTIONAL.test(heading.trim()))) return true;
   return false;
 }
 
@@ -169,6 +175,7 @@ export function chunkDocument(fullText, documentMap, options = {}) {
       sourceText: c.body,
       wordCount: wordCount(c.body),
       precedingContextTail: index > 0 ? lastSentenceTail(rawChunks[index - 1].body) : "",
+      followingContextHead: index < rawChunks.length - 1 ? firstSentenceHead(rawChunks[index + 1].body) : "",
     })),
   };
 }

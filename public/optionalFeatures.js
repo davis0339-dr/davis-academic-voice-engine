@@ -14,6 +14,7 @@
     ["/wordCountCompatibility.js", null],
     ["/rewriteLineage.js", null],
     ["/detectorQuickBridge.js", null],
+    ["/candidateRefinementUI.js", null],
     ["/detectorEvidenceUploadUX.js", null],
     ["/plannerObservability.js", null],
     ["/argumentativePlannerUI.js", null],

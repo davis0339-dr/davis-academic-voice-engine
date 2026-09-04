@@ -59,6 +59,8 @@
     const source = document.getElementById("sourceText")?.value || "";
     const revised = latestRewrite.revised_text || document.getElementById("revisedText")?.value || "";
     const preference = document.getElementById("lengthPreference")?.value || "auto";
+    const intensity = document.getElementById("rewriteIntensity")?.value || "auto";
+    const naturalisation = document.getElementById("naturalisation")?.value || "off";
     const sourceWords = countWords(source);
     const revisedWords = countWords(revised);
     if (!sourceWords || !revisedWords) return null;
@@ -66,12 +68,18 @@
     const deltaPct = sourceWords ? (delta / sourceWords) * 100 : 0;
     let respected = true;
     let note = "Length stayed within the selected preference's ordinary flexibility.";
-    if (preference === "expand" && delta < 0) {
+    if (preference === "auto" && intensity === "deep" && naturalisation === "authorial" && deltaPct < 0) {
+      respected = false;
+      note = "Deep Authorial + Auto uses source length or modest evidence-safe development as its ordinary centre. This candidate became shorter, so the result must demonstrate genuine reconstruction and intellectual completeness rather than receiving an automatic green length verdict.";
+    } else if (preference === "expand" && delta < 0) {
       respected = false;
       note = "Expand was selected, but the revision became shorter. The current engine should not treat this as fully compliant unless compression was explicitly necessary; a warning is shown instead of silently calling the preference satisfied.";
     } else if (preference === "concise" && delta > 0) {
       respected = false;
       note = "Concise was selected, but the revision became longer. Review whether the added reasoning was necessary.";
+    } else if (preference === "maintain" && (deltaPct < -5 || deltaPct > 10)) {
+      respected = false;
+      note = "Maintain uses a 95-110% soft range. This result falls outside it, so the Rhetorical & Semantic Preservation audit must show a substantive reason rather than treating brevity as an improvement.";
     }
     return { preference, sourceWords, revisedWords, delta, deltaPct, respected, note };
   }
@@ -117,7 +125,7 @@
       <div class="argdev-grid">
         <div><span>Surface quality</span><strong>${surface ? `${esc(title(surface.label))} · ${pct(surface.score)}` : "n/a"}</strong></div>
         <div><span>Authorial texture</span><strong>${texture ? `${esc(title(authorialLabel))} · ${pct(authorialScore)}` : "analysis pending"}</strong></div>
-        <div><span>Machine-pattern regularity</span><strong>${regularity ? `${esc(title(regularity.label))} · ${pct(regularity.score)}` : "n/a"}</strong></div>
+        <div><span>Machine-pattern pressure</span><strong>${regularity ? `${esc(title(regularity.label))} · index ${esc(Math.round(Number(regularity.score) * 100))}/100` : "n/a"}</strong></div>
         <div><span>Semantic preservation</span><strong>${esc(title(semantic?.priority || "n/a"))}</strong></div>
         <div><span>Expressive preservation</span><strong>${esc(title(expressive?.priority || texture?.preservation_priority || "n/a"))}</strong></div>
         <div><span>Argument development need</span><strong>${esc(title(need))}</strong></div>
@@ -140,3 +148,4 @@
   `;
   document.head.appendChild(style);
 })();
+

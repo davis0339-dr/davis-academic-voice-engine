@@ -3,6 +3,7 @@ import { llmProvider } from "../lib/llmProvider.js";
 import { getBuildInfo } from "../lib/buildInfo.js";
 import {
   SINGLE_EDITOR_WORD_LIMIT,
+  SINGLE_REFINEMENT_WORD_LIMIT,
   LONG_DOCUMENT_WORD_LIMIT,
   UPLOAD_FILE_SIZE_LIMIT_BYTES,
 } from "../config/limits.js";
@@ -17,9 +18,13 @@ healthRouter.get("/health", (_req, res) => {
     llm: llmProvider.configurationHealth(),
     capabilities: {
       singleEditorWordLimit: SINGLE_EDITOR_WORD_LIMIT,
+      singleRefinementWordLimit: SINGLE_REFINEMENT_WORD_LIMIT,
       longDocumentWordLimit: LONG_DOCUMENT_WORD_LIMIT,
       uploadFileSizeLimitBytes: UPLOAD_FILE_SIZE_LIMIT_BYTES,
       uploadFormats: ["txt", "md", "docx", "pdf", "csv", "xlsx"],
+      detectorEvidenceFormats: ["png", "jpeg", "pdf"],
+      detectorScreenshotMaxBytes: 2 * 1024 * 1024,
+      detectorPdfReportMaxBytes: 5 * 1024 * 1024,
       evidenceWorkspaceSourceLimit: 8,
       evidenceWorkspaceSourceTextCapCharacters: 40000,
       researcherStudio: true,

@@ -13,6 +13,7 @@ import { analyseDiscourseArchitecture } from "./discourseArchitecture.js";
 import { assessArgumentativeSufficiency } from "./argumentativeSufficiency.js";
 import { analyseCalibratedDiscourseRegularity } from "./discourseRegularityCalibration.js";
 import { analyseMachineLanguageForensics } from "./machineLanguageForensics.js";
+import { hasProtectedLogicalRelationship } from "./rhetoricalPreservation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -153,7 +154,14 @@ function findMonotony(sentences) {
   const overloaded = [];
   const choppy = [];
   lengths.forEach((len, i) => {
-    if (len >= 40) overloaded.push({ sentenceIndex: i, wordCount: len });
+    const relationshipProtected = hasProtectedLogicalRelationship(sentences[i]);
+    // Length alone is not a defect in academic prose. A sentence becomes a
+    // split/redistribution candidate only when its load is genuinely exceptional;
+    // balanced contrast, concession, comparison and cause-effect structures get
+    // a higher threshold because their single-sentence form carries meaning.
+    if ((!relationshipProtected && len >= 52) || len >= 68) {
+      overloaded.push({ sentenceIndex: i, wordCount: len, relationshipProtected });
+    }
     if (len > 0 && len <= 5) choppy.push({ sentenceIndex: i, wordCount: len });
   });
 
@@ -165,18 +173,22 @@ function findMonotony(sentences) {
 }
 
 export function diagnose(text) {
-  const sentences = splitSentences(text);
-  const textStructure = parseTextStructure(text);
+  // All structural diagnostics must see the same paragraph boundaries on
+  // Windows, Linux and macOS. Several paragraph-level detectors split on LF;
+  // feeding raw CRLF text made the calibrated pressure score platform-dependent.
+  const source = String(text || "").replace(/\r\n?/g, "\n");
+  const sentences = splitSentences(source);
+  const textStructure = parseTextStructure(source);
   const genericPhrasing = findGenericPhrasing(sentences);
   const transitionStacking = findTransitionStacking(sentences);
   const repeatedOpenings = findRepeatedOpenings(sentences);
-  const paragraphPatterns = findParagraphPatterning(text, sentences);
+  const paragraphPatterns = findParagraphPatterning(source, sentences);
   const rhetoricalScaffolding = findRhetoricalScaffolding(sentences);
-  const humanDiscourse = analyseHumanDiscourse(text);
-  const contrastiveLanguage = assessContrastiveLanguage(text, { humanDiscourse });
-  const machineLanguageForensics = analyseMachineLanguageForensics(text);
-  const baseDiscourseArchitecture = analyseDiscourseArchitecture(text, textStructure);
-  const discourseRegularityForensics = analyseCalibratedDiscourseRegularity(text, textStructure);
+  const humanDiscourse = analyseHumanDiscourse(source);
+  const contrastiveLanguage = assessContrastiveLanguage(source, { humanDiscourse });
+  const machineLanguageForensics = analyseMachineLanguageForensics(source);
+  const baseDiscourseArchitecture = analyseDiscourseArchitecture(source, textStructure);
+  const discourseRegularityForensics = analyseCalibratedDiscourseRegularity(source, textStructure);
   const discourseArchitecture = {
     ...baseDiscourseArchitecture,
     signals: [
@@ -185,7 +197,7 @@ export function diagnose(text) {
     ],
     regularity_forensics: discourseRegularityForensics,
   };
-  const argumentativeSufficiency = assessArgumentativeSufficiency(text, textStructure);
+  const argumentativeSufficiency = assessArgumentativeSufficiency(source, textStructure);
   const monotony = findMonotony(sentences);
 
   const structuralMonotony = [
@@ -195,7 +207,7 @@ export function diagnose(text) {
     ...monotony.overloaded.map((o) => ({
       sentenceIndex: o.sentenceIndex,
       issue: "overloaded_sentence",
-      detail: `${o.wordCount} words in one sentence -- candidate for SPLIT_OR_MERGE.`,
+      detail: `${o.wordCount} words with exceptional clause load -- candidate for relationship-preserving restructuring, not automatic splitting.`,
     })),
   ];
   if (monotony.lowVariation) {
@@ -224,3 +236,4 @@ export function diagnose(text) {
     monotony,
   };
 }
+

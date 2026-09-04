@@ -8,6 +8,12 @@ import {
   retrieveEvidenceCandidates,
   summarizeAgency,
 } from "../lib/researcherAgency.js";
+import {
+  buildManuscriptDevelopmentUnits,
+  buildStudioHumanReasoningGuide,
+  integrateRawAuthorContributions,
+  normalizeDevelopmentDiagnosis,
+} from "../lib/researchDevelopment.js";
 
 export const researchStudioRouter = Router();
 
@@ -40,15 +46,19 @@ Return valid JSON only with this exact shape:
   "researcher_decisions": ["clear decisions already made by the researcher"]
 }`;
 
-const MANUSCRIPT_QUESTION_SYSTEM = `You are a research coauthoring interviewer. The researcher has supplied a working manuscript BEFORE asking for rewriting.
-Your task is to identify the few places where the manuscript would benefit most from the researcher's own intellectual explanation, judgment, interpretation, mechanism, boundary or methodological reasoning.
-Do not answer the questions yourself. Do not generate an argument for the researcher. Do not ask generic questions. Do not ask the researcher to restate what is already clear.
-Prefer questions that reveal why the researcher believes a relationship should exist, what a cited result means for the present study, what competing explanation matters, what qualification is intended, why a methodological choice is defensible, or where the manuscript currently overstates what can be claimed.
-The researcher may answer by voice OR by typing. The quality signal is their own understanding, not the input method.
-When a question is likely to elicit an external factual assertion rather than merely the researcher's interpretation, mark verification_sensitivity as high so the interface can warn that the factual part must later be checked against evidence.
-Return 2 to 5 questions. Use a short anchor phrase from the manuscript so the researcher can see what prompted the question.
+const MANUSCRIPT_QUESTION_SYSTEM = `You are an author-development diagnostician, not a rewriting or polishing system.
+The researcher supplied an indexed manuscript. Locate the exact blocks where the AUTHOR must provide missing reasoning, resolve a contradiction, reorganise thought, rephrase the passage in their own words, read it back in their own words, contract repetition, qualify a claim or verify evidence.
+
+Do not rewrite any sentence. Do not offer a polished replacement. Do not sharpen clarity on the author's behalf. Do not answer your own questions. Do not reward smooth prose or treat rough wording as a defect by itself.
+Diagnose intellectual and structural problems: conflicting claims or measures, missing mechanism, unexplained inference, literature tension that has been flattened, unsupported certainty, repeated material with no new job, misplaced material, unclear section purpose, missing boundary, or a passage whose machine-shaped formulation should be re-expressed by the researcher.
+The human-thesis guidance in the payload describes reasoning operations, not a style to imitate. Use it to recognise where thought needs to become visible. Never copy thesis wording or manufacture grammar errors.
+
+Return as many tasks as the manuscript genuinely requires, from 2 up to 18. A whole section may need several separate author tasks. Every task must use a supplied block_id and must tell the researcher what is wrong before asking what they mean.
+Allowed actions: respond_in_own_words, rephrase_in_own_words, read_back_in_own_words, resolve_contradiction, explain_mechanism, qualify_claim, reorganize_section, contract_repetition, evidence_check.
+When an answer is likely to introduce an external factual assertion, use high verification sensitivity. Authorial intention, interpretation and boundaries may be low or conditional.
+
 Return valid JSON only:
-{"questions":[{"id":"mq-1","anchor":"short manuscript phrase","question":"specific question","why_it_matters":"...","target_type":"mechanism|interpretation|qualification|boundary|counterargument|methodological_choice|evidence_need","verification_sensitivity":"low|conditional|high"}]}`;
+{"overview":"what the manuscript most needs from its author","tasks":[{"id":"task-1","block_id":"block-001","section":"section label","scope":"sentence|paragraph|section","action":"respond_in_own_words|rephrase_in_own_words|read_back_in_own_words|resolve_contradiction|explain_mechanism|qualify_claim|reorganize_section|contract_repetition|evidence_check","anchor":"exact short phrase from the block","diagnosis":"specific intellectual or structural problem; no rewrite","question":"direct question the author must answer","why_it_matters":"what this answer would repair","preserve":"meaning, evidence, citation, uncertainty or useful authorial feature that must not be lost","verification_sensitivity":"low|conditional|high"}]}`;
 
 const RESPONSE_ASSESS_SYSTEM = `You are the researcher-response assessment layer of an academic coauthoring system.
 The researcher has answered questions about their own manuscript in rough, ordinary language. The answer may be typed or transcribed from voice. Input mode must never determine intellectual value.
@@ -120,23 +130,6 @@ function sanitizeStyleFilters(filters) {
   return out;
 }
 
-function normalizeManuscriptQuestions(raw = {}) {
-  const allowedTypes = new Set(["mechanism", "interpretation", "qualification", "boundary", "counterargument", "methodological_choice", "evidence_need"]);
-  const allowedSensitivity = new Set(["low", "conditional", "high"]);
-  return Array.isArray(raw.questions) ? raw.questions.slice(0, 5).map((q, index) => {
-    const target = shortString(q?.target_type, 80).toLowerCase();
-    const sensitivity = shortString(q?.verification_sensitivity, 40).toLowerCase();
-    return {
-      id: shortString(q?.id, 80) || `mq-${index + 1}`,
-      anchor: shortString(q?.anchor, 500),
-      question: shortString(q?.question, 1600),
-      why_it_matters: shortString(q?.why_it_matters, 1200),
-      target_type: allowedTypes.has(target) ? target : "interpretation",
-      verification_sensitivity: allowedSensitivity.has(sensitivity) ? sensitivity : "conditional",
-    };
-  }).filter((q) => q.question) : [];
-}
-
 function normalizeResponseAssessments(raw = {}, knownQuestionIds = new Set()) {
   const alignments = new Set(["clarifies", "extends", "qualifies", "contradicts", "unclear"]);
   const roles = new Set(["authorial_judgment", "interpretive_explanation", "mechanism_reasoning", "methodological_decision", "boundary", "empirical_or_factual_assertion", "mixed"]);
@@ -177,20 +170,40 @@ researchStudioRouter.post("/research/manuscript-questions", async (req, res) => 
   if (!manuscriptText) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "Provide a working manuscript or passage before starting manuscript-first coauthoring.", requestId: req.requestId });
   }
+  const units = buildManuscriptDevelopmentUnits(manuscriptText);
   try {
     const raw = await modelJson({
       system: MANUSCRIPT_QUESTION_SYSTEM,
       payload: {
-        manuscript: manuscriptText,
+        indexed_manuscript_blocks: units,
         academic_context: styleFilters,
-        instruction: "Ask only questions that require the researcher's own intellectual contribution. Do not answer them.",
+        human_thesis_reasoning_guide: buildStudioHumanReasoningGuide(styleFilters.section),
+        instruction: "Diagnose before questioning. Leave adequate blocks alone. Do not generate, polish or rephrase the author's prose.",
       },
-      maxTokens: 3200,
+      maxTokens: 7200,
     });
-    return res.json({ questions: normalizeManuscriptQuestions(raw), persistence: "none", requestId: req.requestId });
+    const diagnosis = normalizeDevelopmentDiagnosis(raw, units);
+    return res.json({
+      questions: diagnosis.tasks,
+      overview: diagnosis.overview,
+      coverage: diagnosis.coverage,
+      diagnosis_version: diagnosis.diagnosis_version,
+      human_reasoning_profiles: 3,
+      persistence: "none",
+      requestId: req.requestId,
+    });
   } catch (err) {
     return providerError(res, err, req.requestId);
   }
+});
+
+researchStudioRouter.post("/research/raw-integrate", (req, res) => {
+  const manuscriptText = shortString(req.body?.manuscriptText, 30000);
+  if (!manuscriptText) {
+    return res.status(400).json({ error: "BAD_REQUEST", message: "Provide the working manuscript before integrating researcher wording.", requestId: req.requestId });
+  }
+  const result = integrateRawAuthorContributions(manuscriptText, req.body?.contributions);
+  return res.json({ ...result, persistence: "none", requestId: req.requestId });
 });
 
 researchStudioRouter.post("/research/response-assess", async (req, res) => {

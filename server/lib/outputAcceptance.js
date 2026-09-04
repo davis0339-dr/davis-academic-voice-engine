@@ -14,8 +14,13 @@ import { assessLanguageDeviation } from "./languageFamilyEngine.js";
 import { resolveProfile } from "./styleProfileStore.js";
 import { auditPreservation } from "./preservation.js";
 import { extractProtectedSpans } from "./protect.js";
-import { splitSentences } from "./sentences.js";
+import { classifyPreservationRelease } from "./preservationRelease.js";
+import { splitSentences, wordCount } from "./sentences.js";
+import { buildLengthContract, manuscriptWordCount } from "./lengthContract.js";
 import { analyseMachineLanguageForensics } from "./machineLanguageForensics.js";
+import { analysePropositionEcho } from "./propositionEcho.js";
+import { splitTextBlocks } from "./textStructure.js";
+import { assessArgumentativeSufficiency } from "./argumentativeSufficiency.js";
 
 const FORMAL_SECTION_RE = /^(?:purpose statement|research questions?(?: and hypotheses)?|hypotheses|hypothesis development|research question\s*\d*|operational definitions?|definitions of terms|assumptions|limitations|delimitations|references|appendix|table\s+\d+|figure\s+\d+)\s*:?[\s]*$/i;
 const NARRATIVE_SECTION_RE = /^(?:introduction|background(?: of the problem| to the study)?|statement of the problem|problem statement|literature review|conceptual review|theoretical review|empirical review|discussion|conclusion|research gap)\s*:?[\s]*$/i;
@@ -49,9 +54,7 @@ function normalise(text) {
 }
 
 function rawParagraphs(text) {
-  return String(text || "")
-    .replace(/\r\n?/g, "\n")
-    .split(/\n\s*\n+/)
+  return splitTextBlocks(text)
     .map((text, index) => ({ index, text: text.trim() }))
     .filter((row) => row.text);
 }
@@ -228,18 +231,41 @@ function sourceDependence(sourceText, candidateText) {
   const candidateSentences = splitSentences(candidateText).map(normalise).filter(Boolean);
   const unchanged = candidateSentences.filter((sentence) => sourceSentences.has(sentence)).length;
   const exact = candidateSentences.length ? unchanged / candidateSentences.length : 0;
+  const paragraphRows = narrativeView(candidateText)
+    .map((row) => {
+      const paragraphGrams = ngramSet(row.text, 5);
+      let paragraphOverlap = 0;
+      paragraphGrams.forEach((gram) => { if (source.has(gram)) paragraphOverlap += 1; });
+      const fiveGramOverlap = paragraphGrams.size ? paragraphOverlap / paragraphGrams.size : 0;
+      const sentences = splitSentences(row.text).map(normalise).filter(Boolean);
+      const exactSentenceCount = sentences.filter((sentence) => sourceSentences.has(sentence)).length;
+      const exactSentenceRatio = sentences.length ? exactSentenceCount / sentences.length : 0;
+      const score = clamp01(fiveGramOverlap * 0.72 + exactSentenceRatio * 0.28);
+      return {
+        paragraph_index: row.index,
+        word_count: words(row.text).length,
+        five_gram_overlap: Number(fiveGramOverlap.toFixed(3)),
+        exact_sentence_retention_ratio: Number(exactSentenceRatio.toFixed(3)),
+        score: Number(score.toFixed(3)),
+      };
+    })
+    .filter((row) => row.word_count >= 20);
+  const targetParagraphIndices = paragraphRows
+    .filter((row) => row.score >= 0.72 || row.exact_sentence_retention_ratio >= 0.34)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map((row) => row.paragraph_index);
   return {
     five_gram_overlap: Number(fiveGram.toFixed(3)),
     exact_sentence_retention_ratio: Number(exact.toFixed(3)),
     score: Number(clamp01(fiveGram * 0.72 + exact * 0.28).toFixed(3)),
+    paragraph_rows: paragraphRows,
+    target_paragraph_indices: targetParagraphIndices,
   };
 }
 
 function preservationPassed(result) {
-  return Boolean(
-    result?.numbers_ok && result?.citations_ok && result?.technical_terms_ok && result?.quotes_ok &&
-    result?.study_stage_ok !== false && !result?.new_factual_claims_detected
-  );
+  return !classifyPreservationRelease(result).repair_required;
 }
 
 function textureAssessment(text, styleFilters = {}) {
@@ -327,14 +353,18 @@ export function auditOutputAcceptance({
   rewriteIntensity = "auto",
   naturalisation = "faithful",
   planSummary = {},
+  lengthPreference = "auto",
+  minimumExpansionWords,
 } = {}) {
   const source = String(sourceText || "");
   const candidate = String(candidateText || "");
-  const preservation = auditPreservation(source, candidate, extractProtectedSpans(source));
+  const preservation = auditPreservation(source, candidate, extractProtectedSpans(source), { lengthPreference });
   const preservationOk = preservationPassed(preservation);
   const sourceMachine = machineComposite(source, styleFilters);
   const candidateMachine = machineComposite(candidate, styleFilters);
   const dependence = sourceDependence(source, candidate);
+  const sourceEcho = analysePropositionEcho(source);
+  const candidateEcho = analysePropositionEcho(candidate);
   const sourceTexture = Number(sourceMachine.texture?.authorial_texture?.score || 0);
   const candidateTexture = Number(candidateMachine.texture?.authorial_texture?.score || 0);
   const surfaceQuality = Number(candidateMachine.texture?.surface_quality?.score ?? 1);
@@ -352,10 +382,28 @@ export function auditOutputAcceptance({
   const assertiveMode = natural === "aggressive" || natural === "authorial";
   const deepMode = intensity === "deep";
   const moderateOrDeeper = intensity === "moderate" || deepMode;
+  const requestedLength = String(lengthPreference || "auto").toLowerCase();
+  const lengthContract = buildLengthContract({ sourceText: source, preference: lengthPreference, minimumExpansionWords });
+  const sourceWordCount = lengthContract.mode === "expand" ? manuscriptWordCount(source) : wordCount(source);
+  const candidateWordCount = lengthContract.mode === "expand" ? manuscriptWordCount(candidate) : wordCount(candidate);
+  const lengthRatio = sourceWordCount ? candidateWordCount / sourceWordCount : 1;
+  const deepDevelopmentalAuto = deepMode && assertiveMode && requestedLength === "auto";
+  const minimumDevelopmentalLengthRatio = deepDevelopmentalAuto ? 0.98 : lengthContract.mode === "expand" ? Number((lengthContract.minimum_candidate_words / Math.max(1, sourceWordCount)).toFixed(3)) : null;
+  const candidateDevelopment = assessArgumentativeSufficiency(candidate);
+  const developmentTargetParagraphIndices = (candidateDevelopment.signals || [])
+    .filter((signal) => signal.severity === "high" || signal.severity === "medium")
+    .map((signal) => signal.blockIndex)
+    .filter(Number.isInteger);
 
   const reasons = [];
   const hardFailures = [];
   if (!preservationOk) hardFailures.push("semantic_preservation_failed");
+  if (deepDevelopmentalAuto && lengthRatio < minimumDevelopmentalLengthRatio) {
+    reasons.push("deep_auto_developmental_compression");
+  }
+  if (lengthContract.mode === "expand" && candidateWordCount < lengthContract.minimum_candidate_words) {
+    reasons.push("expand_length_contract_missed");
+  }
 
   // Universal regression guard: no mode is permitted to make narrative prose
   // materially more machine-regular merely because the output looks polished.
@@ -373,6 +421,13 @@ export function auditOutputAcceptance({
   // release gate; a simpler local choreography score may not dilute it.
   if (candidateDiscourseRegularity >= 0.62) reasons.push("high_discourse_regularity_residual");
   if (candidateDiscourseRegularity > sourceDiscourseRegularity + 0.05) reasons.push("discourse_regularity_regression");
+
+  // Preservation must operate at proposition/function level. A model may
+  // otherwise add a reconstruction and retain the source sentence immediately
+  // afterwards, technically preserving meaning while making the prose more
+  // repetitive and machine-shaped.
+  if (candidateEcho.count > sourceEcho.count) reasons.push("proposition_echo_introduced");
+  if (candidateEcho.count >= 3) reasons.push("proposition_echo_residual");
 
   // Assertive modes require positive movement when the source itself carries
   // moderate/high machine-pattern or machine-language regularity. This is a
@@ -433,9 +488,17 @@ export function auditOutputAcceptance({
   else if (uniqueReasons.length) status = "review_required";
 
   const targetParagraphIndices = [...new Set([
+    ...((deepDevelopmentalAuto && lengthRatio < minimumDevelopmentalLengthRatio) || (lengthContract.mode === "expand" && candidateWordCount < lengthContract.minimum_candidate_words)
+      ? developmentTargetParagraphIndices
+      : []),
+    ...(lengthContract.mode === "expand" && candidateWordCount < lengthContract.minimum_candidate_words
+      ? (candidateDevelopment.paragraph_rows || []).map((row) => row.blockIndex).filter(Number.isInteger)
+      : []),
+    ...(dependence.target_paragraph_indices || []),
     ...(candidateMachine.choreography.target_paragraph_indices || []),
     ...(candidateMachine.machine_language?.target_paragraph_indices || []),
     ...calibratedTargetParagraphs(candidateMachine.discourse_regularity),
+    ...(candidateEcho.target_paragraph_indices || []),
   ])].slice(0, 8);
 
   return {
@@ -460,10 +523,22 @@ export function auditOutputAcceptance({
       authorial_texture_delta: textureDelta,
       source_dependence: dependence.score,
       substantive_plan_ratio: Number(substantive.toFixed(3)),
+      source_proposition_echo_count: sourceEcho.count,
+      candidate_proposition_echo_count: candidateEcho.count,
+      source_word_count: sourceWordCount,
+      candidate_word_count: candidateWordCount,
+      source_revision_length_ratio: Number(lengthRatio.toFixed(3)),
+      minimum_developmental_length_ratio: minimumDevelopmentalLengthRatio,
+      minimum_expansion_addition_words: lengthContract.minimum_addition_words,
+      minimum_expansion_candidate_words: lengthContract.minimum_candidate_words,
+      expansion_word_deficit: Math.max(0, lengthContract.minimum_candidate_words - candidateWordCount),
+      candidate_argumentative_development_score: candidateDevelopment.development_score,
+      candidate_argumentative_development_signal_count: (candidateDevelopment.signals || []).length,
     },
     source_machine_pattern: sourceMachine,
     candidate_machine_pattern: candidateMachine,
     source_dependence: dependence,
+    proposition_echo: { source: sourceEcho, candidate: candidateEcho },
     preservation,
     hard_failures: hardFailures,
     reasons: uniqueReasons,
@@ -496,3 +571,4 @@ export function acceptanceImproved(before, after) {
   const materialDiscourseGain = afterDiscourse <= beforeDiscourse - 0.04;
   return afterScore >= beforeScore + 3 && (materialPatternGain || materialLanguageGain || materialDiscourseGain);
 }
+

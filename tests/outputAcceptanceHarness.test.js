@@ -5,6 +5,7 @@ import {
   acceptanceImproved,
   narrativeView,
 } from "../server/lib/outputAcceptance.js";
+import { assessArgumentativeSufficiency } from "../server/lib/argumentativeSufficiency.js";
 
 const styleFilters = {
   document_type: "thesis",
@@ -92,6 +93,18 @@ test("completed-output audit does not clear polished paragraph choreography mere
   assert.equal(audit.release_gate.external_detector_check_recommended, false);
 });
 
+test("near-copy paragraph locations are routed into completed-output repair", () => {
+  const nearCopyCandidate = patternedSource.replace(
+    "Corporate debt is a central source of financing for U.S. businesses, but creditors also consider governance.",
+    "Creditors consider governance alongside the firm's financial position when pricing corporate debt."
+  );
+  const audit = aggressiveAudit(patternedSource, nearCopyCandidate);
+  assert.ok(audit.source_dependence.target_paragraph_indices.length > 0);
+  assert.ok(audit.target_paragraph_indices.some((index) => audit.source_dependence.target_paragraph_indices.includes(index)));
+  const retainedRows = audit.source_dependence.paragraph_rows.filter((row) => row.exact_sentence_retention_ratio >= 0.34 || row.score >= 0.72);
+  assert.ok(retainedRows.length > 0);
+});
+
 test("argument-governed asymmetry materially improves the independent acceptance profile", () => {
   const bad = aggressiveAudit(patternedSource, polishedButChoreographed);
   const improved = aggressiveAudit(patternedSource, asymmetricCandidate);
@@ -140,4 +153,46 @@ test("acceptance report exposes the dimensions needed to separate good writing f
     assert.ok(Object.hasOwn(audit.dimensions, key), `missing ${key}`);
   }
   assert.match(audit.note, /not an AI-authorship classifier/i);
+});
+
+test("Deep Authorial Auto blocks the live 1458-to-1354 compression pattern", () => {
+  const sourceText = Array.from({ length: 729 }, (_, index) => `concept${index} explanation`).join(" ");
+  const candidateText = sourceText.split(/\s+/).slice(0, 1354).join(" ");
+  const audit = auditOutputAcceptance({
+    sourceText,
+    candidateText,
+    styleFilters,
+    rewriteIntensity: "deep",
+    naturalisation: "aggressive",
+    lengthPreference: "auto",
+    planSummary: { DISCOURSE_REPACKAGE: 49, SENTENCE_RESTRUCTURE: 1 },
+  });
+
+  assert.equal(audit.dimensions.source_word_count, 1458);
+  assert.equal(audit.dimensions.candidate_word_count, 1354);
+  assert.equal(audit.dimensions.source_revision_length_ratio, 0.929);
+  assert.ok(audit.reasons.includes("deep_auto_developmental_compression"));
+  assert.notEqual(audit.status, "pass");
+  assert.equal(audit.release_gate.external_detector_check_recommended, false);
+});
+
+test("Expand routes compressed argumentative-development paragraphs ahead of generic style targets", () => {
+  const compressedCandidate = `${polishedButChoreographed}\n\nBoard independence may lower debt cost when leverage is low and credit conditions are favourable (Bradley & Chen, 2015), but may raise it under higher leverage or weaker credit conditions (Anderson et al., 2004). The result depends on the conditions in which creditors evaluate governance.`;
+  const expandedSource = `${compressedCandidate}\n\nThe comparison also requires explicit interpretation of why those conditions alter creditor exposure, how the boundary between shareholder monitoring and creditor protection affects the reading of the findings, and why the selected governance measures should be assessed together rather than treated as interchangeable indicators. That explanatory bridge is part of the argument, not expendable wording.`;
+  const audit = auditOutputAcceptance({
+    sourceText: expandedSource,
+    candidateText: compressedCandidate,
+    styleFilters,
+    rewriteIntensity: "deep",
+    naturalisation: "aggressive",
+    lengthPreference: "expand",
+    planSummary: { DISCOURSE_REPACKAGE: 12 },
+  });
+  const developmentTargets = assessArgumentativeSufficiency(compressedCandidate).signals
+    .filter((signal) => signal.severity === "high" || signal.severity === "medium")
+    .map((signal) => signal.blockIndex);
+
+  assert.ok(audit.reasons.includes("expand_length_contract_missed"));
+  assert.ok(developmentTargets.length > 0);
+  assert.equal(audit.target_paragraph_indices[0], developmentTargets[0]);
 });
