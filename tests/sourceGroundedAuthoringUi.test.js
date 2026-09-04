@@ -11,6 +11,10 @@ test("source-grounded authoring is a separate three-route workspace", async () =
   assert.match(html, /Develop a manuscript/);
   assert.match(html, /Map evidence locally · 0 model calls/);
   assert.match(html, /Deep claim-to-evidence selection · maximum 1 call/);
+  assert.match(html, /Read, make notes and synthesize · 1 model call/);
+  assert.match(html, /id="synthesisNotebook"/);
+  assert.match(html, /id="synthesisDraft"/);
+  assert.match(html, /does not pass through the Editor’s preservation gates/);
   assert.match(html, /Send to Editor review · automatic length routing/);
   assert.match(html, /Continue later in Research Studio/);
 });
@@ -51,6 +55,9 @@ test("source ingestion exposes bibliographic review and length-aware handoff met
   assert.match(ui, /INPUT PRESERVATION FAILED/);
   assert.match(ui, /function updatePreflight/);
   assert.match(ui, /Confirm at least one source identity before spending a guided-selection call/);
+  assert.match(ui, /\/api\/source-authoring\/synthesize/);
+  assert.match(ui, /Source synthesis completed in/);
+  assert.match(ui, /workflowMode: outputKind === "synthesis" \? "source_synthesis"/);
   assert.match(importer, /pdf\.getMetadata\(\)/);
   assert.match(detector, /sourceAuthoringCandidate/);
   assert.match(detector, /complete source-grounded assembly/);

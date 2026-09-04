@@ -6,11 +6,13 @@
   const REVISED_KEY = "academicVoice.workspace.revised.v1";
   const HANDOFF_KEY = "academicVoice.sourceAuthoring.handoff.v1";
   const LATEST_KEY = "academicVoice.sourceAuthoring.latest.v2";
+  const SYNTHESIS_KEY = "academicVoice.sourceAuthoring.synthesis.v1";
   const CACHE_PREFIX = "academicVoice.sourceAuthoring.plan.v2.";
   const MAX_FILE_BYTES = 12 * 1024 * 1024;
   const state = {
     sources: [],
     assembly: null,
+    synthesis: null,
     capabilities: { singleEditorWordLimit: 1500, longDocumentWordLimit: 12000 },
   };
 
@@ -352,6 +354,145 @@
     renderReferences();
   }
 
+  function addMetric(target, label, value) {
+    const cell = document.createElement("div");
+    const caption = document.createElement("span");
+    caption.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = String(value);
+    cell.append(caption, strong);
+    target.appendChild(cell);
+  }
+
+  function renderSynthesisReferences() {
+    const target = $("synthesisReferences");
+    target.replaceChildren();
+    const records = state.synthesis?.reference_records || [];
+    if (!records.length) return;
+    const heading = document.createElement("h4");
+    heading.textContent = "Cited source records — verify final reference formatting";
+    target.appendChild(heading);
+    records.forEach((record) => {
+      const row = document.createElement("div");
+      row.className = "reference-record";
+      row.textContent = record.working_reference || [record.author, record.year, record.title].filter(Boolean).join(" · ");
+      target.appendChild(row);
+    });
+  }
+
+  function renderSynthesis() {
+    const synthesis = state.synthesis;
+    if (!synthesis?.synthesis_text) return;
+    $("synthesisCard").hidden = false;
+    $("synthesisDraft").value = synthesis.synthesis_text;
+
+    const audit = synthesis.synthesis_audit || {};
+    const auditTarget = $("synthesisAudit");
+    auditTarget.replaceChildren();
+    const verdict = document.createElement("p");
+    verdict.className = audit.status === "complete" ? "proof synthesis-complete" : "warning synthesis-review";
+    verdict.textContent = audit.status === "complete"
+      ? "Controlled source and citation checks completed. Researcher review is still required for argument quality."
+      : "The completed manuscript is visible, but the checks below identify items for researcher review; nothing was erased.";
+    const metrics = document.createElement("div");
+    metrics.className = "synthesis-audit";
+    addMetric(metrics, "Output", `${Number(audit.output_words || 0).toLocaleString()} words`);
+    addMetric(metrics, "Reasoning points", `${audit.used_points || 0}/${audit.planned_points || 0} used`);
+    addMetric(metrics, "Evidence passages", audit.used_extracts || 0);
+    addMetric(metrics, "Source citations", audit.citation_insertions || 0);
+    addMetric(metrics, "Distinct sources", audit.cited_sources || 0);
+    addMetric(metrics, "Verified quotations", audit.verified_quote_count || 0);
+    addMetric(metrics, "Author paragraphs mapped", `${audit.author_paragraphs_mapped || 0}/${audit.author_paragraphs_submitted || 0}`);
+    addMetric(metrics, "Repeated stock openings", (audit.repeated_transition_openings || []).reduce((sum, row) => sum + row.count, 0));
+    auditTarget.append(verdict, metrics);
+
+    const notebookTarget = $("synthesisNotebook");
+    notebookTarget.replaceChildren();
+    if (synthesis.notebook?.document_position) {
+      const position = document.createElement("p");
+      position.className = "proof";
+      position.textContent = synthesis.notebook.document_position;
+      notebookTarget.appendChild(position);
+    }
+    (synthesis.notebook?.sections || []).forEach((section) => {
+      const card = document.createElement("section");
+      card.className = "notebook-section";
+      const heading = document.createElement("h4");
+      heading.textContent = section.heading;
+      const purpose = document.createElement("p");
+      purpose.textContent = section.section_purpose || "Section purpose was not stated.";
+      card.append(heading, purpose);
+      (section.points || []).forEach((point) => {
+        const row = document.createElement("div");
+        row.className = "notebook-point";
+        const proposition = document.createElement("strong");
+        proposition.textContent = point.proposition;
+        const reasoning = document.createElement("small");
+        reasoning.textContent = [point.relationship?.replaceAll("_", " "), point.reasoning_note, point.tension_or_boundary].filter(Boolean).join(" · ");
+        const evidence = document.createElement("small");
+        evidence.textContent = `Evidence: ${(point.evidence_ids || []).join(", ") || "researcher reasoning only"}`;
+        row.append(proposition, reasoning, evidence);
+        card.appendChild(row);
+      });
+      notebookTarget.appendChild(card);
+    });
+
+    const warnings = $("synthesisWarnings");
+    warnings.replaceChildren();
+    if ((synthesis.warnings || []).length) {
+      const details = document.createElement("details");
+      details.open = true;
+      const summary = document.createElement("summary");
+      summary.textContent = `Researcher review notes (${synthesis.warnings.length})`;
+      const list = document.createElement("ul");
+      synthesis.warnings.forEach((warning) => {
+        const item = document.createElement("li");
+        item.textContent = warning;
+        list.appendChild(item);
+      });
+      details.append(summary, list);
+      warnings.appendChild(details);
+    }
+    renderSynthesisReferences();
+  }
+
+  async function postSynthesis() {
+    const structureText = $("structureText").value.trim();
+    if (!structureText) return setStatus("Add the template, existing draft or researcher guide first.", true);
+    if (!state.sources.length) return setStatus("Upload the relevant studies before source synthesis.", true);
+    const reviewed = state.sources.filter((source) => source.bibliographic?.metadata_confidence === "researcher_reviewed").length;
+    if (!reviewed) return setStatus("Confirm at least one source identity before synthesis. No model call was made.", true);
+    const targetWords = Math.max(400, Math.min(6000, Number.parseInt($("synthesisTargetWords").value, 10) || 1800));
+    const quotePolicy = $("synthesisQuotePolicy").value || "selective";
+    $("buildLocalBtn").disabled = true;
+    $("buildGuidedBtn").disabled = true;
+    $("buildSynthesisBtn").disabled = true;
+    setStatus("Reading the author position, making a source-linked notebook, comparing the studies and composing one manuscript…");
+    try {
+      const response = await fetch("/api/source-authoring/synthesize", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ entryMode: entryMode(), structureText, sources: state.sources, targetWords, quotePolicy }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Source synthesis failed.");
+      if (!data.synthesis_text) throw new Error("No synthesized manuscript was returned; nothing was saved.");
+      state.synthesis = data;
+      try {
+        localStorage.setItem(SYNTHESIS_KEY, JSON.stringify({ entryMode: entryMode(), structureText, synthesis: data }));
+      } catch {}
+      renderSynthesis();
+      const audit = data.synthesis_audit || {};
+      setStatus(`Source synthesis completed in ${data.model_calls || 1} model call: ${Number(audit.output_words || 0).toLocaleString()} words, ${audit.used_points || 0} reasoning point(s), ${audit.used_extracts || 0} evidence passage(s), ${audit.citation_insertions || 0} citation insertion(s), ${audit.verified_quote_count || 0} exact-verified quotation(s). Status: ${audit.status === "complete" ? "controlled checks complete" : "researcher review required"}.`);
+    } catch (error) {
+      setStatus(error.message, true);
+    } finally {
+      $("buildLocalBtn").disabled = false;
+      $("buildGuidedBtn").disabled = false;
+      $("buildSynthesisBtn").disabled = false;
+    }
+  }
+
   function assembledText() {
     return (state.assembly?.sections || []).map((section) => {
       const body = (section.blocks || []).map((block) => {
@@ -402,20 +543,32 @@
     });
   }
 
-  function handoff(destination) {
-    const draft = assembledText();
+  function handoff(destination, outputKind = "assembly") {
+    const synthesisDraft = $("synthesisDraft")?.value.trim() || "";
+    const draft = outputKind === "synthesis" ? synthesisDraft : assembledText();
     if (!draft) return setStatus("Build and review the source-led draft first.", true);
+    const synthesisQuotes = (state.synthesis?.verified_quotes || []).map((quote) => ({
+      id: quote.id,
+      text: quote.text,
+      source_id: quote.source_id,
+      source_title: state.synthesis?.reference_records?.find((record) => record.source_id === quote.source_id)?.title || quote.source_id,
+      citation: state.synthesis?.reference_records?.find((record) => record.source_id === quote.source_id)?.parenthetical_citation || "",
+      locator: quote.locator,
+    }));
     const payload = {
-      version: 1,
+      version: 2,
       createdAt: new Date().toISOString(),
       entryMode: entryMode(),
+      workflowMode: outputKind === "synthesis" ? "source_synthesis" : "exact_extract_assembly",
       structureText: $("structureText").value,
       assembledText: draft,
-      lockedExtracts: lockedExtracts(),
-      referenceRecords: state.assembly?.reference_records || [],
+      lockedExtracts: outputKind === "synthesis" ? synthesisQuotes : lockedExtracts(),
+      referenceRecords: outputKind === "synthesis" ? state.synthesis?.reference_records || [] : state.assembly?.reference_records || [],
+      synthesisAudit: outputKind === "synthesis" ? state.synthesis?.synthesis_audit || null : null,
+      synthesisNotebook: outputKind === "synthesis" ? state.synthesis?.notebook || null : null,
       wordCount: wordCount(draft),
       targetSurface: wordCount(draft) > state.capabilities.singleEditorWordLimit ? "longdoc" : "single",
-      cacheKey: state.assembly?.cache_key || null,
+      cacheKey: outputKind === "synthesis" ? state.synthesis?.cache_key || null : state.assembly?.cache_key || null,
     };
     try {
       localStorage.setItem(HANDOFF_KEY, JSON.stringify(payload));
@@ -428,24 +581,37 @@
   function clearWorkspace() {
     state.sources = [];
     state.assembly = null;
+    state.synthesis = null;
     $("structureText").value = "";
     $("assemblyWorkspace").replaceChildren();
     $("handoffCard").hidden = true;
+    $("synthesisCard").hidden = true;
     renderSources();
-    try { localStorage.removeItem(LATEST_KEY); } catch {}
+    try { localStorage.removeItem(LATEST_KEY); localStorage.removeItem(SYNTHESIS_KEY); } catch {}
     setStatus("Source-led workspace cleared.");
   }
 
   function restoreLatest() {
     try {
       const saved = JSON.parse(localStorage.getItem(LATEST_KEY) || "null");
-      if (!saved?.assembly?.sections?.length) return;
-      const mode = document.querySelector(`input[name="entryMode"][value="${saved.entryMode}"]`);
+      if (saved?.assembly?.sections?.length) {
+        const mode = document.querySelector(`input[name="entryMode"][value="${saved.entryMode}"]`);
+        if (mode) mode.checked = true;
+        $("structureText").value = saved.structureText || "";
+        state.assembly = saved.assembly;
+        renderAssembly();
+        setStatus("Previous source-led assembly restored. Extracts remain locked; connecting passages remain editable.");
+      }
+    } catch {}
+    try {
+      const savedSynthesis = JSON.parse(localStorage.getItem(SYNTHESIS_KEY) || "null");
+      if (!savedSynthesis?.synthesis?.synthesis_text) return;
+      const mode = document.querySelector(`input[name="entryMode"][value="${savedSynthesis.entryMode}"]`);
       if (mode) mode.checked = true;
-      $("structureText").value = saved.structureText || "";
-      state.assembly = saved.assembly;
-      renderAssembly();
-      setStatus("Previous source-led assembly restored. Extracts remain locked; connecting passages remain editable.");
+      if (!$("structureText").value) $("structureText").value = savedSynthesis.structureText || "";
+      state.synthesis = savedSynthesis.synthesis;
+      renderSynthesis();
+      setStatus("Previous source synthesis restored. Its notebook, citation audit and manuscript remain available for researcher review.");
     } catch {}
   }
 
@@ -465,10 +631,14 @@
     $("studyFiles").addEventListener("change", importStudies);
     $("buildLocalBtn").addEventListener("click", () => postAssembly(false));
     $("buildGuidedBtn").addEventListener("click", () => postAssembly(true));
+    $("buildSynthesisBtn").addEventListener("click", postSynthesis);
     $("clearSourceAuthoringBtn").addEventListener("click", clearWorkspace);
     $("refreshDraftBtn").addEventListener("click", refreshPreview);
     $("sendSourceEditorBtn").addEventListener("click", () => handoff("editor"));
     $("sendSourceStudioBtn").addEventListener("click", () => handoff("studio"));
+    $("sendSynthesisEditorBtn").addEventListener("click", () => handoff("editor", "synthesis"));
+    $("sendSynthesisStudioBtn").addEventListener("click", () => handoff("studio", "synthesis"));
+    $("synthesisDraft").addEventListener("input", () => setStatus("The synthesis has researcher edits after generation; the displayed audit describes the generated version."));
     loadBuild();
     restoreLatest();
     updatePreflight();

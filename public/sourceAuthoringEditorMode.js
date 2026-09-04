@@ -23,9 +23,10 @@
 
     const words = Number(payload.wordCount) || (payload.assembledText.match(/[A-Za-z0-9']+/g) || []).length;
     const useLongDocument = payload.targetSurface === "longdoc" || words > 1500;
+    const isSynthesis = payload.workflowMode === "source_synthesis";
     revise.disabled = true;
     revise.dataset.sourceGroundedLocked = "true";
-    revise.textContent = "Revise connections in Source-Grounded Authoring";
+    revise.textContent = isSynthesis ? "Review synthesis in Source-Grounded Authoring" : "Revise connections in Source-Grounded Authoring";
 
     if (useLongDocument) {
       source.value = "";
@@ -36,7 +37,7 @@
       if (startJob) {
         startJob.disabled = true;
         startJob.dataset.sourceGroundedLocked = "true";
-        startJob.textContent = "Source extracts protected · edit connections in Source-Grounded Authoring";
+        startJob.textContent = isSynthesis ? "Verified source passages protected · review synthesis in Source-Grounded Authoring" : "Source extracts protected · edit connections in Source-Grounded Authoring";
       }
       document.querySelectorAll(".tab-header").forEach((node) => node.classList.toggle("active", node.dataset.tab === "longdoc"));
       document.querySelectorAll(".tab-panel").forEach((node) => node.classList.toggle("active", node.id === "tab-longdoc"));
@@ -50,11 +51,17 @@
     const banner = document.createElement("section");
     banner.className = "source-grounded-editor-banner";
     const title = document.createElement("strong");
-    title.textContent = `${payload.lockedExtracts.length} verbatim extract(s) protected · ${words.toLocaleString()} words`;
+    title.textContent = isSynthesis
+      ? `${payload.lockedExtracts.length} verified quotation(s) protected · ${words.toLocaleString()}-word source synthesis`
+      : `${payload.lockedExtracts.length} verbatim extract(s) protected · ${words.toLocaleString()} words`;
     const explanation = document.createElement("span");
-    explanation.textContent = useLongDocument
-      ? " The complete manuscript has been routed to Long Document review because it exceeds the single-section limit. Nothing was trimmed. Rewriting is disabled because it would alter the extracts; detector evidence can still be reviewed, and connections remain editable in Source-Grounded Authoring."
-      : " Analyse Only and detector review remain available here. The general rewriter is disabled because it would alter the preserved extracts. Return to the source workspace to edit the connecting passages, then send the updated assembly back.";
+    explanation.textContent = isSynthesis
+      ? (useLongDocument
+        ? " The complete synthesis is in Long Document review because it exceeds the single-section limit. Nothing was trimmed. It was generated outside the old preservation pipeline; a second automatic rewrite is disabled so its verified source treatment is not silently changed."
+        : " Analyse Only and detector review remain available. The synthesis was generated from a visible evidence notebook outside the old preservation pipeline; return to Source-Grounded Authoring to revise its prose directly.")
+      : (useLongDocument
+        ? " The complete manuscript has been routed to Long Document review because it exceeds the single-section limit. Nothing was trimmed. Rewriting is disabled because it would alter the extracts; detector evidence can still be reviewed, and connections remain editable in Source-Grounded Authoring."
+        : " Analyse Only and detector review remain available here. The general rewriter is disabled because it would alter the preserved extracts. Return to the source workspace to edit the connecting passages, then send the updated assembly back.");
     const back = document.createElement("button");
     back.type = "button";
     back.textContent = "Return to Source-Grounded Authoring";
