@@ -11,6 +11,7 @@ import { detectorScanRouter } from "./routes/detectorScan.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { researchStudioRouter } from "./routes/researchStudio.js";
 import { evidenceEnhanceRouter } from "./routes/evidenceEnhance.js";
+import { sourceAuthoringRouter } from "./routes/sourceAuthoring.js";
 import { llmProvider } from "./lib/llmProvider.js";
 import {
   securityHeaders,
@@ -41,7 +42,12 @@ app.use("/api", generalApiLimiter, enforceSameOrigin, protectExpensiveApi, expen
 // evidence links, so it shares the larger chapter-scale JSON envelope.
 app.use("/api/jobs", express.json({ limit: "1mb", strict: true, type: "application/json" }));
 app.use("/api/research/evidence-enhance-candidate", express.json({ limit: "1mb", strict: true, type: "application/json" }));
-app.use("/api/detector-screenshot", express.json({ limit: "3mb", strict: true, type: "application/json" }));
+// Source papers are parsed in the browser and sent as plain text. The server
+// retrieves locally before any optional guided-ordering call, so the model sees
+// only compact candidate passages rather than entire papers.
+app.use("/api/source-authoring", express.json({ limit: "16mb", strict: true, type: "application/json" }));
+// A base64-encoded 5 MB PDF occupies roughly 6.7 MB in JSON.
+app.use("/api/detector-screenshot", express.json({ limit: "8mb", strict: true, type: "application/json" }));
 app.use("/api", express.json({ limit: "512kb", strict: true, type: "application/json" }));
 app.use(jsonBodyErrorHandler);
 app.use("/api", validateApiPayload);
@@ -55,6 +61,7 @@ app.use("/api", detectorScanRouter);
 app.use("/api", jobsRouter);
 app.use("/api", researchStudioRouter);
 app.use("/api", evidenceEnhanceRouter);
+app.use("/api", sourceAuthoringRouter);
 
 // One backend, two deliberately separate browser workspaces. The existing root
 // remains the Editor + Detector so current bookmarks do not break.
@@ -63,6 +70,9 @@ app.get(["/editor", "/editor/"], (_req, res) => {
 });
 app.get(["/studio", "/studio/"], (_req, res) => {
   res.sendFile(path.join(publicDir, "studio.html"));
+});
+app.get(["/source-authoring", "/source-authoring/"], (_req, res) => {
+  res.sendFile(path.join(publicDir, "source-authoring.html"));
 });
 
 app.use(express.static(publicDir, {

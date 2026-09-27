@@ -4,6 +4,8 @@
 // This prevents sentence-level fluency from masking document-level regularity
 // and separates strong existing texture from argumentative sufficiency.
 
+import { selectHumanDiscourseGuidance } from "./humanDiscourseRetrieval.js";
+
 const PLACEHOLDER_MARKERS = /\[(citation needed|TBD|TODO|XXX)\]/i;
 const CITATION_OR_NUMBER_RE = /(?:\([^\)\n]{0,180}(?:18|19|20)\d{2}[a-z]?[^\)\n]*\)|\b(?:18|19|20)\d{2}\b|\b\d+(?:\.\d+)?%\b|\b[ββα]\s*=|\bp\s*[<=>])/i;
 const DIRECT_QUOTE_RE = /^\s*[“\"][\s\S]+[”\"]\s*$/;
@@ -284,7 +286,7 @@ function buildParagraphPlan(diagnostics, intent, naturalisation) {
         actions.push(PARAGRAPH_ACTIONS.REDUCE_SIGNPOSTING);
       } else if (signal.id === "closure_regularisation") {
         actions.push(PARAGRAPH_ACTIONS.REMOVE_REDUNDANT_CLOSURE);
-      } else if (["aphoristic_compression", "rhetorical_symmetry"].includes(signal.id)) {
+      } else if (["aphoristic_compression", "rhetorical_symmetry", "triadic_enumeration_saturation"].includes(signal.id)) {
         actions.push(PARAGRAPH_ACTIONS.REBUILD_DISCOURSE);
       }
       reasons.push(signal.interpretation);
@@ -460,7 +462,7 @@ function planSentence(sentence, index, diagnostics, options) {
   }
 
   if (s.isOverloaded) {
-    reasons.push("Sentence exceeds 40 words -- candidate for split or clause redistribution.");
+    reasons.push("Sentence has exceptional clause load. Restructure or redistribute only if every contrastive, causal, concessive, comparative or parallel relationship remains explicit; sentence length alone does not authorise splitting.");
     return { level: LEVELS.SPLIT_OR_MERGE, reasons, preservationClass, decisionCode: LEVELS.SPLIT_OR_MERGE };
   }
 
@@ -560,7 +562,19 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
   const length = (lengthPreference || "auto").toLowerCase();
   const naturalisationLevel = (naturalisation || "faithful").toLowerCase();
   const intent = inferIntent(diagnostics, intensity, naturalisationLevel);
-  const paragraphPlan = buildParagraphPlan(diagnostics, intent, naturalisationLevel);
+  const baseParagraphPlan = buildParagraphPlan(diagnostics, intent, naturalisationLevel);
+  const humanDiscourseEvidence = selectHumanDiscourseGuidance(diagnostics, baseParagraphPlan);
+  const discourseByBlock = new Map(
+    humanDiscourseEvidence.paragraphAssignments.map((row) => [row.blockIndex, row])
+  );
+  const paragraphPlan = baseParagraphPlan.map((row) => {
+    const assignment = discourseByBlock.get(row.blockIndex);
+    return {
+      ...row,
+      rhetoricalJob: assignment?.rhetoricalJob || null,
+      humanDiscourseMoveIds: assignment?.moveIds || [],
+    };
+  });
 
   const items = diagnostics.sentences.map((sentence, index) => {
     const paragraphDecision = paragraphDecisionForSentence(paragraphPlan, index);
@@ -636,6 +650,7 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
     items,
     paragraphPlan,
     paragraphSummary,
+    humanDiscourseEvidence,
     documentGuidance,
     trainingPrinciples,
     qualitativeDiscourseSignalCount: discourseSignals.length,
@@ -648,3 +663,4 @@ export function buildInterventionPlan(diagnostics, { rewriteIntensity, lengthPre
 }
 
 export { LEVELS };
+

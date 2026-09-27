@@ -12,6 +12,7 @@ const startJobBtn = $("startJobBtn");
 
 const DEFAULT_LIMITS = {
   singleEditorWordLimit: 1500,
+  singleRefinementWordLimit: 3000,
   longDocumentWordLimit: 12000,
   uploadFileSizeLimitBytes: 5 * 1024 * 1024,
 };
@@ -45,6 +46,15 @@ function wordCount(text) {
 
 function formatNumber(n) {
   return Number(n || 0).toLocaleString();
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function formatDuration(ms) {
@@ -247,10 +257,14 @@ function renderPlan(plan) {
   const summary = Object.entries(plan.summary)
     .map(([level, count]) => `${level}: ${count}`)
     .join(" · ");
-  $("tab-changes").innerHTML = `<p><strong>Plan summary:</strong> ${summary}</p>${items}`;
+  const human = plan.humanDiscourseEvidence;
+  const humanProof = human
+    ? `<p class="proof-line"><strong>Human-thesis reasoning evidence:</strong> ${human.profileIds.length} profiles · ${human.selectedMoves.length} retrieved moves · ${human.paragraphAssignments.length} paragraph assignments. Retrieval is by rhetorical job; thesis wording and errors are not imitation targets.</p>`
+    : "";
+  $("tab-changes").innerHTML = `${humanProof}<p><strong>Plan summary:</strong> ${summary}</p>${items}`;
 }
 
-function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, build) {
+function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, build, humanDiscourseEvidence) {
   renderPlan(plan);
   const flags = (editSummary.flags_for_author || []).length
     ? `<p><strong>Flagged for author:</strong> ${editSummary.flags_for_author.join("; ")}</p>`
@@ -259,28 +273,103 @@ function renderChangesWithEditSummary(plan, editSummary, naturalisationApplied, 
   const proofLine = na
     ? `<p class="proof-line">Applied to this request: level=<strong>${na.level}</strong> · cadence profile=${na.cadence_targeting ? "on" : "off"} · syntactic diversity=${na.syntactic_diversity ? "on" : "off"} · measured family sources=${na.human_family_measured_sources}${build?.commitShort ? ` · build <a href="${build.githubUrl}" target="_blank" rel="noopener">${build.commitShort}</a>` : ""}</p>`
     : "";
+  const humanProof = humanDiscourseEvidence
+    ? `<p class="proof-line"><strong>Human-thesis reasoning applied:</strong> ${humanDiscourseEvidence.profiles?.length || 0} profiles · ${humanDiscourseEvidence.selected_move_ids?.length || 0} retrieved moves · ${humanDiscourseEvidence.paragraph_assignments?.length || 0} paragraph assignments.</p>`
+    : "";
   $("tab-changes").innerHTML =
     proofLine +
+    humanProof +
     `<p><strong>Model edit summary:</strong> kept ${editSummary.kept}, micro-edits ${editSummary.micro_edits}, restructures ${editSummary.sentence_restructures}, split/merge ${editSummary.split_or_merge}, paragraph reorders ${editSummary.paragraph_reorders}</p>${flags}` +
     $("tab-changes").innerHTML;
 }
 
-function renderPreservation(preservation) {
+function renderAdditionalInputs(additionalInputs = [], revisionPurpose = "fidelity") {
+  const target = $("tab-changes");
+  if (!target || revisionPurpose !== "collaborative") return;
+  const items = Array.isArray(additionalInputs) ? additionalInputs : [];
+  const content = items.length
+    ? items.map((item) => `
+      <article class="additional-input-card">
+        <div class="additional-input-head">
+          <strong>${escapeHtml(String(item.kind || "input").replace(/_/g, " "))}</strong>
+          <span class="additional-input-status">${escapeHtml(String(item.status || "researcher_confirmation_required").replace(/_/g, " "))}</span>
+        </div>
+        ${item.location ? `<p class="muted"><strong>Applies to:</strong> ${escapeHtml(item.location)}</p>` : ""}
+        <p>${escapeHtml(item.proposal)}</p>
+        ${item.reason ? `<p class="muted"><strong>Why it matters:</strong> ${escapeHtml(item.reason)}</p>` : ""}
+        ${item.researcher_question ? `<p><strong>Question for you:</strong> ${escapeHtml(item.researcher_question)}</p>` : ""}
+        ${item.evidence_needed ? `<p class="additional-input-evidence"><strong>Verification needed:</strong> ${escapeHtml(item.evidence_needed)}</p>` : ""}
+      </article>`).join("")
+    : '<p class="muted">No high-value additions or verification needs were identified in this revision.</p>';
+  target.insertAdjacentHTML("afterbegin", `
+    <section class="additional-inputs-panel" aria-label="Proposed additions requiring review">
+      <h3>Additional inputs — not inserted into the manuscript</h3>
+      <p class="muted">These are collaboration prompts only. Confirm the reasoning or verify the evidence before adding anything to the revised text.</p>
+      ${content}
+    </section>`);
+}
+
+function renderPreservation(preservation, release = null, chain = null) {
+  const rhetorical = preservation.rhetorical_semantic_preservation || {};
+  const warningTypes = new Set((preservation.warnings || []).map((warning) => warning.type));
   const rows = [
     ["Numbers preserved", preservation.numbers_ok],
+    ["Numeric ranges preserved", preservation.ranges_ok !== false],
+    ["No unsupported numbers introduced", !warningTypes.has("new_numeric_value_introduced")],
     ["Citations preserved", preservation.citations_ok],
+    ["No unsupported citations introduced", !warningTypes.has("new_citation_introduced")],
     ["Technical terms preserved", preservation.technical_terms_ok],
     ["Quotations unaltered", preservation.quotes_ok],
     ["Study stage / proposal tense preserved", preservation.study_stage_ok !== false],
+    ["Researcher voice/register preserved", preservation.researcher_voice_ok !== false],
+    ["Section/chapter structure preserved", preservation.document_structure_ok !== false],
+    ["Explicit list counts remain consistent", preservation.list_counts_ok !== false],
+    ["Claim/evidence attachment has no review signal", !(preservation.claim_attachment_review || []).length],
+    ["Rhetorical & semantic architecture preserved", preservation.rhetorical_semantic_ok !== false],
     ["No new factual claims detected", !preservation.new_factual_claims_detected],
   ];
   const rowsHtml = rows
     .map(([label, ok]) => `<div class="warning-item ${ok ? "" : "bad"}">${ok ? "✓" : "✗"} ${label}</div>`)
     .join("");
-  const warnings = preservation.warnings
+  const warnings = (preservation.warnings || [])
     .map((w) => `<div class="warning-item bad">${w.type}: ${w.detail}</div>`)
     .join("");
-  $("tab-preservation").innerHTML = rowsHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
+  const rhetoricalHtml = rhetorical.audit_version ? `
+    <section class="preservation-detail-panel">
+      <h4>Rhetorical &amp; Semantic Preservation</h4>
+      <div class="warning-item">Source propositions preserved: ${escapeHtml(String(rhetorical.source_propositions_preserved ?? "n/a"))}/${escapeHtml(String(rhetorical.source_propositions_total ?? "n/a"))}</div>
+      <div class="warning-item ${rhetorical.topic_or_framing_sentences_lost ? "bad" : ""}">Topic/framing sentences lost: ${escapeHtml(rhetorical.topic_or_framing_sentences_lost || 0)}</div>
+      <div class="warning-item ${rhetorical.transitions_lost ? "bad" : ""}">Transitions lost: ${escapeHtml(rhetorical.transitions_lost || 0)}</div>
+      <div class="warning-item ${rhetorical.interpretive_statements_lost ? "bad" : ""}">Interpretive statements lost: ${escapeHtml(rhetorical.interpretive_statements_lost || 0)}</div>
+      <div class="warning-item ${rhetorical.qualifications_or_caveats_lost ? "bad" : ""}">Qualifications/caveats lost: ${escapeHtml(rhetorical.qualifications_or_caveats_lost || 0)}</div>
+      <div class="warning-item">Possible topic/framing role changes (review evidence): ${escapeHtml(rhetorical.possible_topic_or_framing_role_changes || 0)}</div>
+      <div class="warning-item">Possible transition role changes (review evidence): ${escapeHtml(rhetorical.possible_transition_role_changes || 0)}</div>
+      <div class="warning-item">Possible interpretation role changes (review evidence): ${escapeHtml(rhetorical.possible_interpretive_role_changes || 0)}</div>
+      <div class="warning-item">Possible qualification/caveat role changes (review evidence): ${escapeHtml(rhetorical.possible_qualification_or_caveat_role_changes || 0)}</div>
+      <div class="warning-item">Possible contrast/concession role changes (review evidence): ${escapeHtml(rhetorical.possible_contrast_or_concession_role_changes || 0)}</div>
+      <p class="muted">Role-marker changes are supporting evidence only. They are reported as losses above only when proposition loss or material compression independently corroborates them.</p>
+      <div class="warning-item ${(rhetorical.modality_changes || []).length ? "bad" : ""}">Modality/certainty changes: ${escapeHtml((rhetorical.modality_changes || []).length)}</div>
+      <div class="warning-item ${(rhetorical.causality_changes || []).length ? "bad" : ""}">Causality changes: ${escapeHtml((rhetorical.causality_changes || []).length)}</div>
+      <div class="warning-item ${(rhetorical.scope_or_generalisation_changes || []).length ? "bad" : ""}">Scope/generalisation changes: ${escapeHtml((rhetorical.scope_or_generalisation_changes || []).length)}</div>
+      <div class="warning-item ${(rhetorical.unsupported_additions || []).length ? "bad" : ""}">Unsupported additions: ${escapeHtml((rhetorical.unsupported_additions || []).length)}</div>
+      <div class="warning-item ${(rhetorical.paragraphs_compressed_beyond_threshold || []).length ? "bad" : ""}">Paragraphs compressed beyond threshold: ${escapeHtml((rhetorical.paragraphs_compressed_beyond_threshold || []).length)}</div>
+      <div class="warning-item ${rhetorical.length_within_soft_range === false ? "bad" : ""}">Source/revision length ratio: ${escapeHtml(rhetorical.overall_length_ratio ?? "n/a")} (${escapeHtml(rhetorical.length_preference || "auto")})</div>
+    </section>` : "";
+  const releaseHtml = release ? `
+    <section class="preservation-detail-panel">
+      <h4>Release decision</h4>
+      <div class="warning-item ${release.release_status === "cleared" ? "" : "bad"}">${escapeHtml(String(release.release_status || "review_required").replace(/_/g, " "))}</div>
+      <p>${escapeHtml(release.note || "")}</p>
+      <p class="muted">Repair-required warnings: ${escapeHtml((release.repair_warning_types || []).join(", ") || "none")} · Review-only warnings: ${escapeHtml((release.review_warning_types || []).join(", ") || "none")}</p>
+    </section>` : "";
+  const chainHtml = chain?.mode === "dual_anchor" ? `
+    <section class="preservation-detail-panel">
+      <h4>Two-anchor refinement audit</h4>
+      <p><strong>Original → current revision:</strong> authoritative evidence, meaning, citation, qualification, study-stage and final-length check.</p>
+      <p><strong>Tested candidate → current revision:</strong> local continuity check showing what the feedback-guided pass changed.</p>
+      <p class="muted">The tested candidate is the editing surface. It never replaces the original as the factual and argumentative authority.</p>
+    </section>` : "";
+  $("tab-preservation").innerHTML = chainHtml + releaseHtml + rowsHtml + rhetoricalHtml + (warnings ? `<h4>Warnings</h4>${warnings}` : "");
 }
 
 function clearBusyTimer() {
@@ -301,7 +390,14 @@ function setBusy(busy, label) {
     busyBaseLabel = label || "Working…";
     const paint = () => {
       const elapsed = Math.round((Date.now() - busyStartedAt) / 1000);
-      statusMessage.textContent = `${busyBaseLabel} ${elapsed}s elapsed. Complex rewrites may need more than one model pass.`;
+      const stage = elapsed < 20
+        ? "Reading the argument and constructing the intervention plan."
+        : elapsed < 75
+          ? "The provider is composing the first complete candidate. No output has been discarded."
+          : elapsed < 150
+            ? "Still waiting for the primary reconstruction. Near-limit Deep requests can take longer; the full request will not be restarted merely because it is slow."
+            : "The primary provider call is unusually slow. If it completes safely, optional refinements will use the remaining time budget rather than restart the manuscript.";
+      statusMessage.textContent = `${busyBaseLabel} ${elapsed}s elapsed. ${stage}`;
     };
     paint();
     busyTimer = setInterval(paint, 1000);
@@ -349,6 +445,7 @@ async function runAnalyseOnly() {
         grammarIntensity: $("grammarIntensity").value,
         lengthPreference: $("lengthPreference").value,
         naturalisation: $("naturalisation").value,
+        revisionPurpose: $("revisionPurpose").value,
       }),
     });
     const data = await res.json();
@@ -363,10 +460,32 @@ async function runAnalyseOnly() {
   }
 }
 
-async function runAnalyseAndRevise() {
-  const text = sourceText.value.trim();
-  if (!validateSingleText(text)) return;
-  setBusy(true, "Revising…");
+async function runAnalyseAndRevise(options = {}) {
+  const explicitRefinement = options?.refinement === true;
+  const automaticPreflight = !explicitRefinement
+    ? window.AcademicRewriteLineage?.refinementPreflight?.(revisedText.value || "")
+    : null;
+  const sameRootSource = automaticPreflight?.root_source &&
+    String(automaticPreflight.root_source).replace(/\s+/g, " ").trim() === String(sourceText.value || "").replace(/\s+/g, " ").trim();
+  // Once evidence has been saved against the exact visible revision, the main
+  // action must not silently start over from Source and ignore that evidence.
+  // It automatically becomes the same bounded tested-candidate refinement
+  // exposed by the explicit preflight button. A genuinely changed Source still
+  // starts a fresh source run.
+  const automaticRefinement = Boolean(automaticPreflight?.ready && sameRootSource);
+  const refinement = explicitRefinement || automaticRefinement;
+  const text = refinement
+    ? String(explicitRefinement ? options.candidateText || "" : automaticPreflight.candidate_text || "").trim()
+    : sourceText.value.trim();
+  if (!refinement && !validateSingleText(text)) return;
+  if (refinement) {
+    const refinementWords = wordCount(text);
+    if (!text) return setError("The tested revision is no longer available.");
+    if (refinementWords > capabilities.singleRefinementWordLimit) {
+      return setError(`This tested revision is ${formatNumber(refinementWords)} words. The bounded refinement limit is ${formatNumber(capabilities.singleRefinementWordLimit)} words; use Long Document for a larger candidate.`);
+    }
+  }
+  setBusy(true, refinement ? "Refining tested revision…" : "Revising…");
   try {
     const res = await fetch("/api/rewrite", {
       method: "POST",
@@ -378,21 +497,62 @@ async function runAnalyseAndRevise() {
         grammarIntensity: $("grammarIntensity").value,
         lengthPreference: $("lengthPreference").value,
         naturalisation: $("naturalisation").value,
+        revisionPurpose: $("revisionPurpose").value,
+        refinementMode: refinement ? "tested_candidate" : "source",
+        authorialAnchor: refinement ? (window.AcademicAuthorialAnchor?.get?.() || "") : "",
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(`[${data.error || "ERROR"}] ${data.message || "Revision failed"}`);
-    revisedText.value = data.revised_text;
+    if (!res.ok) throw new Error(`[${data.error || "ERROR"}] ${data.message || "Revision failed"}${formatProviderUsage(data.provider_usage)}`);
+    revisedText.value = data.revised_text || "";
     updateWordCounts();
     renderDiagnostics(data.diagnostics);
     renderProfile(data.style_profile_used);
-    renderPreservation(data.preservation);
-    renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build);
-    setBusy(false, `Done. Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}`);
+    const rejectedPreservation = data.execution_compliance?.rejected_preservation_failure?.preservation;
+    renderPreservation(data.preservation || rejectedPreservation || {}, data.preservation_release, data.preservation_chain);
+    renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build, data.human_discourse_evidence);
+    renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
+    const acceptanceReasons = data.output_acceptance?.reasons || [];
+    const lengthContractMissed = acceptanceReasons.includes("expand_length_contract_missed") || acceptanceReasons.includes("deep_auto_developmental_compression");
+    const sourceWords = data.output_acceptance?.dimensions?.source_word_count;
+    const candidateWords = data.output_acceptance?.dimensions?.candidate_word_count;
+    const lengthEvidence = Number.isFinite(sourceWords) && Number.isFinite(candidateWords)
+      ? ` Source ${formatNumber(sourceWords)} words → candidate ${formatNumber(candidateWords)} words.`
+      : "";
+    const expandContract = data.length_contract?.mode === "expand" ? data.length_contract : null;
+    const expandEvidence = expandContract?.satisfied
+      ? ` Expand contract met: +${formatNumber(Math.max(0, Number(candidateWords || 0) - Number(sourceWords || 0)))} words (minimum +${formatNumber(expandContract.minimum_addition_words)}).`
+      : "";
+    const refinementPrefix = refinement
+      ? automaticRefinement
+        ? "Saved detector evidence was automatically applied to the exact tested candidate. "
+        : "Feedback-guided candidate refinement completed. "
+      : "";
+    const openingAudit = data.candidate_history?.feedback_opening_change_audit;
+    const openingEvidence = refinement && openingAudit?.available
+      ? openingAudit.materially_reconstructed
+        ? ` Opening reconstruction passed: ${Math.round((1 - Number(openingAudit.near_verbatim_source_sentence_share || 0)) * 100)}% of the tested opening-sentence material was materially repackaged.`
+        : ` Opening reconstruction remains insufficient: ${Math.round(Number(openingAudit.near_verbatim_source_sentence_share || 0) * 100)}% of source sentences in the first two prose paragraphs remained near-verbatim.`
+      : "";
+    const outcome = lengthContractMissed && data.candidate_verdict?.final_status !== "accepted"
+        ? `Best complete preservation-safe revision returned.${lengthEvidence} Expand requested at least +${formatNumber(expandContract?.minimum_addition_words || 200)} words; the achieved increase is shown for honest researcher review. No additional paid full-document retry was launched.`
+        : data.candidate_verdict?.final_status === "accepted"
+         ? `Revision completed and internally cleared.${expandEvidence}`
+        : `Complete candidate returned for researcher review; it has not been labelled as an internally cleared final revision.${lengthEvidence}`;
+    setBusy(false, `${refinementPrefix}${outcome}${openingEvidence} Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}${formatProviderUsage(data.provider_usage)}`);
+    statusMessage.className = data.candidate_verdict?.final_status !== "accepted"
+      ? "status-message error"
+      : "status-message";
   } catch (err) {
     setBusy(false);
     setError(err.message);
   }
+}
+
+function formatProviderUsage(usage) {
+  if (!usage) return "";
+  const cost = Number.isFinite(usage.estimated_cost_usd) ? ` · estimated $${usage.estimated_cost_usd.toFixed(4)}` : "";
+  return ` · provider ${usage.attempted_calls}/${usage.max_calls} calls · ${formatNumber(usage.input_tokens)} input + ${formatNumber(usage.output_tokens)} output tokens${cost}`;
 }
 
 function renderMethodology(data) {
@@ -427,7 +587,7 @@ async function loadDetectorHealth() {
     const data = await res.json();
     const statuses = data.providers.map((p) => `${p.label}: ${p.state}`).join(" · ");
     disclaimerEl.textContent =
-      "Third-party classifier output is shown for evaluation only. It is not proof of authorship and is never fed automatically into generation. Provider status: " + statuses;
+      "Third-party classifier output is evaluation evidence, not proof of authorship. When you save a result against the exact revision currently shown, the next Analyse & Revise action automatically refines that tested candidate and applies its linked evidence while retaining the original as the preservation anchor. The explicit refinement button remains available in the preflight panel. Unsaved, stale or unlinked observations are not used. Provider status: " + statuses;
   } catch {
     disclaimerEl.textContent = "Could not load detector provider status.";
   }
@@ -499,16 +659,30 @@ function renderJobProgress(job) {
   });
 
   if (job.status === "completed" || job.status === "completed_with_errors") {
-    const p = job.documentPreservation;
-    const warnings = p.warnings.map((w) => `<div class="warning-item bad">${w.type}: ${w.detail}</div>`).join("");
+    const p = job.documentPreservation || {};
+    const release = job.documentPreservationRelease || {};
+    const warningTypes = new Set((p.warnings || []).map((warning) => warning.type));
+    const preservationRows = [
+      ["Numbers preserved", p.numbers_ok],
+      ["Numeric ranges preserved", p.ranges_ok !== false],
+      ["No unsupported numbers introduced", !warningTypes.has("new_numeric_value_introduced")],
+      ["Citations preserved", p.citations_ok],
+      ["No unsupported citations introduced", !warningTypes.has("new_citation_introduced")],
+      ["Technical terms preserved", p.technical_terms_ok],
+      ["Quotations unaltered", p.quotes_ok],
+      ["Study stage preserved", p.study_stage_ok !== false],
+      ["Researcher voice/register preserved", p.researcher_voice_ok !== false],
+      ["Section/chapter structure preserved", p.document_structure_ok !== false],
+      ["Explicit list counts remain consistent", p.list_counts_ok !== false],
+      ["Rhetorical & semantic architecture preserved", p.rhetorical_semantic_ok !== false],
+    ].map(([label, ok]) => `<div class="warning-item ${ok ? "" : "bad"}">${ok ? "✓" : "✗"} ${label}</div>`).join("");
+    const warnings = (p.warnings || []).map((w) => `<div class="warning-item bad">${w.type}: ${w.detail}</div>`).join("");
     $("longdocOutput").innerHTML = `
       <h4>Reassembled document</h4>
       <textarea id="longdocReassembled" readonly rows="12">${job.reassembledText}</textarea>
       <h4>Document-level preservation audit</h4>
-      <div class="warning-item ${p.numbers_ok ? "" : "bad"}">${p.numbers_ok ? "✓" : "✗"} Numbers preserved</div>
-      <div class="warning-item ${p.citations_ok ? "" : "bad"}">${p.citations_ok ? "✓" : "✗"} Citations preserved</div>
-      <div class="warning-item ${p.technical_terms_ok ? "" : "bad"}">${p.technical_terms_ok ? "✓" : "✗"} Technical terms preserved</div>
-      <div class="warning-item ${p.study_stage_ok !== false ? "" : "bad"}">${p.study_stage_ok !== false ? "✓" : "✗"} Study stage preserved</div>
+      <div class="warning-item ${release.release_status === "cleared" ? "" : "bad"}"><strong>${escapeHtml(String(release.release_status || "review_required").replace(/_/g, " "))}</strong> — ${escapeHtml(release.note || "Review the detailed preservation evidence below.")}</div>
+      ${preservationRows}
       ${warnings}
     `;
   } else {
@@ -632,7 +806,16 @@ $("longdocFileInput").addEventListener("change", () =>
 
 $("startJobBtn").addEventListener("click", startLongDocJob);
 analyseOnlyBtn.addEventListener("click", runAnalyseOnly);
-analyseReviseBtn.addEventListener("click", runAnalyseAndRevise);
+analyseReviseBtn.addEventListener("click", () => runAnalyseAndRevise());
+
+window.AcademicVoiceEditor = {
+  runCandidateRefinement(candidateText) {
+    return runAnalyseAndRevise({ refinement: true, candidateText });
+  },
+  isBusy() {
+    return analyseReviseBtn.dataset.busy === "true";
+  },
+};
 
 configureMobileControls();
 loadLlmStatus();
@@ -642,3 +825,4 @@ loadMethodology();
 loadDetectorHealth();
 updateLimitUi();
 updateWordCounts();
+

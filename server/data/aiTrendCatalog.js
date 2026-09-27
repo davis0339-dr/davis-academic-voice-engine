@@ -62,6 +62,12 @@ export const AI_TREND_CATALOG = Object.freeze([
     description: "A small set of explicit transition words carries a disproportionate share of cohesion.",
     repair: "Reduce repeated connective-led openings and allow paragraph logic and lexical continuity to do more of the work.",
   },
+  {
+    id: "recurrent_triadic_packaging",
+    label: "Recurrent three-part packaging",
+    description: "Unrelated propositions repeatedly arrive as three parallel clauses or list items, giving the document an unusually pre-balanced sense of completeness.",
+    repair: "Keep every substantive item and retain fixed taxonomies or formal variable lists. Where the three-part shape is not intellectually necessary, vary clause hierarchy, sequencing or explanation so distinct ideas do not repeatedly inherit the same template.",
+  },
 ]);
 
 export function trendById(id) {

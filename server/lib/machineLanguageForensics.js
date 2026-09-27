@@ -153,7 +153,7 @@ export function analyseMachineLanguageForensics(text) {
       issue: "machine_language_density",
       severity: hitRatio >= 0.38 ? "high" : "medium",
       interpretation: `${Math.round(hitRatio * 100)}% of substantive sentences contain one or more polished machine-favoured academic framing patterns. The concern is recurrence across the passage, not any individual phrase.`,
-      action: "Rebuild selected sentences around the substantive proposition. Remove unnecessary discourse-management wording, abstract signposting and polished binary pivots where the evidence or subject matter can carry the reasoning directly.",
+      action: "Rebuild selected sentences around the substantive proposition. Replace repetitive discourse-management wording, abstract signposting and polished binary pivots with developed explanation, qualification or transition where those functions matter. Delete only a proposition-and-function duplicate; directness must not become compression.",
     });
   }
   if (pivotRatio + binaryRatio >= 0.18) {
@@ -169,7 +169,7 @@ export function analyseMachineLanguageForensics(text) {
       issue: "editorial_discourse_management_density",
       severity: synthesisRatio + managementRatio + abstractOpeningRatio >= 0.34 ? "high" : "medium",
       interpretation: "A large share of sentences manage the reader's interpretation through abstract synthesis, issue-framing or paragraph-announcement language rather than advancing the substantive proposition directly.",
-      action: "Delete or absorb sentences that mainly announce complexity, conditionality, significance, difficulty or the next argumentative move when the surrounding content already demonstrates it.",
+      action: "Reconstruct repeated discourse-management wording without deleting its intellectual job. Preserve or redevelop framing, conditionality, significance, interpretation and transitions where they organise the argument; absorb a sentence only when both its proposition and rhetorical function are genuinely duplicated.",
     });
   }
   if (nominalisationRatio >= 0.28) {

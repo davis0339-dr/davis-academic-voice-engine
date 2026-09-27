@@ -94,6 +94,10 @@
         const status = $("studioShellStatus");
         if (status) status.textContent = "Editor context loaded. Research & Evidence Studio is isolated from the editor runtime, but the text handoff is available here.";
       }
+      if (params.get("handoff") === "source-authoring" && $("sourceText")?.value) {
+        const status = $("studioShellStatus");
+        if (status) status.textContent = "Source-led draft loaded for optional collaboration. The exact extracts were assembled in Source-Grounded Authoring; use this Studio only for researcher questions, explanation and evidence work.";
+      }
     } catch {}
   }
 

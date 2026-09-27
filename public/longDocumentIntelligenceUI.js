@@ -88,6 +88,10 @@
     }
     const needs = evidenceNeeds(job);
     const arc = blueprint.argument_arc || [];
+    const lengthContract = job.documentLengthContract;
+    const expandStatus = lengthContract?.mode === "expand"
+      ? `<div><span>Expand contract</span><strong>${lengthContract.satisfied ? "+" + esc(lengthContract.actual_addition_words) + " words" : "not met"} (minimum +${esc(lengthContract.minimum_addition_words)})</strong></div>`
+      : "";
     return `<section class="longdoc-intelligence-panel">
       <div class="longdoc-intelligence-title"><strong>Whole-document intelligence</strong><span>${esc(phaseLabel(job.phase))}</span></div>
       <p><strong>Document end goal:</strong> ${esc(blueprint.document_goal || "Not available")}</p>
@@ -96,6 +100,7 @@
         <div><span>Evidence needs identified</span><strong>${needs.length}</strong></div>
         <div><span>Planning basis</span><strong>${esc(blueprint.generated_by || "n/a")}</strong></div>
         <div><span>Candidate status</span><strong>${esc((job.candidateStatus || "in progress").replace(/_/g, " "))}</strong></div>
+        ${expandStatus}
       </div>
       ${blueprint.planning_warning ? `<p class="warning-item">${esc(blueprint.planning_warning)}</p>` : ""}
       <details><summary>Argument arc</summary>${arc.map((item) => `<div class="longdoc-arc-item"><strong>${esc(item.heading || "stage")}</strong><p>${esc(item.role || "")}</p>${item.downstream_dependency ? `<p class="muted">Feeds into: ${esc(item.downstream_dependency)}</p>` : ""}</div>`).join("")}</details>

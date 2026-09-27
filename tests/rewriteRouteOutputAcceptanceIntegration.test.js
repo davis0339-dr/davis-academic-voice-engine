@@ -13,24 +13,103 @@ test("rewrite route forwards full context into selective residual recovery", () 
 
 test("completed-output acceptance runs after residual recovery and before final verdict", () => {
   const residualIndex = route.indexOf("selectiveResidualRework({");
-  const acceptanceIndex = route.indexOf("const completedOutputAcceptance = auditOutputAcceptance({");
+  const acceptanceIndex = route.indexOf("const baseOutputAcceptance = auditOutputAcceptance({");
   const verdictIndex = route.indexOf("result.candidate_verdict = {");
   assert.ok(residualIndex >= 0);
   assert.ok(acceptanceIndex > residualIndex);
   assert.ok(verdictIndex > acceptanceIndex);
 });
 
-test("Moderate/Deep assertive output gate can block final acceptance", () => {
-  assert.match(
-    route,
-    /outputAcceptanceEnforced && outputAcceptance\?\.status !== "pass"\) return "internal_quality_review_required"/
-  );
-  assert.match(route, /\["moderate", "deep"\]/);
-  assert.match(route, /\["aggressive", "authorial"\]/);
+test("post-rewrite diagnostics always inspect the candidate actually returned", () => {
+  assert.match(route, /residualRework\?\.after \|\| residualRework\?\.before \|\| analyseResidualWriting\(result\.revised_text\)/);
+});
+
+test("a complete preservation-review candidate is retained instead of converted to an empty non-edit", () => {
+  const acceptanceIndex = route.indexOf("const baseOutputAcceptance = auditOutputAcceptance({");
+  const reviewIndex = route.indexOf("candidate_retained_for_review: true");
+  assert.ok(reviewIndex >= 0);
+  assert.ok(acceptanceIndex > reviewIndex);
+  assert.match(route, /!executionCompliance\.preservation_ok && preservationRelease\.hard_failure/);
+  assert.match(route, /rejected_preservation_failure: rejectedPreservationFailure/);
+  assert.doesNotMatch(route, /retainSourceAfterPreservationFailure\(/);
+});
+
+test("review-only rhetorical evidence remains advisory once hard semantic invariants pass", () => {
+  assert.match(route, /preservationRelease\.review_required/);
+  assert.match(route, /preservationRelease\.hard_failure/);
+  assert.match(route, /"review-required"/);
+});
+
+test("preservation recovery repairs the completed candidate instead of regenerating the whole source", () => {
+  assert.match(route, /repairPreservationCandidate\(\{[\s\S]*sourceText: auditAnchorText,[\s\S]*candidateResult: result/);
+  assert.doesNotMatch(route, /const recoveryResult = enrichForCompliance\(await runRewrite\(\)\)/);
+  assert.match(route, /selectedAttempt = "preservation-candidate-repair"/);
+});
+
+test("tested-candidate refinement keeps the original as history, preservation and length anchor", () => {
+  assert.match(route, /const auditAnchorText = candidateRefinement \? rootSourceText : text/);
+  assert.match(route, /candidateHistoryFor\(\{[\s\S]*sourceText: auditAnchorText/);
+  assert.match(route, /const immediate = auditPreservation\(text,/);
+  assert.match(route, /const root = auditPreservation\(auditAnchorText,/);
+  assert.match(route, /manuscriptWordCount\(result\.revised_text\) - manuscriptWordCount\(auditAnchorText\)/);
+  assert.match(route, /maximum_feedback_refinements: 2/);
+  assert.match(route, /AUTHORIAL_ANCHOR_REQUIRED/);
+  assert.match(route, /detectorFeedbackProfile\?\.high_machine_pattern_signal && !authorialAnchorAssessment\.sufficient/);
+  assert.match(route, /authorialAnchor,/);
+});
+
+test("completed-output defects remain visible and prevent false internal clearance", () => {
+  assert.doesNotMatch(route, /return "internal_quality_review_required"/);
+  assert.match(route, /const outputAcceptanceEnforced = true/);
+  assert.match(route, /feedback_opening_reconstruction_insufficient/);
+  assert.match(route, /FEEDBACK_OPENING_RECONSTRUCTION_INSUFFICIENT/);
 });
 
 test("candidate verdict reports internal acceptance and external-check recommendation", () => {
   assert.match(route, /output_acceptance: completedOutputAcceptance\.status/);
   assert.match(route, /output_acceptance_score: completedOutputAcceptance\.score/);
   assert.match(route, /external_detector_check_recommended:/);
+});
+
+test("historical duplicate candidates remain measured and supplied to reconstruction history", () => {
+  assert.match(route, /rewrite\(\{[\s\S]*priorCandidateHistory,[\s\S]*\}\)/);
+  assert.match(route, /isHistoricalDuplicate\(result\.revised_text, priorCandidateHistory\)/);
+  assert.match(route, /"historical_candidate_repetition"/);
+  assert.match(route, /exact_historical_duplicate: historicalDuplicate/);
+  assert.match(route, /rememberCandidate\(result\.revised_text, priorCandidateHistory\)/);
+});
+
+test("rewrite requests are provider-budgeted and expose request-scoped usage", () => {
+  assert.match(route, /rewriteRouter\.post\("\/rewrite", llmProvider\.usageMiddleware/);
+  assert.match(route, /provider_usage: llmProvider\.usageSnapshot\(\)/);
+});
+
+test("a failed optional model refinement blocks further residual provider spending", () => {
+  assert.match(route, /const optionalProviderFailure = Boolean\(/);
+  assert.match(route, /!optionalProviderFailure &&/);
+  assert.match(route, /residualStageBlockedReason = "provider_refinement_failed"/);
+});
+
+test("Expand candidates may receive the bounded residual pass when execution remains weak", () => {
+  assert.doesNotMatch(route, /bindingExpansionCandidate/);
+  assert.match(route, /selectiveResidualRework\(\{/);
+  assert.match(route, /minimumExpansionWords/);
+  assert.match(route, /maxBlocks: detectorFeedbackProfile\?\.high_machine_pattern_signal \? 8 : 4/);
+});
+
+test("execution defects are repaired selectively instead of regenerating the full manuscript", () => {
+  assert.match(route, /const fullDocumentExecutionRecoveryAllowed = false/);
+  assert.doesNotMatch(route, /shouldAttemptAuthorialExecutionRecovery/);
+  assert.doesNotMatch(route, /preferByExecutionCompliance/);
+  assert.match(route, /execution_repair_deferred_to_selective_residual: true/);
+  assert.match(route, /max_authorial_execution_recovery_retries: 0/);
+  assert.match(route, /max_reconciliation_retries: 0/);
+});
+
+test("broad preservation-safe reconstruction is not discarded because a planner breadth estimate was exceeded", () => {
+  assert.match(route, /const overExecutionRecoveryAllowed = false/);
+  assert.doesNotMatch(route, /await surgicalHumanEdit/);
+  assert.doesNotMatch(route, /revised_text: text/);
+  assert.match(route, /over_execution_recovery_allowed: overExecutionRecoveryAllowed/);
+  assert.match(route, /max_over_execution_recovery_retries: 0/);
 });

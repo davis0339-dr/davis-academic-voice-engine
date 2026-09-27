@@ -58,3 +58,14 @@ test("accepts a proposal-stage rephrase that remains explicitly planned", () => 
   const result = auditPreservation(proposal, revised, extractProtectedSpans(proposal));
   assert.equal(result.study_stage_ok, true);
 });
+
+test("a possessive narrative citation preserves the same author-year identity", () => {
+  const result = auditPreservation(
+    "Sengupta (1998) found that disclosure quality was associated with lower interest costs.",
+    "Firms with stronger disclosure faced lower interest costs in Sengupta's (1998) analysis."
+  );
+
+  assert.equal(result.citations_ok, true);
+  assert.equal(result.warnings.some((warning) => warning.type === "missing_citation"), false);
+  assert.equal(result.warnings.some((warning) => warning.type === "new_citation_introduced"), false);
+});

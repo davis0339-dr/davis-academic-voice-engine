@@ -54,9 +54,17 @@ test("aggressive naturalisation alone does not authorise paragraph reordering", 
   assert.equal(plan.paragraphReorderSuggested, false);
 });
 
-test("an overloaded sentence is planned for SPLIT_OR_MERGE regardless of intensity", () => {
-  const overloaded =
+test("a long academic relationship is not automatically split merely because it exceeds 40 words", () => {
+  const balanced =
     "The study examines the relationship between corporate governance mechanisms, including board independence, audit committee expertise, ownership concentration, and CEO duality, and firm-level disclosure quality across a large sample of UK-listed companies over a ten-year period from 2010 to 2019 using panel regression techniques.";
+  const plan = buildInterventionPlan(diagnose(balanced), { rewriteIntensity: "minor", lengthPreference: "auto" });
+  assert.notEqual(plan.items[0].level, LEVELS.SPLIT_OR_MERGE);
+});
+
+test("a genuinely exceptional clause load can still be planned for relationship-preserving redistribution", () => {
+  const overloaded =
+    "The study examines board independence, audit committee expertise, ownership concentration, chief executive duality, director tenure, director networks, meeting frequency, financial expertise, auditor tenure, ownership dispersion, institutional ownership, family ownership, foreign ownership, executive incentives, political connections, market competition, regulatory quality, disclosure quality, reporting timeliness, restatement risk, financing cost, investment efficiency, operating risk, and firm value across listed companies in twelve sectors over fifteen years using several alternative panel estimators and robustness specifications.";
   const plan = buildInterventionPlan(diagnose(overloaded), { rewriteIntensity: "minor", lengthPreference: "auto" });
   assert.equal(plan.items[0].level, LEVELS.SPLIT_OR_MERGE);
 });
+

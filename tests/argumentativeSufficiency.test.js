@@ -50,3 +50,20 @@ test("intervention authority separates surface preservation from development per
   assert.ok(authority.max_changed_sentence_ratio > 0.6);
   assert.match(authority.rule, /word-count growth is never a target/i);
 });
+
+test("Moderate aggressive does not preserve machine-patterned sentence shells", () => {
+  const authority = deriveInterventionAuthority({
+    planSummary: { MICRO_EDIT: 20, SENTENCE_RESTRUCTURE: 12, KEEP: 8 },
+    authorialTexture: {
+      preservation_priority: "medium",
+      machine_pattern_regularity: { score: 0.48 },
+    },
+    requestedIntensity: "moderate",
+    requestedNaturalisation: "aggressive",
+    effectiveIntent: "context_scholarly_strengthening",
+  });
+  assert.equal(authority.surface_preservation_required, false);
+  assert.equal(authority.preservation_basis, "semantic_evidential_fidelity");
+  assert.ok(authority.min_changed_sentence_ratio >= 0.22);
+  assert.match(authority.rule, /source wording and sentence shells are not preservation targets/i);
+});

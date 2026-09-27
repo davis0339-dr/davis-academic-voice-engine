@@ -108,6 +108,19 @@ test("detector research payload accepts bounded observations and manuscript stri
   assert.equal(nextCalled, true);
 });
 
+test("detector evidence payload accepts bounded PDF reports and rejects unsupported files", () => {
+  const valid = mockReq({ method: "POST", path: "/detector-screenshot", body: { mimeType: "application/pdf", fileBase64: "A".repeat(100) } });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({ method: "POST", path: "/detector-screenshot", body: { mimeType: "text/plain", fileBase64: "A" } });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("unsupported detector report must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
+});
+
 test("detector research payload rejects oversized or malformed observation records", () => {
   const req = mockReq({
     method: "POST",
@@ -121,6 +134,97 @@ test("detector research payload rejects oversized or malformed observation recor
   validateApiPayload(req, res, () => assert.fail("malformed detector research payload must not pass"));
   assert.equal(res.statusCode, 400);
   assert.equal(res.body.error, "BAD_REQUEST");
+});
+
+test("rewrite accepts bounded candidate-linked feedback and rejects stale-shaped identifiers", () => {
+  const valid = mockReq({
+    method: "POST",
+    path: "/rewrite",
+    body: {
+      text: "Academic source.",
+      detectorFeedback: {
+        candidateId: "a".repeat(24),
+        observations: [{ detector: "GPTZero", classification: "ai", aiScore: 100, flaggedExcerpts: ["Academic candidate sentence."] }],
+      },
+    },
+  });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Academic source.", detectorFeedback: { candidateId: "stale", observations: [] } } });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("invalid feedback must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
+});
+
+test("rewrite accepts bounded detector pattern findings and rejects malformed pattern payloads", () => {
+  const valid = mockReq({
+    method: "POST",
+    path: "/rewrite",
+    body: {
+      text: "Academic source.",
+      detectorFeedback: {
+        candidateId: "b".repeat(24),
+        observations: [{
+          detector: "GPTZero",
+          classification: "ai",
+          patternFindings: [{
+            label: "Everything in threes",
+            reportedCount: 7,
+            likelihoodText: "1.6x more likely used by AI",
+            instances: [{ text: "board independence, board size and audit independence", page: 3 }],
+          }],
+        }],
+      },
+    },
+  });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({
+    method: "POST",
+    path: "/rewrite",
+    body: {
+      text: "Academic source.",
+      detectorFeedback: {
+        candidateId: "b".repeat(24),
+        observations: [{ detector: "GPTZero", patternFindings: [{ label: "x", instances: "not-an-array" }] }],
+      },
+    },
+  });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("malformed pattern evidence must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
+});
+
+test("rewrite accepts only explicit source or tested-candidate refinement modes", () => {
+  const valid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Candidate text.", refinementMode: "tested_candidate" } });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Candidate text.", refinementMode: "unbounded_retry" } });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("invalid refinement mode must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
+});
+
+test("rewrite accepts a bounded authorial calibration sample and rejects an oversized one", () => {
+  const valid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Candidate text.", authorialAnchor: "Researcher-authored prose. ".repeat(100) } });
+  const validRes = mockRes();
+  let nextCalled = false;
+  validateApiPayload(valid, validRes, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+
+  const invalid = mockReq({ method: "POST", path: "/rewrite", body: { text: "Candidate text.", authorialAnchor: "x".repeat(12001) } });
+  const invalidRes = mockRes();
+  validateApiPayload(invalid, invalidRes, () => assert.fail("oversized authorial sample must not pass"));
+  assert.equal(invalidRes.statusCode, 400);
 });
 
 test("payload validator does not require a JSON body for chunk retry routes", () => {

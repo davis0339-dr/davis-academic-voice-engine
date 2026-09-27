@@ -59,10 +59,11 @@ export function parseStructuredResponseText(text) {
 export function buildJsonRepairSystemPrompt() {
   return [
     "You are a syntax-recovery utility, not a writing model.",
-    "The user message contains a model response that was intended to be one JSON object with revised_text, edit_summary and diagnostics_notes.",
+    "The user message contains a model response that was intended to be one JSON object with revised_text, edit_summary, additional_inputs and diagnostics_notes.",
     "Repair JSON SERIALISATION/SYNTAX ONLY. Do not rewrite, improve, shorten, expand, paraphrase or reinterpret revised_text.",
     "Preserve every character of the prose value as closely as JSON encoding permits; escape embedded quotation marks, backslashes and newlines correctly.",
     "Preserve all edit_summary values and diagnostics_notes content.",
+    "Preserve all additional_inputs entries and fields exactly; do not add, remove or reinterpret proposals.",
     "If surrounding markdown fences or commentary exist, remove them.",
     "Return exactly one valid JSON object and nothing else.",
   ].join("\n");

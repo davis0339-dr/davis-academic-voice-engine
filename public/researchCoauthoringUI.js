@@ -6,6 +6,10 @@
   const state = {
     questions: [],
     assessments: [],
+    coverage: [],
+    diagnosisOverview: "",
+    rawDraft: "",
+    contributionLedger: [],
     manuscriptFileName: "",
     activeQuestionVoice: null,
   };
@@ -230,18 +234,53 @@
       return;
     }
 
-    target.innerHTML = state.questions.map((q, index) => `
+    const actionLabels = {
+      respond_in_own_words: "Explain this in your own words",
+      rephrase_in_own_words: "Rephrase the passage yourself",
+      read_back_in_own_words: "Read it back, then restate what you mean",
+      resolve_contradiction: "Resolve a contradiction",
+      explain_mechanism: "Explain how or why the relationship works",
+      qualify_claim: "Set the intended boundary or level of certainty",
+      reorganize_section: "Explain the intended section order",
+      contract_repetition: "Decide what is repeated and what must remain",
+      evidence_check: "Identify or verify the required evidence",
+    };
+    const overview = state.diagnosisOverview ? `<div class="coauthor-diagnosis-overview"><strong>What this manuscript needs from you:</strong> ${esc(state.diagnosisOverview)}</div>` : "";
+    const coverage = state.coverage.length ? `<div class="coauthor-coverage"><strong>Coverage:</strong> ${state.coverage.filter((row) => row.decision === "author_action").length} block(s) require author action; ${state.coverage.filter((row) => row.decision === "leave_for_now").length} were left alone in this pass.</div>` : "";
+
+    target.innerHTML = `${overview}${coverage}` + state.questions.map((q, index) => `
       <article class="coauthor-question-card" data-question-card="${esc(q.id)}">
         <div class="coauthor-question-head">
-          <strong>Question ${index + 1}</strong>
+          <strong>Author task ${index + 1}${q.paragraph_index ? ` · paragraph ${esc(q.paragraph_index)}` : ""}</strong>
           <span class="coauthor-sensitivity ${esc(q.verification_sensitivity || "conditional")}">${esc((q.verification_sensitivity || "conditional").replace(/_/g, " "))} verification sensitivity</span>
         </div>
-        ${q.anchor ? `<p class="coauthor-anchor"><strong>Prompted by:</strong> “${esc(q.anchor)}”</p>` : ""}
+        <p class="coauthor-task-meta"><strong>${esc(actionLabels[q.action] || "Respond in your own words")}</strong> · ${esc(q.scope || "paragraph")} · ${esc(q.section || "unlabelled section")}</p>
+        ${q.anchor ? `<p class="coauthor-anchor"><strong>Exact location:</strong> “${esc(q.anchor)}”</p>` : ""}
+        ${q.diagnosis ? `<div class="coauthor-diagnosis"><strong>What Davis found:</strong> ${esc(q.diagnosis)}</div>` : ""}
         <p class="coauthor-question-text">${esc(q.question)}</p>
         ${q.why_it_matters ? `<p class="muted">Why this matters: ${esc(q.why_it_matters)}</p>` : ""}
+        ${q.preserve ? `<p class="coauthor-preserve"><strong>Do not lose:</strong> ${esc(q.preserve)}</p>` : ""}
+        <details class="coauthor-source-block"><summary>Read the complete diagnosed passage</summary><p>${esc(q.source_text || "")}</p></details>
         <label>Your explanation
           <textarea data-coauthor-answer="${esc(q.id)}" rows="4" placeholder="Answer in your own words and understanding. Rough language is useful. You do not need to sound academic here."></textarea>
         </label>
+        <div class="coauthor-use-controls">
+          <label>Your decision
+            <select data-coauthor-status="${esc(q.id)}">
+              <option value="unreviewed">Keep unreviewed</option>
+              <option value="accepted">Accept my words for the working draft</option>
+              <option value="rejected">Do not use this response</option>
+            </select>
+          </label>
+          <label>Use my exact words
+            <select data-coauthor-operation="${esc(q.id)}">
+              <option value="notes_only">As working notes only</option>
+              <option value="append_after" ${["respond_in_own_words","explain_mechanism","qualify_claim","resolve_contradiction","evidence_check"].includes(q.action) ? "selected" : ""}>Add after this passage</option>
+              <option value="insert_before">Insert before this passage</option>
+              <option value="replace_block" ${["rephrase_in_own_words","read_back_in_own_words","contract_repetition"].includes(q.action) ? "selected" : ""}>Replace this passage</option>
+            </select>
+          </label>
+        </div>
         <div class="question-input-actions">
           <button class="question-voice-launch" type="button" data-toggle-question-voice="${esc(q.id)}" aria-expanded="false">🎙 Answer this question by voice</button>
           <button type="button" data-clear-question-answer="${esc(q.id)}">Clear answer</button>
@@ -293,11 +332,13 @@
         styleFilters: styleFilters(),
       });
       state.questions = data.questions || [];
+      state.coverage = data.coverage || [];
+      state.diagnosisOverview = data.overview || "";
       state.assessments = [];
       renderQuestions();
       renderAssessmentSummary();
       status(state.questions.length
-        ? `${state.questions.length} manuscript-led question(s) ready. Each question now supports direct typed or microphone input with local feedback.`
+        ? `${state.questions.length} exact author task(s) ready. Read each diagnosis, answer in your own words, and explicitly decide whether and where your raw wording may enter the working draft.`
         : "No high-value coauthoring question was generated from this passage. You can still explain what you think in the Reasoning Studio below.");
     } catch (err) {
       status(`Could not generate manuscript questions: ${err.message}`, true);
@@ -309,9 +350,13 @@
       const box = document.querySelector(`[data-coauthor-answer="${CSS.escape(q.id)}"]`);
       return {
         question_id: q.id,
+        block_id: q.block_id,
+        action: q.action,
         question: q.question,
         answer: box?.value.trim() || "",
         input_mode: box?.dataset.inputMode || "typed",
+        researcher_status: document.querySelector(`[data-coauthor-status="${CSS.escape(q.id)}"]`)?.value || "unreviewed",
+        operation: document.querySelector(`[data-coauthor-operation="${CSS.escape(q.id)}"]`)?.value || "notes_only",
       };
     }).filter((item) => item.answer);
   }
@@ -387,17 +432,49 @@
       writeResponsesIntoResearcherReasoning(responses);
       if ($("sourceText")) $("sourceText").value = manuscript;
       if ($("includeEditorContext")) $("includeEditorContext").checked = true;
-
-      const build = $("buildArgumentMapBtn");
-      if (build) {
-        status("Assessment complete. Your raw answers—not Davis's interpretation of them—are now feeding the argument map. Building the map…");
-        build.click();
-      } else {
-        status("Assessment complete. Your raw answers were preserved, but the argument-map control is not ready yet.", true);
-      }
+      status("Assessment complete. The displayed interpretation is advisory only. Your exact answer remains the material used by the raw working-draft builder; Davis has not rewritten it.");
     } catch (err) {
       status(`Could not assess the researcher responses: ${err.message}`, true);
     }
+  }
+
+  async function buildRawAuthorDraft() {
+    const manuscript = manuscriptText();
+    const responses = collectResponses();
+    const accepted = responses.filter((item) => item.researcher_status === "accepted" && item.operation !== "notes_only");
+    if (!manuscript) return status("The working manuscript is required before building the raw author draft.", true);
+    if (!accepted.length) return status("Accept at least one response and choose where its exact wording should be used.", true);
+    status("Placing your accepted wording into the diagnosed locations without polishing or paraphrasing…");
+    try {
+      const data = await postJson("/api/research/raw-integrate", {
+        manuscriptText: manuscript,
+        contributions: accepted.map((item) => ({
+          contribution_id: item.question_id,
+          block_id: item.block_id,
+          raw_text: item.answer,
+          operation: item.operation,
+          researcher_status: item.researcher_status,
+        })),
+      });
+      state.rawDraft = data.draft || "";
+      state.contributionLedger = data.ledger || [];
+      if ($("rawAuthorDraft")) $("rawAuthorDraft").value = state.rawDraft;
+      if ($("rawAuthorLedger")) {
+        $("rawAuthorLedger").innerHTML = `<div class="raw-author-note"><strong>No-polish confirmation:</strong> ${esc(data.note || "")}</div>${state.contributionLedger.map((row) => `
+          <div class="raw-ledger-row"><strong>${esc(row.contribution_id)}</strong> → ${esc(row.section || "section")}${row.paragraph_index ? `, paragraph ${esc(row.paragraph_index)}` : ""} · ${esc(row.operation.replace(/_/g, " "))} · transformation: none</div>
+        `).join("")}`;
+      }
+      status(`Raw author working draft built with ${data.contribution_count || 0} accepted contribution(s). No language model edited the inserted wording.`);
+    } catch (err) {
+      status(`Could not build the raw author working draft: ${err.message}`, true);
+    }
+  }
+
+  function useRawDraftAsManuscript() {
+    if (!state.rawDraft) return status("Build the raw author working draft first.", true);
+    setManuscript(state.rawDraft, "Raw author working draft");
+    if ($("sourceText")) $("sourceText").value = state.rawDraft;
+    status("The raw author draft is now the working manuscript. Review its structure yourself or run another diagnosis pass; no polish was applied.");
   }
 
   function installOwnWordsGuidance() {
@@ -423,9 +500,9 @@
       <div class="coauthor-flow-head">
         <div>
           <h4>Researcher-led coauthoring — manuscript first</h4>
-          <p>This path works backward from the manuscript to the researcher's thinking: load the text, let Davis identify where intellectual judgment is thin or unclear, then answer the questions in your own words. Davis uses those answers to develop the argument and flags factual parts that still need verification.</p>
+          <p>This path works backward from the manuscript to the researcher's thinking: load the text, let Davis identify exact structural or intellectual problems, then answer the author tasks in your own words. Davis may diagnose and question, but this path does not polish, paraphrase or sharpen your response.</p>
         </div>
-        <span class="coauthor-flow-badge">Manuscript → questions → researcher reasoning → evidence → prose</span>
+        <span class="coauthor-flow-badge">Manuscript → exact diagnosis → author response → raw working draft</span>
       </div>
       <div class="coauthor-framework-note"><strong>The existing post-editor framework remains separate and intact.</strong> You can still send a revised Editor/Long Document output into this Studio for explanation, evidence alignment and judgment. This manuscript-first path does not replace that forward workflow.</div>
 
@@ -437,7 +514,7 @@
         <input id="coauthorManuscriptFile" class="visually-hidden" type="file" accept=".txt,.md,.markdown,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
         <button id="useSourceAsCoauthorManuscriptBtn" type="button">Use current Source text</button>
         <button id="useRevisedAsCoauthorManuscriptBtn" type="button">Use current Revised text</button>
-        <button id="generateCoauthorQuestionsBtn" class="primary" type="button">Ask me the important questions</button>
+        <button id="generateCoauthorQuestionsBtn" class="primary" type="button">Diagnose and break the work into author tasks</button>
       </div>
       <p class="muted">The Source/Revised shortcuts are optional conveniences. A new coauthoring session can begin here from an uploaded or pasted manuscript without coming through the Editor.</p>
       <span id="coauthoringStatus" class="file-status">Ready for a working manuscript.</span>
@@ -445,10 +522,18 @@
       <div id="coauthorQuestionList" class="coauthor-question-list"><p class="muted">Load a manuscript and ask Davis to identify the highest-value questions for your own reasoning.</p></div>
       <div class="coauthor-own-words-callout"><strong>Answer from your understanding, not for polish.</strong> If your answer is an interpretation, mechanism, boundary or judgment, Davis can use it as part of your intellectual position. If you state an external fact, Davis will preserve the idea but mark the factual part for verification before it is presented as established evidence.</div>
       <div class="action-row">
-        <button id="assessCoauthorResponsesBtn" class="primary" type="button">Assess my responses &amp; build/update argument map</button>
+        <button id="assessCoauthorResponsesBtn" type="button">Check what my responses contribute</button>
+        <button id="buildRawAuthorDraftBtn" class="primary" type="button">Build raw author working draft — no polishing</button>
       </div>
       <div id="coauthorAssessmentSummary"></div>
       <p id="coauthorOverallAssessment" class="muted"></p>
+      <section class="raw-author-output">
+        <h5>Raw author working draft</h5>
+        <p class="muted">Only responses you explicitly accept are inserted, exactly as supplied. Use this as unfinished research material: read it, reorganise it and diagnose it again where necessary.</p>
+        <textarea id="rawAuthorDraft" rows="12" readonly placeholder="Your unpolished author-led working draft will appear here."></textarea>
+        <div id="rawAuthorLedger"></div>
+        <button id="useRawAuthorDraftBtn" type="button">Use this raw draft for the next diagnosis pass</button>
+      </section>
     `;
     grid.insertAdjacentElement("beforebegin", section);
 
@@ -465,6 +550,8 @@
     });
     $("generateCoauthorQuestionsBtn")?.addEventListener("click", generateQuestions);
     $("assessCoauthorResponsesBtn")?.addEventListener("click", assessAndBuild);
+    $("buildRawAuthorDraftBtn")?.addEventListener("click", buildRawAuthorDraft);
+    $("useRawAuthorDraftBtn")?.addEventListener("click", useRawDraftAsManuscript);
 
     installOwnWordsGuidance();
     return true;
@@ -485,6 +572,12 @@
     .coauthor-sensitivity.high{font-weight:700;border-color:#a67833;color:#f0c47a}
     .coauthor-anchor{font-size:.9rem}
     .coauthor-question-text{font-size:1.02rem;line-height:1.55}
+    .coauthor-diagnosis-overview,.coauthor-coverage,.raw-author-note{padding:.75rem;border:1px solid #3f5872;border-radius:8px;background:#111820;margin:.7rem 0}
+    .coauthor-task-meta,.coauthor-preserve{color:#c9d8e8}.coauthor-diagnosis{padding:.7rem;border-left:4px solid #a67833;background:rgba(166,120,51,.08);margin:.65rem 0}
+    .coauthor-source-block{margin:.65rem 0}.coauthor-source-block p{white-space:pre-wrap;color:#c8d1da}
+    .coauthor-use-controls{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin:.7rem 0}
+    .raw-author-output{margin-top:1rem;padding-top:1rem;border-top:1px solid #344354}.raw-author-output textarea{width:100%;box-sizing:border-box}
+    .raw-ledger-row{padding:.55rem;border-bottom:1px solid #2c3946;font-size:.86rem}
     .question-input-actions,.question-voice-actions{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;margin:.65rem 0}
     .question-voice-launch{background:#17352d!important;border-color:#4aa982!important;color:#effff8!important;font-weight:700}
     .question-voice-launch:hover,.question-voice-launch.active{background:#1e493d!important;border-color:#62e0b0!important}
@@ -495,7 +588,7 @@
     .response-assessment{margin-top:.7rem;padding:.7rem;border-radius:8px;border-left:4px solid #6b8e7a;background:rgba(107,142,122,.08)}
     .response-assessment.needs-verification{border-left-color:#a67833;background:rgba(166,120,51,.08)}
     .coauthor-assessment-summary{padding:.75rem;border:1px solid #344354;border-radius:8px;margin:.7rem 0;background:#151b22}
-    @media(max-width:760px){.coauthor-manuscript-actions,.question-input-actions,.question-voice-actions{display:grid;grid-template-columns:1fr}.coauthor-manuscript-actions>*,.question-input-actions>*,.question-voice-actions>*{width:100%}}
+    @media(max-width:760px){.coauthor-manuscript-actions,.question-input-actions,.question-voice-actions,.coauthor-use-controls{display:grid;grid-template-columns:1fr}.coauthor-manuscript-actions>*,.question-input-actions>*,.question-voice-actions>*{width:100%}}
   `;
   document.head.appendChild(style);
 

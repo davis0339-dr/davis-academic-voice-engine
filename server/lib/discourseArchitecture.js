@@ -16,6 +16,8 @@ const APHORISTIC_RE = /(?:\b(?:is|are)\s+not\s+[^,.!?;:]{1,70}\bbut\b|^(?:the\s+
 const PARALLEL_CONTRAST_RE = /(?:\bon the one hand\b|\bon the other hand\b|\brather than\b|\bnot\b[^.!?;]{1,100}\bbut\b|\bthe\s+[A-Za-z-]+(?:\s+[A-Za-z-]+){0,3}\s+view\s+holds\b)/i;
 const CITATION_RE = /(?:\([^)\n]{0,180}(?:18|19|20)\d{2}[a-z]?[^)\n]*\)|\b[A-Z][A-Za-z'’-]+(?:\s+(?:&|and)\s+[A-Z][A-Za-z'’-]+|\s+et al\.)?\s*\((?:18|19|20)\d{2}[a-z]?\))/;
 
+const PARENTHETICAL_CITATION_RE = /\([^\)]{0,400}(?:(?:18|19|20)\d{2}[a-z]?|n\.d\.)[^\)]*\)/gi;
+
 function ratio(numerator, denominator) {
   return denominator ? Number((numerator / denominator).toFixed(4)) : 0;
 }
@@ -38,6 +40,25 @@ function lastSentenceIndices(structure) {
     .filter(Number.isInteger);
 }
 
+function hasThreePartEnumeration(sentence) {
+  const withoutCitations = String(sentence || "").replace(PARENTHETICAL_CITATION_RE, "");
+  const clauses = withoutCitations.split(/\s+(?:yet|but|although|though|whereas|while)\s+|;/i);
+  return clauses.some((clause) => {
+    const selected = clause.includes(":") ? clause.slice(clause.lastIndexOf(":") + 1) : clause;
+    const segment = selected.trim().replace(/^[,:]\s*|\s*[,:]$/g, "");
+    const originalCommaCount = (segment.match(/,/g) || []).length;
+    const normalised = segment.replace(/,\s+(and|or)\s+/gi, " $1 ").trim();
+    if (!/,/.test(normalised) || !/\s+(?:and|or)\s+/i.test(normalised)) return false;
+    const commaCount = (normalised.match(/,/g) || []).length;
+    const conjunctionCount = (normalised.match(/\s+(?:and|or)\s+/gi) || []).length;
+    if (commaCount === 1 && conjunctionCount === 1) return true;
+    // A three-clause "whether" construction can contain an internal and/or in
+    // the final clause. The two original commas still mark the three parallel
+    // propositions, so do not miscount that internal relationship as item four.
+    return /\bwhether\b/i.test(segment) && originalCommaCount === 2 && commaCount === 1 && conjunctionCount === 2;
+  });
+}
+
 export function analyseDiscourseArchitecture(text, suppliedStructure = null) {
   const sentences = splitSentences(text);
   const structure = suppliedStructure || parseTextStructure(text);
@@ -49,6 +70,7 @@ export function analyseDiscourseArchitecture(text, suppliedStructure = null) {
     return words >= 4 && words <= 24 && !CITATION_RE.test(sentence) && APHORISTIC_RE.test(sentence);
   });
   const parallelContrastIndices = indicesMatching(sentences, (sentence) => PARALLEL_CONTRAST_RE.test(sentence));
+  const triadicEnumerationIndices = indicesMatching(sentences, hasThreePartEnumeration);
 
   const paragraphLastIndices = lastSentenceIndices(structure);
   const closureIndices = paragraphLastIndices.filter((index) => CLOSURE_RE.test(sentences[index] || ""));
@@ -64,6 +86,8 @@ export function analyseDiscourseArchitecture(text, suppliedStructure = null) {
     explicit_transition_opening_ratio: ratio(transitionIndices.length, sentences.length),
     aphoristic_compression_count: aphoristicIndices.length,
     parallel_contrast_count: parallelContrastIndices.length,
+    triadic_enumeration_count: triadicEnumerationIndices.length,
+    triadic_enumeration_ratio: ratio(triadicEnumerationIndices.length, sentences.length),
     paragraph_closure_signal_count: closureIndices.length,
     paragraph_closure_signal_ratio: ratio(closureIndices.length, paragraphCount),
   };
@@ -117,6 +141,16 @@ export function analyseDiscourseArchitecture(text, suppliedStructure = null) {
       sentenceIndices: parallelContrastIndices,
       interpretation: "Balanced contrasts and parallel oppositions recur often enough to make the reasoning feel architecturally symmetrical.",
       action: "Preserve real contrasts, but do not force every competing idea into a matched pair. Allow asymmetry where the evidence or conceptual weight is asymmetric.",
+    });
+  }
+
+  if (triadicEnumerationIndices.length >= 4 || (sentences.length >= 12 && triadicEnumerationIndices.length >= 3 && metrics.triadic_enumeration_ratio >= 0.08)) {
+    signals.push({
+      id: "triadic_enumeration_saturation",
+      severity: triadicEnumerationIndices.length >= 7 || (sentences.length >= 12 && triadicEnumerationIndices.length >= 5 && metrics.triadic_enumeration_ratio >= 0.14) ? "high" : "medium",
+      sentenceIndices: triadicEnumerationIndices,
+      interpretation: `${triadicEnumerationIndices.length} sentences package distinct material into three-part lists or parallel triads. Individual triads may be accurate and useful, but their recurrence gives unrelated propositions the same pre-balanced architecture.`,
+      action: "Preserve every substantive item. Keep fixed taxonomies, formal construct lists and evidentially necessary groupings intact; elsewhere, vary the relationship through explanation, clause hierarchy, sequencing or selective sentence redistribution rather than repeatedly presenting a completed set of three.",
     });
   }
 

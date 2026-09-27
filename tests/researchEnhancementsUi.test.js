@@ -49,15 +49,17 @@ test("large CSV/XLSX literature bank is independent from the eight-source eviden
   assert.match(evidenceBank, /APA 7 REFERENCE CANDIDATE/);
 });
 
-test("detector screenshot UX exposes a detector chooser and an explicit save action", () => {
+test("detector report UX exposes a detector chooser, PDF support and an explicit save action", () => {
   assert.match(quickBridge, /MAX_SCREENSHOT_BYTES = 2 \* 1024 \* 1024/);
   assert.match(quickBridge, /image\/png/);
   assert.match(quickBridge, /image\/jpeg/);
+  assert.match(quickBridge, /application\/pdf/);
+  assert.match(quickBridge, /MAX_PDF_BYTES = 5 \* 1024 \* 1024/);
   assert.match(quickBridge, /detectorScreenshotDetector/);
-  assert.match(quickBridge, /Auto-detect from screenshot/);
+  assert.match(quickBridge, /Auto-detect from report/);
   assert.match(quickBridge, /GPTZero/);
   assert.match(quickBridge, /Turnitin/);
-  assert.match(quickBridge, /Read screenshot/);
+  assert.match(quickBridge, /Read report/);
   assert.match(quickBridge, /Save extracted result/);
 });
 

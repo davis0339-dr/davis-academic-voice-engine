@@ -1,3 +1,5 @@
+import { classifyPreservationRelease } from "./preservationRelease.js";
+
 // Deterministic audit of whether a model response actually followed the planner's
 // requested intervention. This is not an authorship detector. Concrete plan
 // execution, paragraph-level discourse scope, visible-change plausibility,
@@ -32,13 +34,14 @@ function plannedCounts(result) {
   const keep = Number(summary.KEEP || 0);
   const micro = Number(summary.MICRO_EDIT || 0);
   const discourseRepackage = Number(summary[DISCOURSE_REPACKAGE_LEVEL] || 0);
+  const paragraphReorders = Number(summary.PARAGRAPH_REORDER || 0);
   const substantive = [...SUBSTANTIVE_LEVELS].reduce((sum, key) => sum + Number(summary[key] || 0), 0);
   // DISCOURSE_REPACKAGE identifies material that belongs to a paragraph-level
   // reconstruction. It authorises structural handling but does not demand one
   // independently countable rewrite per source sentence.
   const intervention = Math.max(0, total - keep - discourseRepackage);
   const materialIntervention = Math.max(0, total - keep);
-  return { total, keep, micro, substantive, discourseRepackage, intervention, materialIntervention };
+  return { total, keep, micro, substantive, discourseRepackage, paragraphReorders, intervention, materialIntervention };
 }
 
 function reportedCounts(result) {
@@ -56,14 +59,18 @@ function reportedCounts(result) {
 
 function preservationAssessment(result) {
   const p = result?.preservation || {};
+  const release = classifyPreservationRelease(p);
   const reasons = [];
-  if (!p.numbers_ok) reasons.push("Numbers or numeric relationships were not fully preserved.");
-  if (!p.citations_ok) reasons.push("One or more source citations were dropped, altered or newly introduced.");
-  if (!p.technical_terms_ok) reasons.push("Protected technical terms or acronyms were not fully preserved.");
-  if (!p.quotes_ok) reasons.push("Quoted material did not survive the revision as required.");
+  if (p.numbers_ok === false) reasons.push("Numbers or numeric relationships were not fully preserved.");
+  if (p.citations_ok === false) reasons.push("One or more source citations were dropped or altered.");
+  if (p.technical_terms_ok === false) reasons.push("Protected technical terms or acronyms were not fully preserved.");
+  if (p.quotes_ok === false) reasons.push("Quoted material did not survive the revision as required.");
   if (p.study_stage_ok === false) reasons.push("The revision changed proposal/completed-study orientation.");
-  if (p.new_factual_claims_detected) reasons.push("The preservation audit detected a new factual claim or factual drift.");
-  return { passed: reasons.length === 0, reasons };
+  if (p.document_structure_ok === false) reasons.push("The revision changed protected document structure.");
+  if (p.list_counts_ok === false) reasons.push("The revision introduced an inconsistent explicit list count.");
+  if (release.semantic_force_failure) reasons.push("The revision altered modality, causality, scope, magnitude, direction, comparison or temporality.");
+  if (release.aggregate_factual_failure && reasons.length === 0) reasons.push("The preservation audit detected a new factual claim or factual drift.");
+  return { passed: !release.repair_required, reasons, release };
 }
 
 function executionStatus(underReasons, overReasons, varianceReasons = []) {
@@ -231,6 +238,8 @@ export function assessExecutionCompliance(result) {
     : null;
   const changedSentenceRatio = unchangedSentenceRatio === null ? null : clamp01(1 - unchangedSentenceRatio);
   const reportedSubstantiveRatio = planned.total ? reported.substantive / planned.total : 0;
+  const diagnosticBreadth = authority.breadth_enforcement === "diagnostic";
+  const preservation = preservationAssessment(result);
 
   const underReasons = [];
   const underCodes = [];
@@ -283,10 +292,17 @@ export function assessExecutionCompliance(result) {
     changedSentenceRatio !== null &&
     changedSentenceRatio + 0.03 < minChangedSentenceRatio
   ) {
-    addVariance(
-      "VISIBLE_CHANGE_FLOOR",
-      `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences visibly changed, below the ${Math.round(minChangedSentenceRatio * 100)}% preservation-aware plausibility floor. Concrete plan execution is evaluated separately; this is an execution variance for review, not a rewrite target and not a reason by itself to regenerate more text.`
-    );
+    if (authority.minimum_basis === "broad_deep_discourse_execution_floor") {
+      addUnder(
+        "BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED",
+        `Independent comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences visibly changed although Deep discourse reconstruction covered ${Math.round(Number(authority.planned_discourse_repackage_ratio || 0) * 100)}% of planner units. The ${Math.round(minChangedSentenceRatio * 100)}% floor is a plausibility safeguard for this unusually broad plan, not a rewrite quota; falling below it shows that the paragraph-level reconstruction was not materially realised.`
+      );
+    } else {
+      addVariance(
+        "VISIBLE_CHANGE_FLOOR",
+        `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences visibly changed, below the ${Math.round(minChangedSentenceRatio * 100)}% preservation-aware plausibility floor. Concrete plan execution is evaluated separately; this is an execution variance for review, not a rewrite target and not a reason by itself to regenerate more text.`
+      );
+    }
   }
 
   const maxChangedSentenceRatio = Number.isFinite(Number(authority.max_changed_sentence_ratio))
@@ -297,11 +313,86 @@ export function assessExecutionCompliance(result) {
     : Math.min(0.92, ratio(planned.substantive + planned.discourseRepackage, planned.total, 0) + 0.30);
 
   if (planned.total >= 8 && changedSentenceRatio !== null && changedSentenceRatio > maxChangedSentenceRatio + 0.03) {
-    addOver("MAX_CHANGED_SENTENCE_BREADTH", `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, above the ${Math.round(maxChangedSentenceRatio * 100)}% maximum breadth authorised by this plan.`);
+    const reason = diagnosticBreadth
+      ? `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, above the plan's ${Math.round(maxChangedSentenceRatio * 100)}% diagnostic reference. High change is not itself a defect; meaning, evidence, argument and structural authority are evaluated separately.`
+      : `Independent source/revision comparison finds ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, above the ${Math.round(maxChangedSentenceRatio * 100)}% maximum breadth authorised by this plan.`;
+    if (diagnosticBreadth) addVariance("HIGH_CHANGED_SENTENCE_BREADTH", reason);
+    else addOver("MAX_CHANGED_SENTENCE_BREADTH", reason);
   }
 
   if (planned.total >= 8 && reportedSubstantiveRatio > maxSubstantiveRatio + 0.12) {
-    addOver("MAX_SUBSTANTIVE_BREADTH", `Model-reported substantive operations equal ${(reportedSubstantiveRatio * 100).toFixed(0)}% of planner units, above the ${Math.round(maxSubstantiveRatio * 100)}% structural breadth ceiling after the split/merge tolerance.`);
+    const reason = diagnosticBreadth
+      ? `Model-reported substantive operations equal ${(reportedSubstantiveRatio * 100).toFixed(0)}% of planner units, above the plan's ${Math.round(maxSubstantiveRatio * 100)}% diagnostic reference after split/merge tolerance.`
+      : `Model-reported substantive operations equal ${(reportedSubstantiveRatio * 100).toFixed(0)}% of planner units, above the ${Math.round(maxSubstantiveRatio * 100)}% structural breadth ceiling after split/merge tolerance.`;
+    if (diagnosticBreadth) addVariance("HIGH_SUBSTANTIVE_BREADTH", reason);
+    else addOver("MAX_SUBSTANTIVE_BREADTH", reason);
+  }
+
+  if (
+    reported.paragraphReorders > planned.paragraphReorders &&
+    authority.paragraph_reordering_authorised !== true
+  ) {
+    addOver(
+      "UNAUTHORISED_PARAGRAPH_REORDER",
+      `The model reported ${reported.paragraphReorders} paragraph reorder(s), but this mode did not authorise paragraph resequencing.`
+    );
+  }
+
+  // The model-authored edit summary is supporting evidence, not an independent
+  // measurement. If deterministic comparison proves that the candidate changed
+  // more text than authorised, a sparse self-report cannot simultaneously prove
+  // that too little editing occurred. Preserve the discrepancy as an auditable
+  // variance while classifying the actionable defect as over-execution.
+  if (overCodes.includes("MAX_CHANGED_SENTENCE_BREADTH") && underCodes.length > 0) {
+    const summaryCoverageCodes = new Set([
+      "PLAN_INTERVENTION_COVERAGE",
+      "PLAN_STRUCTURAL_COVERAGE",
+      "DISCOURSE_CONCRETE_COVERAGE",
+    ]);
+    let movedSummaryCoverage = false;
+    for (let index = underCodes.length - 1; index >= 0; index -= 1) {
+      if (!summaryCoverageCodes.has(underCodes[index])) continue;
+      underCodes.splice(index, 1);
+      underReasons.splice(index, 1);
+      movedSummaryCoverage = true;
+    }
+    if (movedSummaryCoverage) {
+      addVariance(
+        "MODEL_EDIT_SUMMARY_UNDERREPORTING",
+        `The model reported ${reported.intervention} concrete edit(s), while independent source/revision comparison found ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed. The self-reported edit counts are inconsistent and are not used to misclassify this over-edited candidate as under-executed.`
+      );
+    }
+  }
+
+  // In broad discourse reconstruction, deterministic source/revision distance
+  // outranks the model's own edit-count narration. A candidate that materially
+  // cleared the independently measured floor, passed the transformation gate,
+  // and preserved the source cannot be rejected solely because the model
+  // under-counted its edits. The discrepancy remains visible as variance.
+  const independentlyMaterialExecution = effectiveIntent === "discourse_reconstruction"
+    && changedSentenceRatio !== null
+    && changedSentenceRatio >= Math.max(0.55, minChangedSentenceRatio)
+    && quality.passed !== false
+    && preservation.passed;
+  if (independentlyMaterialExecution && underCodes.length > 0) {
+    const summaryCoverageCodes = new Set([
+      "PLAN_INTERVENTION_COVERAGE",
+      "PLAN_STRUCTURAL_COVERAGE",
+      "DISCOURSE_CONCRETE_COVERAGE",
+    ]);
+    let moved = false;
+    for (let index = underCodes.length - 1; index >= 0; index -= 1) {
+      if (!summaryCoverageCodes.has(underCodes[index])) continue;
+      underCodes.splice(index, 1);
+      underReasons.splice(index, 1);
+      moved = true;
+    }
+    if (moved && !varianceCodes.includes("MODEL_EDIT_SUMMARY_UNDERREPORTING")) {
+      addVariance(
+        "MODEL_EDIT_SUMMARY_UNDERREPORTING",
+        `The model's edit summary under-reports execution: independent comparison found ${(changedSentenceRatio * 100).toFixed(0)}% of source sentences changed, the transformation-quality gate passed, and factual preservation passed. Self-reported operation counts remain supporting evidence only.`
+      );
+    }
   }
 
   if (planned.total > 0 && reported.total > 0) {
@@ -311,7 +402,6 @@ export function assessExecutionCompliance(result) {
     }
   }
 
-  const preservation = preservationAssessment(result);
   const status = executionStatus(underReasons, overReasons, varianceReasons);
   const executionPassed = status === "passed" || status === "passed-with-variance";
   const hasVariance = varianceReasons.length > 0;
@@ -319,10 +409,10 @@ export function assessExecutionCompliance(result) {
   const visiblePlausibilityScore = changedSentenceRatio === null || minChangedSentenceRatio <= 0 || changedSentenceRatio >= minChangedSentenceRatio
     ? 1
     : clamp01(changedSentenceRatio / Math.max(0.05, minChangedSentenceRatio));
-  const breadthScore = changedSentenceRatio === null || changedSentenceRatio <= maxChangedSentenceRatio
+  const breadthScore = diagnosticBreadth || changedSentenceRatio === null || changedSentenceRatio <= maxChangedSentenceRatio
     ? 1
     : clamp01(1 - (changedSentenceRatio - maxChangedSentenceRatio) / Math.max(0.15, maxChangedSentenceRatio));
-  const substantiveBreadthScore = reportedSubstantiveRatio <= maxSubstantiveRatio + 0.12
+  const substantiveBreadthScore = diagnosticBreadth || reportedSubstantiveRatio <= maxSubstantiveRatio + 0.12
     ? 1
     : clamp01(1 - (reportedSubstantiveRatio - maxSubstantiveRatio) / Math.max(0.15, maxSubstantiveRatio));
 
@@ -339,13 +429,17 @@ export function assessExecutionCompliance(result) {
   const overallScore = Number(((executionScore * 3 + (preservation.passed ? 1 : 0)) / 4).toFixed(3));
 
   return {
-    version: "planner-execution-compliance-v5",
+    version: "planner-execution-compliance-v8",
     passed: executionPassed,
     execution_passed: executionPassed,
     execution_status: status,
     plan_fidelity_status: underReasons.length ? "under-executed" : overReasons.length ? "over-executed" : "passed",
     plan_fidelity_passed: underReasons.length === 0 && overReasons.length === 0,
-    visible_change_plausibility_status: hasVariance ? "below-plausibility-floor" : "within-authorised-band",
+    visible_change_plausibility_status: varianceCodes.includes("VISIBLE_CHANGE_FLOOR")
+      ? "below-plausibility-floor"
+      : varianceCodes.some((code) => code.startsWith("HIGH_"))
+        ? "high-change-diagnostic"
+        : "within-authorised-band",
     visible_change_plausibility_score: Number(visiblePlausibilityScore.toFixed(3)),
     under_executed: underReasons.length > 0,
     over_executed: overReasons.length > 0,
@@ -368,6 +462,13 @@ export function assessExecutionCompliance(result) {
     changed_sentence_ceiling: Number(maxChangedSentenceRatio.toFixed(3)),
     substantive_operation_ratio: Number(reportedSubstantiveRatio.toFixed(3)),
     substantive_operation_ceiling: Number(maxSubstantiveRatio.toFixed(3)),
+    independent_execution_evidence: {
+      deterministic_changed_sentence_ratio: changedSentenceRatio === null ? null : Number(changedSentenceRatio.toFixed(3)),
+      transformation_quality_passed: quality.passed !== false,
+      preservation_passed: preservation.passed,
+      materially_executed: independentlyMaterialExecution,
+      model_edit_summary_role: "supporting_not_controlling",
+    },
     reasons: [...underReasons, ...overReasons],
     under_execution_codes: underCodes,
     over_execution_codes: overCodes,
@@ -395,3 +496,4 @@ export function preferByExecutionCompliance(firstResult, secondResult) {
   if (second.overall_score > first.overall_score) return { result: secondResult, compliance: second, selected: "second" };
   return { result: firstResult, compliance: first, selected: "first" };
 }
+

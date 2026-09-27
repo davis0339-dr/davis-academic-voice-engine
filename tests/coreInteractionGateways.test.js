@@ -8,14 +8,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
-test("Editor serves a core detector screenshot gateway instead of relying only on optional UI", () => {
+test("Editor serves a core detector report gateway instead of relying only on optional UI", () => {
   const html = read("public/index.html");
   assert.match(html, /id="detectorScreenshotGateway"/);
-  assert.match(html, /Detector Gateway v1\.0\.0/);
+  assert.match(html, /Detector Gateway v1\.3\.0/);
   assert.match(html, /id="detectorScreenshotInput"[^>]*type="file"/);
-  assert.match(html, /Choose from device/);
+  assert.match(html, /Choose detector report file\(s\)/);
+  assert.match(html, /application\/pdf/);
   assert.match(html, /id="detectorScreenshotDropZone"/);
-  assert.match(html, /detectorScreenshotGateway\.js\?v=1\.0\.0/);
+  assert.match(html, /detectorScreenshotGateway\.js\?v=1\.3\.0/);
 });
 
 test("Detector gateway directly opens device files, supports drop-paste and persists observations", () => {
@@ -27,6 +28,10 @@ test("Detector gateway directly opens device files, supports drop-paste and pers
   assert.match(js, /\/api\/detector-screenshot/);
   assert.match(js, /academicVoice\.detectorObservations\.v1/);
   assert.match(js, /academicVoice:detector-observation-saved/);
+  assert.match(js, /MAX_PDF_BYTES = 5 \* 1024 \* 1024/);
+  assert.match(js, /fileBase64/);
+  assert.match(js, /Large PDF reports are automatically re-read in bounded pattern and passage phases/);
+  assert.match(js, /Complete report extraction/);
 });
 
 test("Deep Authorial cannot coexist silently with Moderate intensity in the browser controls", () => {

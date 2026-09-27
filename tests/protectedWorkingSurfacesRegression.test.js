@@ -30,9 +30,9 @@ test("Voice Reasoning keeps explicit consent, language choice and direct argumen
 });
 
 test("detector evidence upload remains an explicit clickable workflow", () => {
-  assert.match(detector, /Choose detector evidence screenshot/);
-  assert.match(detector, /Read selected screenshot/);
-  assert.match(detector, /Detector shown in screenshot/);
+  assert.match(detector, /Choose detector report file\(s\)/);
+  assert.match(detector, /Read selected report file\(s\)/);
+  assert.match(detector, /Detector shown in report/);
 });
 
 test("large Literature Evidence Bank remains operational and receives Long Document evidence-needs handoff additively", () => {

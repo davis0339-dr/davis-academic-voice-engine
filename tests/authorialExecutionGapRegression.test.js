@@ -73,7 +73,77 @@ test("material authorial reconstruction is not misclassified as over-editing whe
   assert.equal(compliance.execution_status, "passed");
 });
 
-test("nominal deep reconstruction is rejected for concrete structural under-execution while low visible change remains a separate variance", () => {
+test("broad Deep aggressive discourse scope cannot clear at barely half-visible execution", () => {
+  const plan = { DISCOURSE_REPACKAGE: 57, SENTENCE_RESTRUCTURE: 1 };
+  const authority = deriveInterventionAuthority({
+    planSummary: plan,
+    authorialTexture: { preservation_priority: "medium", machine_pattern_regularity: { score: 0.42 } },
+    requestedIntensity: "deep",
+    requestedNaturalisation: "aggressive",
+    effectiveIntent: "discourse_reconstruction",
+  });
+  assert.equal(authority.minimum_basis, "broad_deep_discourse_execution_floor");
+  assert.ok(authority.min_changed_sentence_ratio >= 0.64);
+
+  const compliance = assessExecutionCompliance({
+    intervention_plan_summary: plan,
+    intervention_intent: { effective: "discourse_reconstruction" },
+    intervention_authority: authority,
+    edit_summary: {
+      kept: 36,
+      micro_edits: 0,
+      sentence_restructures: 22,
+      split_or_merge: 0,
+      paragraph_reorders: 0,
+    },
+    transformation_quality: { unchanged_sentence_ratio: 0.48 },
+    preservation: preservationPassed(),
+  });
+
+  assert.equal(compliance.execution_passed, false);
+  assert.ok(compliance.under_execution_codes.includes("BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED"));
+});
+
+test("the live Deep Authorial shape cannot clear a mostly retained 41%-change candidate", () => {
+  const plan = {
+    DISCOURSE_REPACKAGE: 46,
+    MICRO_EDIT: 10,
+    SENTENCE_RESTRUCTURE: 1,
+    SPLIT_OR_MERGE: 1,
+    KEEP: 4,
+  };
+  const authority = deriveInterventionAuthority({
+    planSummary: plan,
+    authorialTexture: { preservation_priority: "medium", machine_pattern_regularity: { score: 0.42 } },
+    requestedIntensity: "deep",
+    requestedNaturalisation: "authorial",
+    effectiveIntent: "discourse_reconstruction",
+  });
+
+  assert.equal(authority.authorial_mode, true);
+  assert.equal(authority.minimum_basis, "broad_deep_discourse_execution_floor");
+  assert.ok(authority.min_changed_sentence_ratio >= 0.48);
+
+  const compliance = assessExecutionCompliance({
+    intervention_plan_summary: plan,
+    intervention_intent: { effective: "discourse_reconstruction" },
+    intervention_authority: authority,
+    edit_summary: {
+      kept: 0,
+      micro_edits: 9,
+      sentence_restructures: 1,
+      split_or_merge: 1,
+      paragraph_reorders: 0,
+    },
+    transformation_quality: { unchanged_sentence_ratio: 0.59 },
+    preservation: preservationPassed(),
+  });
+
+  assert.equal(compliance.execution_passed, false);
+  assert.ok(compliance.under_execution_codes.includes("BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED"));
+});
+
+test("nominal broad Deep reconstruction treats low visible change as concrete under-execution", () => {
   const authority = deriveInterventionAuthority({
     planSummary: discourseHeavyPlan,
     authorialTexture: strongTexture,
@@ -102,5 +172,28 @@ test("nominal deep reconstruction is rejected for concrete structural under-exec
   assert.equal(compliance.plan_fidelity_status, "under-executed");
   assert.ok(compliance.under_execution_codes.includes("PLAN_STRUCTURAL_COVERAGE"));
   assert.equal(compliance.under_execution_codes.includes("VISIBLE_CHANGE_FLOOR"), false);
-  assert.ok(compliance.execution_variance_codes.includes("VISIBLE_CHANGE_FLOOR"));
+  assert.ok(compliance.under_execution_codes.includes("BROAD_DEEP_DISCOURSE_UNDER_TRANSFORMED"));
+});
+
+test("independent 91 percent change and preservation evidence override an under-reported edit summary", () => {
+  const plan = { DISCOURSE_REPACKAGE: 1, SENTENCE_RESTRUCTURE: 14, MICRO_EDIT: 32, SPLIT_OR_MERGE: 12 };
+  const authority = deriveInterventionAuthority({
+    planSummary: plan,
+    authorialTexture: strongTexture,
+    requestedIntensity: "deep",
+    requestedNaturalisation: "aggressive",
+    effectiveIntent: "discourse_reconstruction",
+  });
+  const compliance = assessExecutionCompliance({
+    intervention_plan_summary: plan,
+    intervention_intent: { effective: "discourse_reconstruction" },
+    intervention_authority: authority,
+    edit_summary: { kept: 0, micro_edits: 3, sentence_restructures: 2, split_or_merge: 0, paragraph_reorders: 0 },
+    transformation_quality: { unchanged_sentence_ratio: 0.09, passed: true },
+    preservation: preservationPassed(),
+  });
+  assert.equal(compliance.execution_passed, true);
+  assert.equal(compliance.under_executed, false);
+  assert.ok(compliance.execution_variance_codes.includes("MODEL_EDIT_SUMMARY_UNDERREPORTING"));
+  assert.equal(compliance.independent_execution_evidence.materially_executed, true);
 });

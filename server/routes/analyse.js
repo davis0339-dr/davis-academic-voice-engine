@@ -51,16 +51,19 @@ analyseRouter.post("/analyse", (req, res) => {
     });
 
     const discourseRegularityForensics = sourceAssessment.diagnostics?.discourse_regularity_forensics || null;
+    const machineLanguageForensics = sourceAssessment.diagnostics?.machine_language_forensics || null;
 
     res.json({
       ...result,
       authorial_texture: sourceAssessment.authorial_texture,
       discourse_regularity_forensics: discourseRegularityForensics,
+      machine_language_forensics: machineLanguageForensics,
       intervention_authority: authority,
       rewrite_mode_policy: modePolicy,
       source_assessment: {
         authorial_texture: sourceAssessment.authorial_texture,
         discourse_regularity_forensics: discourseRegularityForensics,
+        machine_language_forensics: machineLanguageForensics,
         cadence_deviation: sourceAssessment.cadence_deviation,
         measured_language_deviation: sourceAssessment.measured_language_deviation,
         note: "Pre-generation assessment separates surface quality, authorial texture and cross-paragraph discourse regularity. It constrains rewrite breadth without claiming to establish authorship.",

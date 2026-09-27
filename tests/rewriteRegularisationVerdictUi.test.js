@@ -13,9 +13,10 @@ test("candidate verdict surfaces lexical and structural regularisation as a sepa
   assert.match(ui, /long-word Δ/);
 });
 
-test("a blocking regularisation result is not displayed as an accepted final candidate", () => {
-  assert.match(ui, /review-required-regularisation-risk/);
-  assert.match(ui, /Candidate not cleared as successful in the UI/);
+test("regularisation remains advisory when the server delivered a preservation-safe candidate", () => {
+  assert.match(ui, /if \(verdict\?\.final_status === "accepted"\) return "accepted"/);
+  assert.match(ui, /const delivered = finalStatus === "accepted"/);
+  assert.doesNotMatch(ui, /Candidate not cleared as successful in the UI/);
 });
 
 test("Deep surgical fallback is described as a safe fallback rather than successful reconstruction", () => {

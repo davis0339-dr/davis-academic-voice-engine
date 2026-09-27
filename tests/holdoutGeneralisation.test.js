@@ -87,7 +87,18 @@ test("preservation audit rejects first-person researcher voice introduced into a
   const revised = "Table 1 presents the alignment of the study. I use the alternative denominator as a robustness test.";
   const audit = auditPreservation(source, revised);
   assert.equal(audit.researcher_voice_ok, false);
+  assert.equal(audit.new_factual_claims_detected, false);
   assert.ok(audit.warnings.some((w) => w.type === "researcher_voice_shift"));
+});
+
+test("a protected value moved to an unrelated claim is surfaced for attachment review without a false hard verdict", () => {
+  const source = "Borrowing costs reached 7% for manufacturing firms in the sample. Employee retention remained stable during the period.";
+  const revised = "Borrowing costs changed for manufacturing firms in the sample. Employee retention reached 7% and remained stable during the period.";
+  const audit = auditPreservation(source, revised);
+  assert.equal(audit.numbers_ok, true);
+  assert.equal(audit.new_factual_claims_detected, false);
+  assert.ok(audit.claim_attachment_review.some((item) => item.item === "7%"));
+  assert.ok(audit.warnings.some((warning) => warning.type === "claim_attachment_review"));
 });
 
 test("preservation audit rejects Section-to-Chapter structure drift", () => {
