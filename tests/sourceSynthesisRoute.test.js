@@ -42,9 +42,10 @@ async function postSynthesis(providerResponse) {
   }
 }
 
-test("a 1,500-word synthesis gets room for its notebook and JSON, not just the prose", () => {
-  assert.ok(synthesisMaxTokens(1500) >= 8000);
-  assert.ok(synthesisMaxTokens(6000) <= 32000);
+test("the synthesis budget grows with sections but stays inside the non-streaming ceiling", () => {
+  assert.ok(synthesisMaxTokens(1500, 1) >= 8000);
+  assert.ok(synthesisMaxTokens(1500, 8) > synthesisMaxTokens(1500, 1));
+  assert.equal(synthesisMaxTokens(6000, 30), 16000);
 });
 
 test("a synthesis cut off at the token limit returns a clear message instead of a JSON parser error", async () => {
@@ -54,7 +55,8 @@ test("a synthesis cut off at the token limit returns a clear message instead of 
   assert.equal(body.error, "SYNTHESIS_TRUNCATED");
   assert.match(body.message, /cut off/);
   assert.doesNotMatch(body.message, /JSON|position/);
-  assert.equal(sentBody.max_tokens, synthesisMaxTokens(1500));
+  assert.equal(sentBody.max_tokens, synthesisMaxTokens(1500, 1));
+  assert.equal(JSON.parse(sentBody.messages[0].content).response_token_limit, sentBody.max_tokens);
 });
 
 test("an unreadable synthesis response is reported plainly", async () => {
