@@ -132,6 +132,10 @@ function cleanSources(value) {
   })).filter((source) => source.text);
 }
 
+export function synthesisMaxTokens(targetWords) {
+  return Math.min(32000, Math.max(8000, Math.round(targetWords * 3.2) + 4000));
+}
+
 function synthesisProviderError(res, error, requestId) {
   const state = error?.healthState || HealthState.PROVIDER_ERROR;
   const status = state === HealthState.NOT_CONFIGURED ? 503 : state === HealthState.RATE_LIMITED ? 429 : 502;
@@ -172,12 +176,25 @@ sourceAuthoringRouter.post("/source-authoring/synthesize", llmProvider.usageMidd
   }
 
   try {
+    // The response carries the notebook, citations and quotes as JSON around the
+    // prose itself, so it needs far more room than the target word count alone.
+    const maxTokens = synthesisMaxTokens(targetWords);
     const result = await llmProvider.callAnthropic({
       system: SOURCE_SYNTHESIS_SYSTEM,
       messages: [{ role: "user", content: JSON.stringify(build.packet) }],
-      maxTokens: Math.min(12000, Math.max(4200, Math.round(targetWords * 1.8) + 1800)),
+      maxTokens,
+      timeoutOverrideMs: Math.min(240000, 60000 + maxTokens * 15),
     });
-    const synthesis = normalizeSourceSynthesis(extractJsonObject(result.text), build);
+    if (result.raw?.stop_reason === "max_tokens") {
+      return res.status(502).json({ error: "SYNTHESIS_TRUNCATED", message: `The synthesis ran past the ${maxTokens.toLocaleString()}-token response limit and was cut off, so nothing was saved. Lower the target words, use fewer studies or choose fewer verbatim quotations, then try again.`, requestId: req.requestId });
+    }
+    let parsed;
+    try {
+      parsed = extractJsonObject(result.text);
+    } catch {
+      return res.status(502).json({ error: "SYNTHESIS_UNREADABLE", message: "The provider returned a synthesis in an unreadable format, so nothing was saved. Please try again.", requestId: req.requestId });
+    }
+    const synthesis = normalizeSourceSynthesis(parsed, build);
     if (!synthesis.synthesis_text) {
       return res.status(502).json({ error: "EMPTY_SYNTHESIS", message: "The provider returned no usable synthesis. The evidence map remains available and no empty output was saved.", requestId: req.requestId });
     }
