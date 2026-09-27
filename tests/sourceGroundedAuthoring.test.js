@@ -262,3 +262,17 @@ test("extracts never splice text across a removed page-furniture line", () => {
   const assembly = deterministicSourceAssembly({ entryMode: "develop", structureText: "Literature review\nMonitoring, lenders and credit spreads under concentrated ownership.", sources: [source] });
   assert.equal(verifyAssemblyExtracts(assembly, [source]).exact, true);
 });
+
+test("reference-list entries after a References heading never become evidence extracts", () => {
+  const body = Array.from({ length: 8 }, (_, index) => `Stronger shareholder rights and board characteristics are associated with a lower cost of debt and cheaper bank loans in sample ${index + 1} because monitoring improves accounting report integrity.`).join("\n\n");
+  const source = {
+    id: "owusu",
+    title: "Owusu (2023)",
+    bibliographic: { author: "Owusu", year: "2023", title: "Governance and debt", metadata_confidence: "researcher_reviewed" },
+    text: `${body}\n\nReferences\n\nChava, S., D. Livdan, and A. Purnanandam, 2009, Do shareholder rights affect the cost of bank loans?, Review of Financial Studies 22, 2973-3004.\n\nAnderson, R. C., S. A. Mansi, and D. M. Reeb, 2004, Board characteristics, accounting report integrity, and the cost of debt, Journal of Accounting and Economics 37, 315-342.`,
+  };
+  const assembly = deterministicSourceAssembly({ entryMode: "develop", structureText: "Literature review\nShareholder rights, board characteristics, accounting report integrity and the cost of debt and bank loans.", sources: [source] });
+  const extracts = assembly.sections.flatMap((section) => section.blocks).filter((block) => block.type === "extract");
+  assert.ok(extracts.length > 0);
+  assert.ok(extracts.every((block) => !/Chava|Purnanandam|Mansi|Review of Financial Studies|Journal of Accounting/.test(block.text)));
+});

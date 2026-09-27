@@ -89,3 +89,12 @@ test("workspace pages carry no inline scripts that the CSP would block", async (
     assert.doesNotMatch(html, /<script>(?!<\/script>)/, page);
   }
 });
+
+test("the protected Editor handoff offers an explicit unlock so the draft is never a dead end", async () => {
+  const mode = await readFile(new URL("public/sourceAuthoringEditorMode.js", root), "utf8");
+  assert.match(mode, /Unlock and work on this text in Long Document/);
+  assert.match(mode, /Unlock and work on this text in the Editor/);
+  assert.match(mode, /window\.confirm\(/);
+  assert.match(mode, /!value\.unlocked/);
+  assert.match(mode, /startJob\.disabled = false/);
+});
