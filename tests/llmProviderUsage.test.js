@@ -101,3 +101,22 @@ test("request-scoped provider accounting stops new calls after the wall-clock bu
     else process.env.ANTHROPIC_API_KEY = previousKey;
   }
 });
+
+test("an API key pasted with surrounding whitespace is sent trimmed", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  const previousFetch = global.fetch;
+  process.env.ANTHROPIC_API_KEY = "  test-key-with-spaces\n";
+  let sentKey = null;
+  global.fetch = async (_url, options) => {
+    sentKey = options.headers["x-api-key"];
+    return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }], usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    await llmProvider.callAnthropic({ system: "test", messages: [{ role: "user", content: "one" }] });
+    assert.equal(sentKey, "test-key-with-spaces");
+  } finally {
+    global.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+  }
+});

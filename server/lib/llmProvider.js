@@ -24,7 +24,8 @@ export const HealthState = Object.freeze({
 });
 
 function getConfig() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  // Keys pasted into a dashboard often carry a trailing space or newline.
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
   const timeoutMs = Number(process.env.LLM_TIMEOUT_MS || 90000);
   return { apiKey, model, timeoutMs };
