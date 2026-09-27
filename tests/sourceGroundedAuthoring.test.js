@@ -236,3 +236,29 @@ test("guided matching is server-gated against a model selecting the wrong cited 
   assert.equal(guided.sections[0].blocks.some((block) => block.type === "extract"), false);
   assert.ok(guided.sections[0].blocks.some((block) => block.type === "review_note"));
 });
+
+test("decimals, p-values and academic abbreviations never break or drop extract sentences", () => {
+  const source = {
+    id: "okafor",
+    title: "Okafor (2021)",
+    bibliographic: { author: "Okafor", year: "2021", title: "Boards and debt pricing", metadata_confidence: "researcher_reviewed" },
+    text: "[Page 5]\n\nBoard independence is associated with a lower cost of debt in listed firms (p < 0.05). Using a panel of 412 firms, e.g. manufacturers and utilities, we estimate fixed-effects regressions with a coefficient of 0.42 on independence. Smith et al. (2019) report a similar mechanism operating through reduced information asymmetry between lenders and managers.",
+  };
+  const assembly = deterministicSourceAssembly({ entryMode: "develop", structureText: "Literature review\nBoard independence, information asymmetry and the cost of debt.", sources: [source] });
+  const extracts = assembly.sections.flatMap((section) => section.blocks).filter((block) => block.type === "extract");
+  assert.ok(extracts.length > 0);
+  assert.equal(verifyAssemblyExtracts(assembly, [source]).exact, true);
+  assert.ok(extracts.some((block) => block.text.includes("(p < 0.05).")));
+  assert.ok(extracts.every((block) => !/^(?:05\)|42 on|e\.g\.|\(2019\))/.test(block.text)));
+});
+
+test("extracts never splice text across a removed page-furniture line", () => {
+  const source = {
+    id: "lee",
+    title: "Lee (2018)",
+    bibliographic: { author: "Lee", year: "2018", title: "Monitoring and credit spreads", metadata_confidence: "researcher_reviewed" },
+    text: "[Page 8]\n[Line 1] Independent directors improve monitoring of managers and this is associated with lower credit spreads\n[Line 2] 214\n[Line 3] for firms whose lenders rely on accounting disclosure. The effect is weaker where ownership is concentrated.",
+  };
+  const assembly = deterministicSourceAssembly({ entryMode: "develop", structureText: "Literature review\nMonitoring, lenders and credit spreads under concentrated ownership.", sources: [source] });
+  assert.equal(verifyAssemblyExtracts(assembly, [source]).exact, true);
+});

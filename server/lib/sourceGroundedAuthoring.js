@@ -209,36 +209,71 @@ function pageRecords(sourceText) {
   return records;
 }
 
-function sentenceWindows(lines) {
-  const usable = lines.map((line, index) => {
-    const marked = String(line || "").match(/^\[Line\s+(\d+)\]\s*(.*)$/i);
-    return { line: Number(marked?.[1] || index + 1), text: normalizeSpace(marked?.[2] ?? line) };
-  }).filter((row) => usefulLine(row.text));
-  let joined = "";
-  const spans = [];
-  for (const row of usable) {
-    if (joined) joined += " ";
-    const start = joined.length;
-    joined += row.text;
-    spans.push({ start, end: joined.length, line: row.line });
-  }
+// A stop only ends a sentence when whitespace and a plausible sentence opening
+// follow it, so decimals such as "p < 0.05" or "0.42" never split. Common
+// academic abbreviations and author initials are not boundaries either.
+const SENTENCE_BOUNDARY = /[.!?]+["”’)\]]*\s+(?=["“(\[]?[A-Z0-9])/g;
+const ABBREVIATION_END = /(?:^|[\s(\[])(?:et al|e\.g|i\.e|cf|vs|etc|approx|Dr|Prof|Mr|Mrs|Ms|St|[Nn]o|pp?|[Ff]igs?|Eq|Eqs|Vol|Ch|Sec|n\.d|[A-Z])\.$/;
+
+function splitSourceSentences(joined) {
   const sentences = [];
-  const pattern = /[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g;
+  const push = (start, end) => {
+    const value = normalizeSpace(joined.slice(start, end));
+    if (value) sentences.push({ text: value, start, end });
+  };
+  let start = 0;
   let match;
-  while ((match = pattern.exec(joined))) {
-    const value = normalizeSpace(match[0]);
-    if (value) sentences.push({ text: value, start: match.index, end: pattern.lastIndex });
+  SENTENCE_BOUNDARY.lastIndex = 0;
+  while ((match = SENTENCE_BOUNDARY.exec(joined))) {
+    const stop = match.index + match[0].search(/[.!?]\s|[.!?]["”’)\]]/) + 1;
+    if (ABBREVIATION_END.test(joined.slice(start, stop))) continue;
+    const end = match.index + match[0].length;
+    push(start, end);
+    start = end;
   }
+  push(start, joined.length);
+  return sentences;
+}
+
+function contiguousRuns(lines) {
+  // Blank lines are paragraph spacing and may be crossed. Any other line that is
+  // filtered out (page number, running header, reference entry) breaks the run,
+  // so a window can never splice text around content missing from the extract.
+  const runs = [];
+  let current = [];
+  lines.forEach((line, index) => {
+    const marked = String(line || "").match(/^\[Line\s+(\d+)\]\s*(.*)$/i);
+    const row = { line: Number(marked?.[1] || index + 1), text: normalizeSpace(marked?.[2] ?? line) };
+    if (!row.text) return;
+    if (usefulLine(row.text)) current.push(row);
+    else if (current.length) { runs.push(current); current = []; }
+  });
+  if (current.length) runs.push(current);
+  return runs;
+}
+
+function sentenceWindows(lines) {
   const windows = [];
-  for (let index = 0; index < sentences.length; index += 1) {
-    for (const size of [2, 1, 3]) {
-      const selected = sentences.slice(index, index + size);
-      const value = selected.map((row) => row.text).join(" ");
-      if (substantivePassage(value)) {
-        const startLine = spans.find((span) => span.end >= selected[0].start)?.line || "";
-        const endLine = [...spans].reverse().find((span) => span.start <= selected[selected.length - 1].end)?.line || startLine;
-        windows.push({ text: value, startLine, endLine });
-        break;
+  for (const usable of contiguousRuns(lines)) {
+    let joined = "";
+    const spans = [];
+    for (const row of usable) {
+      if (joined) joined += " ";
+      const start = joined.length;
+      joined += row.text;
+      spans.push({ start, end: joined.length, line: row.line });
+    }
+    const sentences = splitSourceSentences(joined);
+    for (let index = 0; index < sentences.length; index += 1) {
+      for (const size of [2, 1, 3]) {
+        const selected = sentences.slice(index, index + size);
+        const value = normalizeSpace(joined.slice(selected[0].start, selected[selected.length - 1].end));
+        if (substantivePassage(value)) {
+          const startLine = spans.find((span) => span.end >= selected[0].start)?.line || "";
+          const endLine = [...spans].reverse().find((span) => span.start <= selected[selected.length - 1].end)?.line || startLine;
+          windows.push({ text: value, startLine, endLine });
+          break;
+        }
       }
     }
   }

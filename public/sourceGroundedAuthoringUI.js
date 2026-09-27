@@ -254,10 +254,7 @@
       if (!response.ok) throw new Error(data.message || "Source assembly failed.");
       if (!data.extraction_verified?.exact) throw new Error("Exact-source verification failed; no assembly was accepted.");
       state.assembly = data;
-      try {
-        localStorage.setItem(`${CACHE_PREFIX}${data.cache_key}`, JSON.stringify(data));
-        localStorage.setItem(LATEST_KEY, JSON.stringify({ entryMode: entryMode(), structureText, assembly: data }));
-      } catch {}
+      try { localStorage.setItem(LATEST_KEY, JSON.stringify({ entryMode: entryMode(), structureText, assembly: data })); } catch {}
       renderAssembly();
       const warning = data.warning ? ` ${data.warning}` : "";
       const gaps = (data.sections || []).flatMap((section) => section.blocks || []).filter((block) => block.type === "review_note").length;
@@ -574,7 +571,10 @@
       localStorage.setItem(HANDOFF_KEY, JSON.stringify(payload));
       localStorage.setItem(SOURCE_KEY, wordCount(draft) <= state.capabilities.singleEditorWordLimit ? draft : "");
       localStorage.setItem(REVISED_KEY, "");
-    } catch {}
+    } catch {
+      // Navigating now would open the destination without the draft.
+      return setStatus("The draft could not be saved for handoff because browser storage is full or blocked. Copy the draft manually, or clear this workspace and try again.", true);
+    }
     location.href = destination === "studio" ? "/studio?handoff=source-authoring" : "/editor?handoff=source-authoring";
   }
 
@@ -589,6 +589,17 @@
     renderSources();
     try { localStorage.removeItem(LATEST_KEY); localStorage.removeItem(SYNTHESIS_KEY); } catch {}
     setStatus("Source-led workspace cleared.");
+  }
+
+  function purgeRetiredPlanCache() {
+    // Earlier builds stored every assembly under CACHE_PREFIX and never read it
+    // back; those entries only consume the storage quota the handoff needs.
+    try {
+      for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(CACHE_PREFIX)) localStorage.removeItem(key);
+      }
+    } catch {}
   }
 
   function restoreLatest() {
@@ -640,6 +651,7 @@
     $("sendSynthesisStudioBtn").addEventListener("click", () => handoff("studio", "synthesis"));
     $("synthesisDraft").addEventListener("input", () => setStatus("The synthesis has researcher edits after generation; the displayed audit describes the generated version."));
     loadBuild();
+    purgeRetiredPlanCache();
     restoreLatest();
     updatePreflight();
   }
