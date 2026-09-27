@@ -569,7 +569,10 @@
     };
     try {
       localStorage.setItem(HANDOFF_KEY, JSON.stringify(payload));
-      localStorage.setItem(SOURCE_KEY, wordCount(draft) <= state.capabilities.singleEditorWordLimit ? draft : "");
+      // Only the Editor's single-section surface has a word limit; it routes longer
+      // drafts to Long Document from HANDOFF_KEY. The Studio takes the full draft.
+      const fitsSource = destination === "studio" || wordCount(draft) <= state.capabilities.singleEditorWordLimit;
+      localStorage.setItem(SOURCE_KEY, fitsSource ? draft : "");
       localStorage.setItem(REVISED_KEY, "");
     } catch {
       // Navigating now would open the destination without the draft.

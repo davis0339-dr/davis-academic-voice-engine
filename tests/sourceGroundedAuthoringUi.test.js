@@ -75,3 +75,17 @@ test("all three workspace headers link to one another", async () => {
     assert.match(html, /href="\/source-authoring"/);
   }
 });
+
+test("handoff keeps long drafts for the Studio and never navigates after a failed save", async () => {
+  const ui = await readFile(new URL("public/sourceGroundedAuthoringUI.js", root), "utf8");
+  assert.match(ui, /destination === "studio" \|\| wordCount\(draft\) <= state\.capabilities\.singleEditorWordLimit/);
+  assert.match(ui, /catch \{\s*\/\/ Navigating now[^\n]*\n\s*return setStatus\(/);
+  assert.doesNotMatch(ui, /localStorage\.setItem\(`\$\{CACHE_PREFIX\}/);
+});
+
+test("workspace pages carry no inline scripts that the CSP would block", async () => {
+  for (const page of ["index.html", "studio.html", "source-authoring.html"]) {
+    const html = await readFile(new URL(`public/${page}`, root), "utf8");
+    assert.doesNotMatch(html, /<script>(?!<\/script>)/, page);
+  }
+});
