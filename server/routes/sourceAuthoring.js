@@ -133,10 +133,98 @@ function cleanSources(value) {
   })).filter((source) => source.text);
 }
 
-// Non-streaming calls stay at or below 16,000 output tokens so the request
-// finishes inside the provider time budget. The notebook is sized per section.
-export function synthesisMaxTokens(targetWords, sectionCount = 1) {
-  return Math.min(16000, Math.max(8000, Math.round(targetWords * 2) + sectionCount * 500 + 3000));
+// One non-streaming call stays at or below 16,000 output tokens so it finishes
+// inside the provider time budget. Output is billed by use, not by this ceiling.
+export const SYNTHESIS_MAX_TOKENS = 16000;
+// Groups are planned to need well under the ceiling, leaving headroom because
+// the model's notebook and JSON overhead vary between documents.
+const SYNTHESIS_GROUP_TOKEN_TARGET = 9000;
+const MAX_SYNTHESIS_CALLS = 10;
+
+export function estimateSynthesisTokens(targetWords, sectionCount = 1) {
+  return Math.round(targetWords * 2) + sectionCount * 500 + 3000;
+}
+
+// Splits a manuscript into section groups that each fit one call, sharing the
+// target length across sections, so chapter length no longer decides success.
+export function planSynthesisGroups(sections, targetWords) {
+  const perSection = targetWords / Math.max(1, sections.length);
+  const groups = [];
+  let current = [];
+  for (const section of sections) {
+    const next = [...current, section];
+    if (current.length && estimateSynthesisTokens(perSection * next.length, next.length) > SYNTHESIS_GROUP_TOKEN_TARGET) {
+      groups.push(current);
+      current = [section];
+    } else {
+      current = next;
+    }
+  }
+  if (current.length) groups.push(current);
+  return groups.map((group) => ({ sections: group, targetWords: Math.max(150, Math.round(perSection * group.length)) }));
+}
+
+// Each group's model output reuses local ids ("quote-1", "point-1"); prefix them
+// per group so the merged notebook, paragraphs and quotations stay consistent.
+export function mergeSynthesisGroups(outputs) {
+  const merged = { notebook: { document_position: "", sections: [] }, sections: [], quotes: [], warnings: [] };
+  outputs.forEach((raw, index) => {
+    const prefix = outputs.length > 1 ? `g${index + 1}-` : "";
+    const rename = (id) => (typeof id === "string" && id ? `${prefix}${id}` : id);
+    if (!merged.notebook.document_position && raw?.notebook?.document_position) merged.notebook.document_position = raw.notebook.document_position;
+    for (const section of raw?.notebook?.sections || []) {
+      merged.notebook.sections.push({ ...section, points: (section.points || []).map((point) => ({ ...point, id: rename(point.id) })) });
+    }
+    for (const section of raw?.sections || []) {
+      merged.sections.push({
+        ...section,
+        paragraphs: (section.paragraphs || []).map((paragraph) => ({
+          ...paragraph,
+          used_point_ids: (paragraph.used_point_ids || []).map(rename),
+          text: String(paragraph.text || "").replace(/\[\[QUOTE:([A-Za-z0-9_-]+)\]\]/g, (_token, id) => `[[QUOTE:${prefix}${id}]]`),
+        })),
+      });
+    }
+    for (const quote of raw?.quotes || []) merged.quotes.push({ ...quote, id: rename(quote.id) });
+    for (const warning of raw?.warnings || []) merged.warnings.push(warning);
+  });
+  return merged;
+}
+
+class SynthesisResponseError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+
+async function synthesizeGroup(packet, group, calls) {
+  calls.count += 1;
+  if (calls.count > MAX_SYNTHESIS_CALLS) {
+    throw new SynthesisResponseError("SYNTHESIS_TOO_LARGE", `This manuscript needs more than ${MAX_SYNTHESIS_CALLS} synthesis calls. Synthesize it in parts, a few sections at a time.`);
+  }
+  const result = await llmProvider.callAnthropic({
+    system: SOURCE_SYNTHESIS_SYSTEM,
+    messages: [{ role: "user", content: JSON.stringify({ ...packet, sections: group.sections, target_words: group.targetWords, response_token_limit: SYNTHESIS_MAX_TOKENS }) }],
+    maxTokens: SYNTHESIS_MAX_TOKENS,
+    timeoutOverrideMs: 240000,
+  });
+  if (result.raw?.stop_reason === "max_tokens") {
+    // Split an over-long group and retry its halves rather than failing the draft.
+    if (group.sections.length > 1) {
+      const half = Math.ceil(group.sections.length / 2);
+      const share = group.targetWords / group.sections.length;
+      const parts = [group.sections.slice(0, half), group.sections.slice(half)]
+        .map((sections) => ({ sections, targetWords: Math.max(150, Math.round(share * sections.length)) }));
+      return (await Promise.all(parts.map((part) => synthesizeGroup(packet, part, calls)))).flat();
+    }
+    throw new SynthesisResponseError("SYNTHESIS_TRUNCATED", `The section "${group.sections[0]?.heading || "Untitled"}" alone ran past the ${SYNTHESIS_MAX_TOKENS.toLocaleString()}-token response limit, so nothing was saved. Lower the target words or choose fewer verbatim quotations, then try again.`);
+  }
+  try {
+    return [extractJsonObject(result.text)];
+  } catch {
+    throw new SynthesisResponseError("SYNTHESIS_UNREADABLE", "The provider returned a synthesis in an unreadable format, so nothing was saved. Please try again.");
+  }
 }
 
 function synthesisProviderError(res, error, requestId) {
@@ -179,30 +267,18 @@ sourceAuthoringRouter.post("/source-authoring/synthesize", llmProvider.usageMidd
   }
 
   try {
-    // The response carries the notebook, citations and quotes as JSON around the
-    // prose itself, so it needs far more room than the target word count alone.
-    const maxTokens = synthesisMaxTokens(targetWords, build.packet.sections.length);
-    const result = await llmProvider.callAnthropic({
-      system: SOURCE_SYNTHESIS_SYSTEM,
-      messages: [{ role: "user", content: JSON.stringify({ ...build.packet, response_token_limit: maxTokens }) }],
-      maxTokens,
-      timeoutOverrideMs: Math.min(240000, 60000 + maxTokens * 15),
-    });
-    if (result.raw?.stop_reason === "max_tokens") {
-      return res.status(502).json({ error: "SYNTHESIS_TRUNCATED", message: `The synthesis ran past the ${maxTokens.toLocaleString()}-token response limit and was cut off, so nothing was saved. Lower the target words, use fewer studies or choose fewer verbatim quotations, then try again.`, requestId: req.requestId });
-    }
-    let parsed;
-    try {
-      parsed = extractJsonObject(result.text);
-    } catch {
-      return res.status(502).json({ error: "SYNTHESIS_UNREADABLE", message: "The provider returned a synthesis in an unreadable format, so nothing was saved. Please try again.", requestId: req.requestId });
-    }
-    const synthesis = normalizeSourceSynthesis(parsed, build);
+    const groups = planSynthesisGroups(build.packet.sections, build.packet.target_words);
+    const calls = { count: 0 };
+    const outputs = (await Promise.all(groups.map((group) => synthesizeGroup(build.packet, group, calls)))).flat();
+    const synthesis = { ...normalizeSourceSynthesis(mergeSynthesisGroups(outputs), build), model_calls: calls.count };
     if (!synthesis.synthesis_text) {
       return res.status(502).json({ error: "EMPTY_SYNTHESIS", message: "The provider returned no usable synthesis. The evidence map remains available and no empty output was saved.", requestId: req.requestId });
     }
     return res.json({ ...synthesis, persistence: "browser_session", requestId: req.requestId });
   } catch (error) {
+    if (error instanceof SynthesisResponseError) {
+      return res.status(502).json({ error: error.code, message: error.message, requestId: req.requestId });
+    }
     return synthesisProviderError(res, error, req.requestId);
   }
 });

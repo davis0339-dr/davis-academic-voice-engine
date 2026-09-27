@@ -480,7 +480,7 @@
       } catch {}
       renderSynthesis();
       const audit = data.synthesis_audit || {};
-      setStatus(`Source synthesis completed in ${data.model_calls || 1} model call: ${Number(audit.output_words || 0).toLocaleString()} words, ${audit.used_points || 0} reasoning point(s), ${audit.used_extracts || 0} evidence passage(s), ${audit.citation_insertions || 0} citation insertion(s), ${audit.verified_quote_count || 0} exact-verified quotation(s). Status: ${audit.status === "complete" ? "controlled checks complete" : "researcher review required"}.`);
+      setStatus(`Source synthesis completed in ${data.model_calls || 1} model call(s): ${Number(audit.output_words || 0).toLocaleString()} words, ${audit.used_points || 0} reasoning point(s), ${audit.used_extracts || 0} evidence passage(s), ${audit.citation_insertions || 0} citation insertion(s), ${audit.verified_quote_count || 0} exact-verified quotation(s). Status: ${audit.status === "complete" ? "controlled checks complete" : "researcher review required"}.`);
     } catch (error) {
       setStatus(error.message, true);
     } finally {
