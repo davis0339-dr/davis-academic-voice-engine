@@ -158,10 +158,12 @@ export function deriveAuthoringSections(structureText, entryMode = "develop") {
 
 const NON_EVIDENCE_LINE = /^(?:electronic copy available|https?:\/\/|www\.|doi\s*:|copyright|©|all rights reserved|ssrn(?:-|\s|#)|downloaded from|accepted manuscript|forthcoming|corresponding author|e-?mail\s*:|keywords?\s*:|jel(?: classification)?\s*:|volume\s+\d+|issue\s+\d+|table\s+\d+|figure\s+\d+|references|bibliography)$/i;
 const REFERENCE_LINE = /^[A-Z][A-Za-z'’\-]+,?\s+(?:[A-Z]\.?\s*){1,4}(?:,|\.)\s*\(?(?:19|20)\d{2}[a-z]?\)?/;
+// Finance/economics style: "Chava, S., D. Livdan, and A. Purnanandam, 2009, ...".
+const MULTI_AUTHOR_REFERENCE_LINE = /^[A-Z][A-Za-z'’\-]+,\s+(?:[A-Z]\.\s*){1,3}(?:,|\band\b).*\b(?:19|20)\d{2}[a-z]?\b/;
 
 function usefulLine(value) {
   const line = normalizeSpace(value);
-  if (!line || NON_EVIDENCE_LINE.test(line) || REFERENCE_LINE.test(line)) return false;
+  if (!line || NON_EVIDENCE_LINE.test(line) || REFERENCE_LINE.test(line) || MULTI_AUTHOR_REFERENCE_LINE.test(line)) return false;
   if (/^(?:\d+|[ivxlcdm]+)$/i.test(line)) return false;
   if (/^[\W_]*$/.test(line) || /@/.test(line) || /(?:https?:\/\/|www\.|ssrn\.com)/i.test(line)) return false;
   if (wordCount(line) <= 3 && !/[.!?]$/.test(line)) return false;
@@ -190,6 +192,18 @@ function substantivePassage(value) {
   const alpha = (normalized.match(/[A-Za-z]/g) || []).length;
   if (alpha / Math.max(1, normalized.length) < 0.58) return false;
   return true;
+}
+
+// A study's reference list is bibliography, not evidence. Cut at the last
+// reference heading when it falls in the back part of the paper, so a heading
+// listed in a table of contents cannot remove the body.
+const REFERENCE_HEADING = /^[ \t]*(?:\[Line\s+\d+\][ \t]*)?(?:\d+\.?[ \t]*)?(?:references|bibliography|works cited|reference list|literature cited)[ \t]*:?[ \t]*\r?$/gim;
+
+function withoutReferenceList(sourceText) {
+  let last = null;
+  for (const match of sourceText.matchAll(REFERENCE_HEADING)) last = match;
+  if (!last || last.index < sourceText.length * 0.4) return sourceText;
+  return sourceText.slice(0, last.index);
 }
 
 function pageRecords(sourceText) {
@@ -284,7 +298,7 @@ function sentenceWindows(lines) {
 function sourceUnits(source, sourceIndex) {
   let counter = 0;
   const blocks = [];
-  for (const record of pageRecords(source.text)) {
+  for (const record of pageRecords(withoutReferenceList(source.text))) {
     for (const chunk of sentenceWindows(record.lines)) {
       counter += 1;
       const lineRange = chunk.startLine ? `, lines ${chunk.startLine}${chunk.endLine && chunk.endLine !== chunk.startLine ? `-${chunk.endLine}` : ""}` : "";
