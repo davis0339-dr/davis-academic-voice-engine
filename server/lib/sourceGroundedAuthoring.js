@@ -310,7 +310,7 @@ function sourceUnits(source, sourceIndex) {
         parenthetical_citation: source.bibliographic.parenthetical_citation,
         working_reference: source.bibliographic.working_reference,
         bibliographic: source.bibliographic,
-        locator: `${record.page || source.locator || ""}${lineRange}`,
+        locator: `${record.page || source.locator || ""}${lineRange}`.replace(/^, /, ""),
         text: chunk.text,
         research_functions: researchFunctions(chunk.text),
       });

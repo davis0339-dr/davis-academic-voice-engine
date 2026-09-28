@@ -20,6 +20,30 @@
     return (String(value || "").match(/[A-Za-z0-9']+/g) || []).length;
   }
 
+  // Author-led assembly: nothing enters the draft until the researcher chooses it.
+  // Extracts start unselected, and machine-written links become suggestions that
+  // stay outside the draft until the researcher accepts or replaces them.
+  function prepareAuthorLed(assembly) {
+    if (!assembly?.sections || assembly.author_led) return assembly;
+    assembly.sections.forEach((section) => {
+      section.author_intro = section.author_intro || "";
+      (section.blocks || []).forEach((block) => {
+        if (block.type === "extract") block.included = false;
+        if (block.type === "link") {
+          block.suggestion = block.text || "";
+          block.text = "";
+          block.accepted_suggestion = false;
+        }
+      });
+    });
+    assembly.author_led = true;
+    return assembly;
+  }
+
+  function saveAssembly() {
+    try { localStorage.setItem(LATEST_KEY, JSON.stringify({ entryMode: entryMode(), structureText: $("structureText").value, assembly: state.assembly })); } catch {}
+  }
+
   function inferredStudyMetadata(file, result) {
     const stem = file.name.replace(/\.[^.]+$/, "");
     const visible = String(result.text || "").slice(0, 8000);
@@ -253,14 +277,14 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Source assembly failed.");
       if (!data.extraction_verified?.exact) throw new Error("Exact-source verification failed; no assembly was accepted.");
-      state.assembly = data;
+      state.assembly = prepareAuthorLed(data);
       try { localStorage.setItem(LATEST_KEY, JSON.stringify({ entryMode: entryMode(), structureText, assembly: data })); } catch {}
       renderAssembly();
       const warning = data.warning ? ` ${data.warning}` : "";
       const gaps = (data.sections || []).flatMap((section) => section.blocks || []).filter((block) => block.type === "review_note").length;
       const audit = data.input_audit || {};
       const preservation = audit.complete ? `${Number(audit.processed_characters || 0).toLocaleString()} of ${Number(audit.submitted_characters || 0).toLocaleString()} characters processed` : "INPUT PRESERVATION FAILED";
-      setStatus(`${preservation}; ${audit.section_count || 0} section(s), ${audit.paragraph_count || 0} paragraph(s), ${audit.citation_anchor_count || 0} citation anchor(s). ${data.extract_count} substantive exact extract(s) accepted from ${data.source_count} source(s); ${gaps} evidence gap(s). ${audit.reviewed_source_identities || 0} source identity record(s) confirmed. Model calls used: ${data.model_calls}.${warning}`, !audit.complete);
+      setStatus(`${preservation}; ${audit.section_count || 0} section(s), ${audit.paragraph_count || 0} paragraph(s), ${audit.citation_anchor_count || 0} citation anchor(s). ${data.extract_count} substantive exact extract(s) accepted from ${data.source_count} source(s); ${gaps} evidence gap(s). ${audit.reviewed_source_identities || 0} source identity record(s) confirmed. Model calls used: ${data.model_calls}.${warning} Nothing is in your draft yet: tick the passages you want to use and write your own connecting text. Suggested connections stay out of the draft until you accept them.`, !audit.complete);
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -290,15 +314,43 @@
       const heading = document.createElement("h3");
       heading.textContent = section.heading;
       article.appendChild(heading);
+      const extractsHere = section.blocks.filter((block) => block.type === "extract");
+      if (extractsHere.length) {
+        const useAll = document.createElement("button");
+        useAll.type = "button";
+        const allUsed = extractsHere.every((block) => block.included);
+        useAll.textContent = allUsed ? "Remove every passage in this section from my draft" : "Use every passage in this section";
+        useAll.addEventListener("click", () => {
+          extractsHere.forEach((block) => { block.included = !allUsed; });
+          saveAssembly();
+          renderAssembly();
+        });
+        article.appendChild(useAll);
+      }
+      const intro = document.createElement("div");
+      intro.className = "assembly-block link author-intro";
+      const introLabel = document.createElement("div");
+      introLabel.className = "block-label";
+      introLabel.textContent = "YOUR OPENING TEXT FOR THIS SECTION · optional, in your own words";
+      const introField = document.createElement("textarea");
+      introField.value = section.author_intro || "";
+      introField.placeholder = "Introduce the argument of this section in your own words, or leave empty.";
+      introField.addEventListener("input", () => {
+        section.author_intro = introField.value;
+        refreshPreview();
+        saveAssembly();
+      });
+      intro.append(introLabel, introField);
+      article.appendChild(intro);
       section.blocks.forEach((block, blockIndex) => {
         const card = document.createElement("div");
-        card.className = `assembly-block ${block.type}`;
+        card.className = `assembly-block ${block.type}${block.type === "extract" && !block.included ? " excluded" : ""}`;
         const label = document.createElement("div");
         label.className = "block-label";
         const left = document.createElement("span");
         const right = document.createElement("span");
         if (block.type === "extract") {
-          left.textContent = `LOCKED VERBATIM EXTRACT · ${block.source_title}`;
+          left.textContent = `LOCKED VERBATIM EXTRACT · ${block.source_title}${block.included ? " · IN YOUR DRAFT" : " · not in your draft"}`;
           right.textContent = [block.citation, block.locator].filter(Boolean).join(" · ") || "source retained internally";
           const body = document.createElement("div");
           body.className = "extract-text";
@@ -311,8 +363,19 @@
           remove.type = "button";
           remove.textContent = "Remove extract";
           remove.addEventListener("click", () => removeExtract(sectionIndex, blockIndex));
+          const use = document.createElement("label");
+          use.className = "use-passage";
+          const useBox = document.createElement("input");
+          useBox.type = "checkbox";
+          useBox.checked = Boolean(block.included);
+          useBox.addEventListener("change", () => {
+            block.included = useBox.checked;
+            saveAssembly();
+            renderAssembly();
+          });
+          use.append(useBox, document.createTextNode(" Use this passage in my draft"));
           label.append(left, right);
-          card.append(label, body, reason, remove);
+          card.append(label, use, body, reason, remove);
         } else if (block.type === "author_text") {
           left.textContent = "AUTHOR TEXT PRESERVED";
           right.textContent = block.citation_anchors?.length ? `citation location: ${block.citation_anchors.join("; ")}` : "existing structure retained";
@@ -330,17 +393,38 @@
           label.append(left, right);
           card.append(label, body);
         } else {
-          left.textContent = "EDITABLE CONNECTION";
-          right.textContent = "author review required";
+          left.textContent = "YOUR CONNECTING TEXT";
+          right.textContent = "only what you write or accept enters the draft";
           const field = document.createElement("textarea");
           field.value = block.text || "";
+          field.placeholder = "Write the connection between these passages in your own words, or leave empty.";
           field.addEventListener("input", () => {
             block.text = field.value;
+            block.accepted_suggestion = Boolean(block.suggestion) && field.value.trim() === block.suggestion.trim();
             refreshPreview();
-            try { localStorage.setItem(LATEST_KEY, JSON.stringify({ entryMode: entryMode(), structureText: $("structureText").value, assembly: state.assembly })); } catch {}
+            saveAssembly();
           });
           label.append(left, right);
-          card.append(label, field);
+          card.append(label);
+          if (block.suggestion) {
+            const suggestion = document.createElement("div");
+            suggestion.className = "suggestion";
+            const suggestionText = document.createElement("span");
+            suggestionText.textContent = `Suggested connection (not in your draft): ${block.suggestion}`;
+            const accept = document.createElement("button");
+            accept.type = "button";
+            accept.textContent = "Use this suggestion";
+            accept.addEventListener("click", () => {
+              block.text = block.suggestion;
+              block.accepted_suggestion = true;
+              field.value = block.text;
+              refreshPreview();
+              saveAssembly();
+            });
+            suggestion.append(suggestionText, accept);
+            card.appendChild(suggestion);
+          }
+          card.appendChild(field);
         }
         article.appendChild(card);
       });
@@ -490,21 +574,34 @@
     }
   }
 
+  // The draft holds only what the researcher chose: ticked extracts (verbatim,
+  // with their citation), their own writing, and suggestions they accepted.
   function assembledText() {
     return (state.assembly?.sections || []).map((section) => {
-      const body = (section.blocks || []).map((block) => {
-        if (block.type === "review_note") return "";
+      const blocks = section.blocks || [];
+      const parts = [section.author_intro?.trim()];
+      blocks.forEach((block, index) => {
         const value = block.text?.trim();
-        if (!value) return "";
-        if (block.type === "extract" && block.parenthetical_citation) return `${value}\n${block.parenthetical_citation}`;
-        return value;
-      }).filter(Boolean).join("\n\n");
-      return `${section.heading}\n\n${body}`.trim();
+        if (block.type === "review_note" || !value) return;
+        if (block.type === "extract") {
+          if (block.included) parts.push(block.parenthetical_citation ? `${value}\n${block.parenthetical_citation}` : value);
+          return;
+        }
+        if (block.type === "link" && block.accepted_suggestion) {
+          // An accepted suggestion joins two passages; drop it if either is unused.
+          const before = blocks[index - 1];
+          const after = blocks[index + 1];
+          if ((before?.type === "extract" && !before.included) || (after?.type === "extract" && !after.included)) return;
+        }
+        parts.push(value);
+      });
+      const body = parts.filter(Boolean).join("\n\n");
+      return body ? `${section.heading}\n\n${body}` : "";
     }).filter(Boolean).join("\n\n");
   }
 
   function lockedExtracts() {
-    return (state.assembly?.sections || []).flatMap((section) => section.blocks || []).filter((block) => block.type === "extract").map((block) => ({
+    return (state.assembly?.sections || []).flatMap((section) => section.blocks || []).filter((block) => block.type === "extract" && block.included).map((block) => ({
       id: block.id,
       text: block.text,
       source_id: block.source_id,
@@ -520,7 +617,9 @@
     const words = wordCount(draft);
     const destination = words > state.capabilities.singleEditorWordLimit ? "Long Document review" : "single-section Editor review";
     const summary = $("handoffSummary");
-    if (summary) summary.textContent = `${words.toLocaleString()} words · will open in ${destination}; no text will be trimmed.`;
+    const extracts = (state.assembly?.sections || []).flatMap((section) => section.blocks || []).filter((block) => block.type === "extract");
+    const used = extracts.filter((block) => block.included).length;
+    if (summary) summary.textContent = `${used} of ${extracts.length} passages in your draft · ${words.toLocaleString()} words · will open in ${destination}; no text will be trimmed.`;
   }
 
   function renderReferences() {
@@ -543,7 +642,7 @@
   function handoff(destination, outputKind = "assembly") {
     const synthesisDraft = $("synthesisDraft")?.value.trim() || "";
     const draft = outputKind === "synthesis" ? synthesisDraft : assembledText();
-    if (!draft) return setStatus("Build and review the source-led draft first.", true);
+    if (!draft) return setStatus(outputKind === "synthesis" ? "Build and review the source-led draft first." : "Nothing is in your draft yet. Tick the passages you want to use or write your own text first.", true);
     const synthesisQuotes = (state.synthesis?.verified_quotes || []).map((quote) => ({
       id: quote.id,
       text: quote.text,
@@ -612,7 +711,7 @@
         const mode = document.querySelector(`input[name="entryMode"][value="${saved.entryMode}"]`);
         if (mode) mode.checked = true;
         $("structureText").value = saved.structureText || "";
-        state.assembly = saved.assembly;
+        state.assembly = prepareAuthorLed(saved.assembly);
         renderAssembly();
         setStatus("Previous source-led assembly restored. Extracts remain locked; connecting passages remain editable.");
       }
