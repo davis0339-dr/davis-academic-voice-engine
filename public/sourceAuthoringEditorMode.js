@@ -96,7 +96,7 @@
     unlock.type = "button";
     unlock.textContent = useLongDocument ? "Unlock and work on this text in Long Document" : "Unlock and work on this text in the Editor";
     unlock.addEventListener("click", () => {
-      if (!window.confirm("Unlock this draft? Revision may then change the protected source extracts, so check quotations against the studies afterwards.")) return;
+      if (!window.confirm("Unlock this draft? This authorises the Editor to rewrite the whole draft, including your own text and the verbatim source extracts. Check quotations against the studies afterwards.")) return;
       try { localStorage.setItem(HANDOFF_KEY, JSON.stringify({ ...payload, unlocked: true })); } catch {}
       for (const field of [source, longdoc]) {
         field.readOnly = false;

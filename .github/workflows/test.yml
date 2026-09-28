@@ -39,6 +39,7 @@ jobs:
           node --check public/safeDom.js
           node --check public/app.js
           node --check public/fileImport.js
+          node --check public/scopusImport.js
           node --check public/runtimeGuard.js
           node --check public/optionalFeatures.js
           node --check public/rewriteLineage.js

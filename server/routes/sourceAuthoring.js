@@ -3,7 +3,9 @@ import { llmProvider, HealthState } from "../lib/llmProvider.js";
 import { extractJsonObject } from "../lib/researcherAgency.js";
 import {
   deterministicSourceAssembly,
+  limitSources,
   MAX_SOURCE_CHARS,
+  SCOPUS_ABSTRACT,
   MAX_STRUCTURE_CHARS,
   normalizeGuidedPlan,
   verifyAssemblyExtracts,
@@ -115,8 +117,9 @@ function clientAssembly(assembly) {
 }
 
 function cleanSources(value) {
-  return (Array.isArray(value) ? value : []).slice(0, 12).map((source, index) => ({
+  return limitSources(value).map((source, index) => ({
     id: cleanString(source?.id, 80) || `source-${index + 1}`,
+    origin: source?.origin === SCOPUS_ABSTRACT ? SCOPUS_ABSTRACT : "full_text",
     title: cleanString(source?.title || source?.name, 300) || `Source ${index + 1}`,
     citation: cleanString(source?.citation, 500),
     bibliographic: {
@@ -238,7 +241,7 @@ sourceAuthoringRouter.post("/source-authoring/synthesize", llmProvider.usageMidd
   const structureText = completeString(req.body?.structureText);
   const targetWords = Math.max(MIN_SYNTHESIS_TARGET_WORDS, Math.min(MAX_SYNTHESIS_TARGET_WORDS, Number.parseInt(req.body?.targetWords, 10) || 1800));
   const quotePolicy = ["none", "selective", "source_heavy"].includes(req.body?.quotePolicy) ? req.body.quotePolicy : "selective";
-  const rawSources = Array.isArray(req.body?.sources) ? req.body.sources.slice(0, 12) : [];
+  const rawSources = Array.isArray(req.body?.sources) ? limitSources(req.body.sources) : [];
   if (!structureText) {
     return res.status(400).json({ error: "BAD_REQUEST", message: "Provide the researcher guide, template or existing manuscript that should govern synthesis.", requestId: req.requestId });
   }
@@ -286,7 +289,7 @@ sourceAuthoringRouter.post("/source-authoring/synthesize", llmProvider.usageMidd
 sourceAuthoringRouter.post("/source-authoring/assemble", llmProvider.usageMiddleware, async (req, res) => {
   const entryMode = ["template", "rebuild", "develop"].includes(req.body?.entryMode) ? req.body.entryMode : "develop";
   const structureText = completeString(req.body?.structureText);
-  const rawSources = Array.isArray(req.body?.sources) ? req.body.sources.slice(0, 12) : [];
+  const rawSources = Array.isArray(req.body?.sources) ? limitSources(req.body.sources) : [];
   if (structureText.length > MAX_STRUCTURE_CHARS) {
     return res.status(413).json({ error: "MANUSCRIPT_TOO_LARGE", message: `The manuscript contains ${structureText.length.toLocaleString()} characters; the current explicit limit is ${MAX_STRUCTURE_CHARS.toLocaleString()}. Nothing was processed or truncated.`, requestId: req.requestId });
   }

@@ -22,7 +22,7 @@ test("source-grounded authoring is a separate three-route workspace", async () =
 test("source-led extracts are locked while connections remain editable", async () => {
   const ui = await readFile(new URL("public/sourceGroundedAuthoringUI.js", root), "utf8");
   assert.match(ui, /LOCKED VERBATIM EXTRACT/);
-  assert.match(ui, /EDITABLE CONNECTION/);
+  assert.match(ui, /YOUR CONNECTING TEXT/);
   assert.match(ui, /block\.type === "extract"/);
   assert.match(ui, /lockedExtracts/);
 });
@@ -97,4 +97,22 @@ test("the protected Editor handoff offers an explicit unlock so the draft is nev
   assert.match(mode, /window\.confirm\(/);
   assert.match(mode, /!value\.unlocked/);
   assert.match(mode, /startJob\.disabled = false/);
+});
+
+test("the evidence map is author-led: nothing enters the draft unless the researcher chooses it", async () => {
+  const [html, ui] = await Promise.all([
+    readFile(new URL("public/source-authoring.html", root), "utf8"),
+    readFile(new URL("public/sourceGroundedAuthoringUI.js", root), "utf8"),
+  ]);
+  // Extracts start unselected and machine-written links become suggestions outside the draft.
+  assert.match(ui, /if \(block\.type === "extract"\) block\.included = false;/);
+  assert.match(ui, /block\.suggestion = block\.text \|\| "";\s*block\.text = "";/);
+  assert.match(ui, /Use this passage in my draft/);
+  assert.match(ui, /Suggested connection \(not in your draft\)/);
+  assert.match(ui, /if \(block\.included\) parts\.push/);
+  assert.match(ui, /filter\(\(block\) => block\.type === "extract" && block\.included\)/);
+  // AI synthesis is optional and labelled as writing new prose.
+  assert.match(html, /<details class="synthesis-controls synthesis-optional">/);
+  assert.match(html, /Optional · AI synthesis — writes new prose with AI/);
+  assert.match(html, /does not keep the sources' wording or your own voice/);
 });

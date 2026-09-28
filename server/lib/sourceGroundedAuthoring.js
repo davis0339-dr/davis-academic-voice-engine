@@ -2,6 +2,17 @@ import { createHash } from "node:crypto";
 
 export const MAX_STRUCTURE_CHARS = 500000;
 export const MAX_SOURCE_CHARS = 1500000;
+export const MAX_FULL_TEXT_SOURCES = 12;
+// Scopus abstracts are short, so more of them fit in one assembly.
+export const MAX_ABSTRACT_SOURCES = 50;
+export const SCOPUS_ABSTRACT = "scopus_abstract";
+
+export function limitSources(sources) {
+  const list = Array.isArray(sources) ? sources : [];
+  const abstracts = list.filter((source) => source?.origin === SCOPUS_ABSTRACT).slice(0, MAX_ABSTRACT_SOURCES);
+  const fullText = list.filter((source) => source?.origin !== SCOPUS_ABSTRACT).slice(0, MAX_FULL_TEXT_SOURCES);
+  return [...fullText, ...abstracts];
+}
 
 const STOP = new Set([
   "a", "an", "and", "are", "as", "at", "be", "been", "being", "but", "by", "can", "do", "for", "from",
@@ -310,7 +321,8 @@ function sourceUnits(source, sourceIndex) {
         parenthetical_citation: source.bibliographic.parenthetical_citation,
         working_reference: source.bibliographic.working_reference,
         bibliographic: source.bibliographic,
-        locator: `${record.page || source.locator || ""}${lineRange}`,
+        locator: source.origin === SCOPUS_ABSTRACT ? "Scopus abstract" : `${record.page || source.locator || ""}${lineRange}`.replace(/^, /, ""),
+        origin: source.origin,
         text: chunk.text,
         research_functions: researchFunctions(chunk.text),
       });
@@ -335,9 +347,10 @@ function scoreUnit(section, unit) {
 }
 
 export function retrieveVerbatimCandidates({ structureText, entryMode, sources, perSection = 10 }) {
-  const cleanSources = (Array.isArray(sources) ? sources : []).slice(0, 12).map((source, index) => ({
+  const cleanSources = limitSources(sources).map((source, index) => ({
     id: text(source?.id, 80) || `source-${index + 1}`,
     bibliographic: normalizeBibliographic(source, index),
+    origin: source?.origin === SCOPUS_ABSTRACT ? SCOPUS_ABSTRACT : "full_text",
     locator: text(source?.locator, 200),
     text: text(source?.text, MAX_SOURCE_CHARS),
   })).map((source) => ({ ...source, title: source.bibliographic.title, citation: source.bibliographic.citation })).filter((source) => source.text);
@@ -378,13 +391,36 @@ function citationAffinity(paragraph, candidate) {
   return { score: matched ? score : 0, matched, has_anchors: true };
 }
 
+// Sentence windows slide one sentence at a time, so neighbouring candidates
+// from one source can repeat a sentence. Offering both would let the same
+// sentence enter the draft twice.
+function sentenceKeys(value) {
+  return normalizeSpace(value).split(/(?<=[.!?])\s+/).map((sentence) => sentence.toLowerCase()).filter((sentence) => sentence.length >= 30);
+}
+
 function diversifySources(rows, limit) {
   const selected = [];
   const perSource = new Map();
+  const sentencesBySource = new Map();
   for (const row of rows) {
     const count = perSource.get(row.source_id) || 0;
     if (count >= 3) continue;
-    selected.push(row);
+    const taken = sentencesBySource.get(row.source_id) || new Set();
+    // Trim sentences already offered from this source off either end of the
+    // window; the remainder is still a verbatim substring of the source.
+    const sentences = normalizeSpace(row.text).split(/(?<=[.!?])\s+/);
+    const repeated = sentences.map((sentence) => sentence.length >= 30 && taken.has(sentence.toLowerCase()));
+    let candidate = row;
+    if (repeated.some(Boolean)) {
+      const first = repeated.indexOf(false);
+      const last = repeated.lastIndexOf(false);
+      const kept = first < 0 ? [] : sentences.slice(first, last + 1);
+      if (!kept.length || repeated.slice(first, last + 1).some(Boolean) || !substantivePassage(kept.join(" "))) continue;
+      candidate = { ...row, text: kept.join(" ") };
+    }
+    sentenceKeys(candidate.text).forEach((key) => taken.add(key));
+    sentencesBySource.set(row.source_id, taken);
+    selected.push(candidate);
     perSource.set(row.source_id, count + 1);
     if (selected.length >= limit) break;
   }
