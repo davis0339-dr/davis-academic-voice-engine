@@ -9,8 +9,12 @@
   const SYNTHESIS_KEY = "academicVoice.sourceAuthoring.synthesis.v1";
   const CACHE_PREFIX = "academicVoice.sourceAuthoring.plan.v2.";
   const MAX_FILE_BYTES = 12 * 1024 * 1024;
+  const MAX_FULL_TEXT_STUDIES = 12;
+  const MAX_SCOPUS_ABSTRACTS = 50;
+  const SCOPUS_ABSTRACT = "scopus_abstract";
   const state = {
     sources: [],
+    scopus: null,
     assembly: null,
     synthesis: null,
     capabilities: { singleEditorWordLimit: 1500, longDocumentWordLimit: 12000 },
@@ -150,6 +154,25 @@
       target.appendChild(empty);
       return;
     }
+    const pendingScopus = state.sources.filter((source) => isScopus(source) && source.bibliographic?.metadata_confidence !== "researcher_reviewed");
+    if (pendingScopus.length) {
+      const confirmAll = document.createElement("button");
+      confirmAll.type = "button";
+      confirmAll.className = "primary";
+      confirmAll.textContent = `Confirm all Scopus records (${pendingScopus.length})`;
+      confirmAll.addEventListener("click", () => {
+        let skipped = 0;
+        pendingScopus.forEach((source) => {
+          const bib = source.bibliographic || {};
+          if (!bib.title?.trim() || !bib.author?.trim() || !/^(?:19|20)\d{2}[a-z]?$/i.test(bib.year?.trim() || "")) { skipped += 1; return; }
+          bib.metadata_confidence = "researcher_reviewed";
+          if (!source.citationManuallyEdited) source.citation = suggestedCitation(source);
+        });
+        renderSources();
+        setStatus(skipped ? `${pendingScopus.length - skipped} Scopus record(s) confirmed; ${skipped} need an author, title or year before they can be confirmed.` : `${pendingScopus.length} Scopus record(s) confirmed for citation matching.`, Boolean(skipped));
+      });
+      target.appendChild(confirmAll);
+    }
     state.sources.forEach((source, index) => {
       const row = document.createElement("div");
       row.className = "source-item";
@@ -219,6 +242,7 @@
       remove.addEventListener("click", () => {
         state.sources.splice(index, 1);
         renderSources();
+        renderScopusPicker();
       });
       const identity = document.createElement("div");
       identity.append(title, confidence);
@@ -230,9 +254,142 @@
     updatePreflight();
   }
 
+  const isScopus = (source) => source.origin === SCOPUS_ABSTRACT;
+
+  async function importScopus(file) {
+    try {
+      if (!window.ScopusImport) throw new Error("The Scopus reader did not load; refresh the page and try again.");
+      const { records, withoutAbstract, totalRows } = window.ScopusImport.parseScopusCsv(await file.text());
+      state.scopus = { fileName: file.name, records, selected: new Set(), query: "" };
+      renderScopusPicker();
+      setStatus(`${file.name}: ${records.length} of ${totalRows} Scopus records have an abstract${withoutAbstract ? ` (${withoutAbstract} without an abstract were skipped)` : ""}. Search and tick the ones you want, then add them as studies.`);
+    } catch (error) {
+      setStatus(`${file.name}: ${error.message}`, true);
+    }
+  }
+
+  function scopusMatches(record, query) {
+    if (!query) return true;
+    const haystack = `${record.title} ${record.allAuthors} ${record.author} ${record.year} ${record.journal} ${record.keywords} ${record.abstract}`.toLowerCase();
+    return query.toLowerCase().split(/\s+/).filter(Boolean).every((term) => haystack.includes(term));
+  }
+
+  function renderScopusPicker() {
+    const target = $("scopusPicker");
+    if (!target) return;
+    target.replaceChildren();
+    const scopus = state.scopus;
+    target.hidden = !scopus;
+    if (!scopus) return;
+    const alreadyAdded = new Set(state.sources.filter(isScopus).map((source) => source.id));
+    const room = MAX_SCOPUS_ABSTRACTS - alreadyAdded.size;
+    const heading = document.createElement("h4");
+    heading.textContent = `Scopus export · ${scopus.fileName} · ${scopus.records.length} records with abstracts`;
+    const note = document.createElement("p");
+    note.className = "muted";
+    note.textContent = `Passages from these rows come from each paper's published abstract, not the full paper. Up to ${MAX_SCOPUS_ABSTRACTS} abstracts per assembly (${alreadyAdded.size} added, room for ${Math.max(0, room)} more).`;
+    const search = document.createElement("input");
+    search.type = "text";
+    search.placeholder = "Search title, authors, journal, keywords or abstract (all words must match)";
+    search.value = scopus.query;
+    const shown = scopus.records.filter((record) => !alreadyAdded.has(record.id) && scopusMatches(record, scopus.query));
+    const count = document.createElement("p");
+    count.className = "scopus-count";
+    count.textContent = `${shown.length} matching · ${scopus.selected.size} ticked`;
+    const list = document.createElement("div");
+    list.className = "scopus-list";
+    const renderRows = () => {
+      list.replaceChildren();
+      shown.slice(0, 200).forEach((record) => {
+        const row = document.createElement("label");
+        row.className = "scopus-row";
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = scopus.selected.has(record.id);
+        box.addEventListener("change", () => {
+          if (box.checked) scopus.selected.add(record.id); else scopus.selected.delete(record.id);
+          count.textContent = `${shown.length} matching · ${scopus.selected.size} ticked`;
+        });
+        const body = document.createElement("span");
+        const title = document.createElement("strong");
+        title.textContent = record.title;
+        const meta = document.createElement("small");
+        meta.textContent = [`${record.author || "Unknown author"} (${record.year || "n.d."})`, record.journal, record.documentType].filter(Boolean).join(" · ");
+        const snippet = document.createElement("small");
+        snippet.textContent = record.abstract.length > 260 ? `${record.abstract.slice(0, 260)}…` : record.abstract;
+        body.append(title, meta, snippet);
+        row.append(box, body);
+        list.appendChild(row);
+      });
+      if (shown.length > 200) {
+        const more = document.createElement("p");
+        more.className = "muted";
+        more.textContent = `Showing the first 200 of ${shown.length}. Narrow the search to see the rest.`;
+        list.appendChild(more);
+      }
+    };
+    renderRows();
+    search.addEventListener("keydown", (event) => { if (event.key === "Enter") { scopus.query = search.value; renderScopusPicker(); } });
+    const searchBtn = document.createElement("button");
+    searchBtn.type = "button";
+    searchBtn.textContent = "Search";
+    searchBtn.addEventListener("click", () => { scopus.query = search.value; renderScopusPicker(); });
+    const tickShown = document.createElement("button");
+    tickShown.type = "button";
+    tickShown.textContent = "Tick all matching (up to the limit)";
+    tickShown.addEventListener("click", () => {
+      for (const record of shown) {
+        if (scopus.selected.size >= Math.max(0, room)) break;
+        scopus.selected.add(record.id);
+      }
+      renderScopusPicker();
+    });
+    const clearTicks = document.createElement("button");
+    clearTicks.type = "button";
+    clearTicks.textContent = "Clear ticks";
+    clearTicks.addEventListener("click", () => { scopus.selected.clear(); renderScopusPicker(); });
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "primary";
+    add.textContent = "Add ticked abstracts as studies";
+    add.addEventListener("click", addScopusSelected);
+    const controls = document.createElement("div");
+    controls.className = "action-row";
+    controls.append(searchBtn, tickShown, clearTicks, add);
+    target.append(heading, note, search, controls, count, list);
+  }
+
+  function addScopusSelected() {
+    const scopus = state.scopus;
+    if (!scopus?.selected.size) return setStatus("Tick at least one Scopus record first.", true);
+    const room = MAX_SCOPUS_ABSTRACTS - state.sources.filter(isScopus).length;
+    const chosen = scopus.records.filter((record) => scopus.selected.has(record.id));
+    if (chosen.length > room) return setStatus(`Only ${Math.max(0, room)} more Scopus abstracts fit in one assembly (limit ${MAX_SCOPUS_ABSTRACTS}). Untick ${chosen.length - room}.`, true);
+    chosen.forEach((record) => {
+      state.sources.push({
+        id: record.id,
+        origin: SCOPUS_ABSTRACT,
+        title: record.title,
+        fileLabel: `Scopus abstract · ${record.title}`,
+        citation: record.author && record.year ? `${record.author} (${record.year})` : "",
+        bibliographic: { title: record.title, author: record.author, year: record.year, publication: record.publication, doi: record.doi, url: record.url, metadata_confidence: "needs_review" },
+        text: record.abstract,
+        structure: "scopus_abstract",
+      });
+    });
+    scopus.selected.clear();
+    renderSources();
+    renderScopusPicker();
+    setStatus(`${chosen.length} Scopus abstract(s) added as studies. Check the records below, then use “Confirm all Scopus records”.`);
+  }
+
   async function importStudies(event) {
-    const files = Array.from(event.target.files || []).slice(0, Math.max(0, 12 - state.sources.length));
-    if (!files.length) return;
+    const picked = Array.from(event.target.files || []);
+    const csvFiles = picked.filter((file) => /\.csv$/i.test(file.name) || file.type === "text/csv");
+    for (const file of csvFiles) await importScopus(file);
+    const fullTextCount = state.sources.filter((source) => !isScopus(source)).length;
+    const files = picked.filter((file) => !csvFiles.includes(file)).slice(0, Math.max(0, MAX_FULL_TEXT_STUDIES - fullTextCount));
+    if (!files.length) { event.target.value = ""; return; }
     const label = $("studyStatus");
     let added = 0;
     for (const file of files) {
@@ -350,7 +507,7 @@
         const left = document.createElement("span");
         const right = document.createElement("span");
         if (block.type === "extract") {
-          left.textContent = `LOCKED VERBATIM EXTRACT · ${block.source_title}${block.included ? " · IN YOUR DRAFT" : " · not in your draft"}`;
+          left.textContent = `${block.origin === SCOPUS_ABSTRACT ? "SCOPUS ABSTRACT · VERBATIM FROM THE PUBLISHED ABSTRACT" : "LOCKED VERBATIM EXTRACT"} · ${block.source_title}${block.included ? " · IN YOUR DRAFT" : " · not in your draft"}`;
           right.textContent = [block.citation, block.locator].filter(Boolean).join(" · ") || "source retained internally";
           const body = document.createElement("div");
           body.className = "extract-text";
@@ -682,6 +839,8 @@
 
   function clearWorkspace() {
     state.sources = [];
+    state.scopus = null;
+    renderScopusPicker();
     state.assembly = null;
     state.synthesis = null;
     $("structureText").value = "";
