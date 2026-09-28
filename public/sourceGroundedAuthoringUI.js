@@ -44,6 +44,51 @@
     return assembly;
   }
 
+  // Bulk choices. Accepting only fills connection boxes the researcher left
+  // empty, and clearing only removes accepted suggestions, never their writing.
+  function setPassages(sections, include) {
+    sections.forEach((section) => section.blocks.forEach((block) => { if (block.type === "extract") block.included = include; }));
+  }
+
+  function setSuggestions(sections, accept) {
+    sections.forEach((section) => section.blocks.forEach((block) => {
+      if (block.type !== "link" || !block.suggestion) return;
+      if (accept && !block.text?.trim()) {
+        block.text = block.suggestion;
+        block.accepted_suggestion = true;
+      } else if (!accept && block.accepted_suggestion) {
+        block.text = "";
+        block.accepted_suggestion = false;
+      }
+    }));
+  }
+
+  function selectionCounts(sections) {
+    const blocks = sections.flatMap((section) => section.blocks);
+    const passages = blocks.filter((block) => block.type === "extract");
+    const suggestions = blocks.filter((block) => block.type === "link" && block.suggestion);
+    return {
+      passages: passages.length,
+      usedPassages: passages.filter((block) => block.included).length,
+      suggestions: suggestions.length,
+      acceptedSuggestions: suggestions.filter((block) => block.accepted_suggestion).length,
+      openSuggestions: suggestions.filter((block) => !block.text?.trim()).length,
+    };
+  }
+
+  function bulkButton(label, onClick, primary = false) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    if (primary) button.className = "primary";
+    button.addEventListener("click", () => {
+      onClick();
+      saveAssembly();
+      renderAssembly();
+    });
+    return button;
+  }
+
   function saveAssembly() {
     try { localStorage.setItem(LATEST_KEY, JSON.stringify({ entryMode: entryMode(), structureText: $("structureText").value, assembly: state.assembly })); } catch {}
   }
@@ -465,25 +510,43 @@
     target.replaceChildren();
     const assembly = state.assembly;
     if (!assembly?.sections?.length) return;
+    const all = selectionCounts(assembly.sections);
+    const toolbar = document.createElement("div");
+    toolbar.className = "bulk-toolbar";
+    const summary = document.createElement("p");
+    summary.className = "bulk-summary";
+    summary.textContent = `All sections: ${all.usedPassages} of ${all.passages} passages in your draft · ${all.acceptedSuggestions} of ${all.suggestions} suggested connections accepted`;
+    const bulkRow = document.createElement("div");
+    bulkRow.className = "action-row";
+    bulkRow.append(
+      bulkButton("Use every passage (all sections)", () => setPassages(assembly.sections, true), true),
+      bulkButton("Remove every passage (all sections)", () => setPassages(assembly.sections, false)),
+      bulkButton("Accept every suggested connection (all sections)", () => setSuggestions(assembly.sections, true)),
+      bulkButton("Clear accepted suggestions (all sections)", () => setSuggestions(assembly.sections, false)),
+    );
+    const bulkNote = document.createElement("p");
+    bulkNote.className = "muted";
+    bulkNote.textContent = "Accepting suggestions only fills connection boxes you left empty; clearing removes accepted suggestions but never text you wrote.";
+    toolbar.append(summary, bulkRow, bulkNote);
+    target.appendChild(toolbar);
     assembly.sections.forEach((section, sectionIndex) => {
       const article = document.createElement("article");
       article.className = "assembly-section";
       const heading = document.createElement("h3");
       heading.textContent = section.heading;
       article.appendChild(heading);
-      const extractsHere = section.blocks.filter((block) => block.type === "extract");
-      if (extractsHere.length) {
-        const useAll = document.createElement("button");
-        useAll.type = "button";
-        const allUsed = extractsHere.every((block) => block.included);
-        useAll.textContent = allUsed ? "Remove every passage in this section from my draft" : "Use every passage in this section";
-        useAll.addEventListener("click", () => {
-          extractsHere.forEach((block) => { block.included = !allUsed; });
-          saveAssembly();
-          renderAssembly();
-        });
-        article.appendChild(useAll);
+      const here = selectionCounts([section]);
+      const sectionRow = document.createElement("div");
+      sectionRow.className = "action-row";
+      if (here.passages) {
+        const allUsed = here.usedPassages === here.passages;
+        sectionRow.appendChild(bulkButton(allUsed ? "Remove every passage in this section from my draft" : "Use every passage in this section", () => setPassages([section], !allUsed)));
       }
+      if (here.suggestions) {
+        const allAccepted = here.openSuggestions === 0 && here.acceptedSuggestions > 0;
+        sectionRow.appendChild(bulkButton(allAccepted ? "Clear accepted suggestions in this section" : "Accept every suggested connection in this section", () => setSuggestions([section], !allAccepted)));
+      }
+      if (sectionRow.childNodes.length) article.appendChild(sectionRow);
       const intro = document.createElement("div");
       intro.className = "assembly-block link author-intro";
       const introLabel = document.createElement("div");
