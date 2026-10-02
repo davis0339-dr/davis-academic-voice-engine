@@ -21,6 +21,7 @@ import { analyseMachineLanguageForensics } from "./machineLanguageForensics.js";
 import { analysePropositionEcho } from "./propositionEcho.js";
 import { splitTextBlocks } from "./textStructure.js";
 import { assessArgumentativeSufficiency } from "./argumentativeSufficiency.js";
+import { auditExpressionRecurrence, expressionRecurrenceWorsened } from "./expressionRecurrence.js";
 
 const FORMAL_SECTION_RE = /^(?:purpose statement|research questions?(?: and hypotheses)?|hypotheses|hypothesis development|research question\s*\d*|operational definitions?|definitions of terms|assumptions|limitations|delimitations|references|appendix|table\s+\d+|figure\s+\d+)\s*:?[\s]*$/i;
 const NARRATIVE_SECTION_RE = /^(?:introduction|background(?: of the problem| to the study)?|statement of the problem|problem statement|literature review|conceptual review|theoretical review|empirical review|discussion|conclusion|research gap)\s*:?[\s]*$/i;
@@ -365,6 +366,7 @@ export function auditOutputAcceptance({
   const dependence = sourceDependence(source, candidate);
   const sourceEcho = analysePropositionEcho(source);
   const candidateEcho = analysePropositionEcho(candidate);
+  const expressionRecurrence = auditExpressionRecurrence(source, candidate);
   const sourceTexture = Number(sourceMachine.texture?.authorial_texture?.score || 0);
   const candidateTexture = Number(candidateMachine.texture?.authorial_texture?.score || 0);
   const surfaceQuality = Number(candidateMachine.texture?.surface_quality?.score ?? 1);
@@ -428,6 +430,8 @@ export function auditOutputAcceptance({
   // repetitive and machine-shaped.
   if (candidateEcho.count > sourceEcho.count) reasons.push("proposition_echo_introduced");
   if (candidateEcho.count >= 3) reasons.push("proposition_echo_residual");
+  if (expressionRecurrence.regression) reasons.push("expression_recurrence_introduced");
+  if (expressionRecurrence.issues.length) reasons.push("expression_recurrence_residual");
 
   // Assertive modes require positive movement when the source itself carries
   // moderate/high machine-pattern or machine-language regularity. This is a
@@ -494,6 +498,7 @@ export function auditOutputAcceptance({
     ...(lengthContract.mode === "expand" && candidateWordCount < lengthContract.minimum_candidate_words
       ? (candidateDevelopment.paragraph_rows || []).map((row) => row.blockIndex).filter(Number.isInteger)
       : []),
+    ...expressionRecurrence.target_block_indices,
     ...(dependence.target_paragraph_indices || []),
     ...(candidateMachine.choreography.target_paragraph_indices || []),
     ...(candidateMachine.machine_language?.target_paragraph_indices || []),
@@ -502,7 +507,7 @@ export function auditOutputAcceptance({
   ])].slice(0, 8);
 
   return {
-    version: "output-acceptance-v1.3",
+    version: "output-acceptance-v1.4",
     status,
     passed: status === "pass",
     score,
@@ -525,6 +530,7 @@ export function auditOutputAcceptance({
       substantive_plan_ratio: Number(substantive.toFixed(3)),
       source_proposition_echo_count: sourceEcho.count,
       candidate_proposition_echo_count: candidateEcho.count,
+      candidate_expression_repeated_occurrences: expressionRecurrence.repeated_occurrences,
       source_word_count: sourceWordCount,
       candidate_word_count: candidateWordCount,
       source_revision_length_ratio: Number(lengthRatio.toFixed(3)),
@@ -539,6 +545,7 @@ export function auditOutputAcceptance({
     candidate_machine_pattern: candidateMachine,
     source_dependence: dependence,
     proposition_echo: { source: sourceEcho, candidate: candidateEcho },
+    expression_recurrence: expressionRecurrence,
     preservation,
     hard_failures: hardFailures,
     reasons: uniqueReasons,
@@ -556,6 +563,9 @@ export function auditOutputAcceptance({
 
 export function acceptanceImproved(before, after) {
   if (!before || !after) return false;
+  const beforeExpression = Number(before.dimensions?.candidate_expression_repeated_occurrences || 0);
+  const afterExpression = Number(after.dimensions?.candidate_expression_repeated_occurrences || 0);
+  if (expressionRecurrenceWorsened(before, after)) return false;
   if (after.status === "pass" && before.status !== "pass") return true;
   if (after.status === "fail" && before.status !== "fail") return false;
   const beforeMachine = Number(before.dimensions?.candidate_machine_pattern || 0);
@@ -569,6 +579,9 @@ export function acceptanceImproved(before, after) {
   const materialPatternGain = afterMachine <= beforeMachine - 0.02;
   const materialLanguageGain = afterLanguage <= beforeLanguage - 0.04;
   const materialDiscourseGain = afterDiscourse <= beforeDiscourse - 0.04;
+  if (afterExpression < beforeExpression && afterScore >= beforeScore - 1 &&
+      afterMachine <= beforeMachine + 0.02 && afterLanguage <= beforeLanguage + 0.02 &&
+      afterDiscourse <= beforeDiscourse + 0.02 && after.status !== "fail") return true;
   return afterScore >= beforeScore + 3 && (materialPatternGain || materialLanguageGain || materialDiscourseGain);
 }
 

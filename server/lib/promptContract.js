@@ -6,6 +6,7 @@ import { texturePromptBlock } from "../data/textureExemplars.js";
 import { buildCollaborativeRevisionPromptBlock } from "./collaborativeRevision.js";
 import { DEEP_AUTHORIAL_PROTOCOL } from "./diagnosisScopedPlanner.js";
 import { buildLengthContract } from "./lengthContract.js";
+import { AUTHORIAL_EXPRESSION_CONTRACT, expressionRecurrencePromptBlock } from "./expressionRecurrence.js";
 
 // These rules are generation invariants, not optional diagnostic commentary.
 // They are inserted through their own untruncated channel so prompt-size
@@ -62,8 +63,6 @@ Do not invent facts, citations, studies, findings, methods, statistics, limitati
 
 Scholarly trace matters. Where the source visibly reasons through named studies, author attributions, a short direct quotation, disagreement, qualification or local evidence, preserve that intellectual trace rather than paraphrasing everything into one seamless omniscient narrator.
 
-Do not force local synthesis after every small evidence cluster. Human thesis argument often develops by accumulation: a study may be reported, another may complicate it, a measurement distinction may be developed later, and only then may the research implication become clear. Synthesis should occur when it contributes necessary reasoning, not because every paragraph needs a polished closing sentence.
-
 Use the supplied style-family profile as descriptive evidence about plausible variation, not as an imitation target for an individual author. Never force every metric toward a median. Section purpose and the actual argument take priority over numeric style matching.
 
 Return only the requested structured response schema.`;
@@ -97,7 +96,6 @@ export const SYNTACTIC_DIVERSITY_INSTRUCTIONS = [
   "When several studies are cited, synthesise only where the source warrants synthesis. Preserve useful author-led phrasing and short quotations where their formulation itself carries scholarly meaning.",
   "Epistemic stance is part of meaning. Certainty should rise or fall with the evidence actually available in the source.",
   "High global scholarly competence does not require maximum local polish. Allow ordinary descriptive sentences, denser analytical passages and uneven rhetorical emphasis when those differences follow the work being done.",
-  "The goal is structural variety arising from reasoning, not visible randomisation. If a pattern looks deliberately alternated, it is probably too mechanical.",
 ];
 
 function buildCadenceTargetBlock(humanCadence) {
@@ -362,7 +360,7 @@ export function buildSystemPrompt({ sourceText, lengthAnchorText, minimumExpansi
     [
       "RHETORICAL/SEMANTIC PRESERVATION:",
       "Preserve each proposition and intellectual job: framing, funnel, evidence, qualification, interpretation, contrast/concession, cause, synthesis, transition, caveat, implication and forward link. Remove only semantic-and-functional duplicates.",
-      "Deep changes syntax/discourse, not intellectual content. Preserve sequence: FRAME -> EXPLAIN -> EVIDENCE -> INTERPRET -> QUALIFY -> SYNTHESISE -> TRANSITION.",
+      "Deep changes syntax/discourse, not intellectual content. Preserve the source-specific logical relationships and distinct rhetorical functions recorded in the ledger. There is no mandatory order of framing, evidence, interpretation, qualification, synthesis or transition within each paragraph; do not convert that ledger into a fixed paragraph recipe.",
       "Preserve modality, causality, magnitude, direction, certainty, comparison, scope, time and generalisability. Association != cause; possibility != certainty; coexistence != equality. Uncited reasoning is not redundant.",
       rhetoricalLedger?.length
         ? `Source rhetorical ledger. Paragraph row = [paragraphIndex, rhetoricalSequence, sentenceRows]. Sentence row = [sourceSentenceIndex, roles, propositionAnchors, logicalRelations|null, epistemicQualifiers|null, citationAnchors|null, relationClauseCount]. Use it as a preservation map, not a rewrite quota: ${JSON.stringify(compactRhetoricalLedgerForPrompt(rhetoricalLedger))}`
@@ -380,6 +378,8 @@ export function buildSystemPrompt({ sourceText, lengthAnchorText, minimumExpansi
       : "\nDocument-level note: no paragraph reorder was diagnosed. Preserve the existing macro-argument and paragraph sequence; perform any authorised reconstruction or development within that logical order.",
     "",
     buildCollaborativeRevisionPromptBlock(revisionPurpose),
+    AUTHORIAL_EXPRESSION_CONTRACT,
+    expressionRecurrencePromptBlock(sourceText),
     "",
     "--- RESPONSE FORMAT ---",
     "Return a single JSON object matching exactly this shape, and nothing else:",

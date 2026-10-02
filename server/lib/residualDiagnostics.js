@@ -7,6 +7,7 @@ import { splitSentences, wordCount } from "./sentences.js";
 import { parseTextStructure } from "./textStructure.js";
 import { analyseDiscourseArchitecture } from "./discourseArchitecture.js";
 import { analysePropositionEcho } from "./propositionEcho.js";
+import { analyseExpressionRecurrence } from "./expressionRecurrence.js";
 
 const DISCOURSE_MANAGEMENT_RE = /(?:\bthat\s+(?:distinction|difference|result|finding|lesson|insight)\s+(?:matters|is|was)\b|\bthat\s+(?:taught|forced|led|pushed)\s+(?:us|me)\b|\bthis\s+(?:means|matters|shows|changes|demonstrates|suggests|reveals)\b|\banother\s+(?:major\s+)?(?:breakthrough|insight|lesson|advance)\b|\bwhere\s+we\s+are\s+now\b|\bthe\s+next\s+(?:step|stage|phase|development|coding\s+work)\b|\bto\s+answer\s+(?:the\s+question\s+)?directly\b)/i;
 const ACADEMIC_BRIDGE_RE = /^(?:this\s+(?:problem|difficulty|distinction|uncertainty|issue|finding|evidence|result)\s+(?:extends|becomes|creates|leaves|is|suggests|shows)|a\s+(?:similar|related|further)\s+(?:problem|difficulty|issue)\s+(?:arises|appears)|in\s+both\s+cases|what\s+(?:emerges|remains)|the\s+present\s+study\s+(?:addresses|takes|examines)|the\s+implication\s+is|taken\s+together|collectively)\b/i;
@@ -82,6 +83,7 @@ export function analyseResidualWriting(text) {
   const structure = parseTextStructure(text);
   const architecture = analyseDiscourseArchitecture(text, structure);
   const propositionEcho = analysePropositionEcho(text);
+  const expressionRecurrence = analyseExpressionRecurrence(text);
 
   const management = [];
   const academicBridges = [];
@@ -253,9 +255,18 @@ export function analyseResidualWriting(text) {
     );
   }
 
+  for (const issue of expressionRecurrence.issues) {
+    signals.push({
+      id: "expression_recurrence", severity: "medium", weight: 2,
+      sentenceIndices: issue.sentence_indices, blockIndices: issue.block_indices,
+      interpretation: `The expression "${issue.phrase}" occurs ${issue.count} times across ${issue.block_indices.length} reasoning blocks.`,
+      action: "Check each occurrence's intellectual job. Reduce decorative repetition or stock linking where unnecessary, without deleting reasoning, changing technical terms or rotating synonyms.",
+    });
+  }
+
   const blockScores = new Map();
   for (const signal of signals) {
-    const blockIndices = blocksForSentenceIndices(structure, signal.sentenceIndices || []);
+    const blockIndices = signal.blockIndices || blocksForSentenceIndices(structure, signal.sentenceIndices || []);
     for (const blockIndex of blockIndices) {
       blockScores.set(blockIndex, (blockScores.get(blockIndex) || 0) + (signal.weight || 1));
     }
@@ -277,7 +288,7 @@ export function analyseResidualWriting(text) {
   const totalRiskScore = signals.reduce((sum, signal) => sum + (signal.weight || 1) * Math.max(1, signal.sentenceIndices?.length || 1), 0);
 
   return {
-    measurement_version: "residual-writing-v3",
+    measurement_version: "residual-writing-v4",
     sentence_count: sentences.length,
     block_count: structure.block_count,
     signals,
@@ -300,6 +311,7 @@ export function analyseResidualWriting(text) {
       total_risk_score: totalRiskScore,
     },
     proposition_echo: propositionEcho,
+    expression_recurrence: expressionRecurrence,
     ordinary_content_sentence_indices: ordinaryContent,
     target_blocks: targetBlocks,
     should_rework: targetBlocks.length > 0 && totalRiskScore >= 6,

@@ -16,5 +16,5 @@ test("post-rewrite diagnostics flag academic bridge choreography and clause stac
   assert.ok(ids.includes("academic_bridge_choreography"));
   assert.ok(ids.includes("clause_stacking_pressure") || ids.includes("immediate_synthesis_density"));
   assert.ok(result.metrics.academic_bridge_count >= 3);
-  assert.equal(result.measurement_version, "residual-writing-v3");
+  assert.equal(result.measurement_version, "residual-writing-v4");
 });

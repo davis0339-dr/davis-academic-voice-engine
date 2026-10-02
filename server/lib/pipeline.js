@@ -29,6 +29,7 @@ import { classifyPreservationRelease } from "./preservationRelease.js";
 import { detectorFeedbackPromptBlock } from "./detectorFeedback.js";
 import { assessAuthorialAnchor, authorialAnchorPromptBlock } from "./authorialAnchor.js";
 import { applyExpansionAdditions, expansionParagraphs } from "./expansionAdditions.js";
+import { AUTHORIAL_EXPRESSION_CONTRACT } from "./expressionRecurrence.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
 const SUBSTANTIVE_PLAN_LEVELS = new Set([
@@ -203,6 +204,7 @@ export function buildExpansionCompletionPrompt(contract) {
     "Develop reasoning already present or directly entailed by the source: unpack conceptual relationships, creditor or managerial logic already stated, boundary conditions, evidential relevance, methodological implications, distinctions between measures, and transitions between argumentative levels.",
     "Do not invent empirical evidence, citations, statistics, findings, named examples or causal mechanisms absent from the source. Do not repeat sentences, add generic significance claims, inflate synonyms, or append filler merely to reach the count.",
     "Distribute the added development; do not place the entire deficit in one paragraph. Retain headings and the source's section purposes.",
+    AUTHORIAL_EXPRESSION_CONTRACT,
     "The payload gives the measured word deficit. Your additions together must exceed that deficit, aiming for the target, without repeated claims or padding. Do not insert development after a heading, quotation or reference-list paragraph.",
     "Return one JSON object only: {\"additions\":[{\"after_paragraph\":1,\"text\":\"new source-supported explanation\"}]}. Paragraph identifiers are integers from the CURRENT CANDIDATE catalog, not source paragraph numbers.",
   ].join("\n");

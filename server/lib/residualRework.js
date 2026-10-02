@@ -19,6 +19,7 @@ import { MANDATORY_REVISION_GUARDRAILS } from "./promptContract.js";
 import { repairPreservationCandidate } from "./preservationRepair.js";
 import { splitTextBlocks } from "./textStructure.js";
 import { classifyPreservationRelease } from "./preservationRelease.js";
+import { AUTHORIAL_EXPRESSION_CONTRACT, expressionRecurrenceWorsened } from "./expressionRecurrence.js";
 
 function preservationPassed(p) {
   return !classifyPreservationRelease(p).hard_failure;
@@ -59,6 +60,9 @@ export function shouldAcceptResidualCandidate({
   const expansionContractSatisfied = expansionRecoveryRequired && !(afterAcceptance.reasons || []).includes("expand_length_contract_missed");
   const beforeDimensions = beforeAcceptance.dimensions || {};
   const afterDimensions = afterAcceptance.dimensions || {};
+  // A polished repair cannot introduce/increase repeated expression and then
+  // win on unrelated aggregate scores or a recovered word-count contract.
+  if (expressionRecurrenceWorsened(beforeAcceptance, afterAcceptance)) return false;
   const noMaterialAcceptanceRegression = (
     Number(afterDimensions.candidate_machine_pattern || 0) <= Number(beforeDimensions.candidate_machine_pattern || 0) + 0.03 &&
     Number(afterDimensions.candidate_machine_language || 0) <= Number(beforeDimensions.candidate_machine_language || 0) + 0.03 &&
@@ -269,6 +273,8 @@ Objective: reduce the specific residual writing-quality, machine-language and di
 MANDATORY PRESERVATION CONTRACT (higher priority than the residual style lessons below):
 ${MANDATORY_REVISION_GUARDRAILS.join("\n")}
 
+${AUTHORIAL_EXPRESSION_CONTRACT}
+
 The most important distinction is this: good grammar, clarity, sophistication and coherence are not sufficient. A candidate can be academically excellent and still fail because its language is visibly machine-shaped or because its paragraph choreography, evidence placement, sentence roles and closures remain too mechanically regular.
 
 Important lessons from prior testing:
@@ -312,6 +318,8 @@ export function buildDevelopmentRecoverySystemPrompt() {
   return `You are performing a TARGETED ARGUMENT-DEVELOPMENT RECOVERY because an academic revision violated its Auto/Expand length contract by compressing supplied reasoning.
 
 This is not a fresh rewrite and it is not a request for padding. Only TARGET blocks may change; the server locks every other block.
+
+${AUTHORIAL_EXPRESSION_CONTRACT}
 
 For each target:
 - Preserve every factual proposition, citation, number, variable, method, qualification, comparison, temporal boundary and scope condition.
@@ -462,6 +470,8 @@ export async function selectiveResidualRework({
       candidate_text: candidateBlock?.text || legacyTarget.text,
       source_reference: sourceBlock?.text || null,
       residual_signals: residualSignals,
+      expression_recurrence: (beforeAcceptance.expression_recurrence?.issues || [])
+        .filter((issue) => issue.block_indices.includes(blockIndex)),
       ordinary_content_sentences_to_preserve_when_possible: ordinarySentencesForTarget(candidateText, before, legacyTarget),
       hard_protected_spans: protectedSpans,
       candidate_words: candidateBlockWords,
@@ -482,6 +492,7 @@ export async function selectiveResidualRework({
       choreography: beforeAcceptance.candidate_machine_pattern?.choreography,
       discourse_regularity: beforeAcceptance.candidate_machine_pattern?.discourse_regularity,
       machine_language: beforeAcceptance.candidate_machine_pattern?.machine_language,
+      expression_recurrence: beforeAcceptance.expression_recurrence,
     },
     length_contract: {
       preference: lengthPreference,

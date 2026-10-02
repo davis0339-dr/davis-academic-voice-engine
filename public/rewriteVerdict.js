@@ -130,6 +130,7 @@
     const candidateHistory = latestRewrite.candidate_history || null;
     const driftReasons = iterative?.reasons || [];
     const deltas = iterative?.deltas_from_root || {};
+    const expression = latestRewrite.output_acceptance?.expression_recurrence;
 
     panel.innerHTML = `
       <div class="rv4-title"><strong>Candidate verdict</strong><span>different ≠ automatically better</span></div>
@@ -142,6 +143,11 @@
         <div class="${statusClass(finalStatus)}"><span>Final candidate</span><strong>${esc(title(finalStatus))}</strong></div>
       </div>
       ${varianceReasons.length ? `<div class="rv4-variance"><strong>Execution variance, not rewrite instruction:</strong> ${varianceReasons.map(esc).join(" ")}</div>` : ""}
+      ${expression ? `<details class="rv4-expression" ${expression.issues.length ? "open" : ""}>
+        <summary>Repeated wording and transitions: ${expression.issues.length ? `${esc(expression.issues.length)} expression(s) need review` : "no recurrence flagged by the bounded check"}</summary>
+        ${expression.issues.map((issue) => `<p><strong>${esc(issue.phrase)}</strong>: source ${esc(issue.source_count)} → revision ${esc(issue.count)}, across ${esc(issue.block_indices.length)} reasoning blocks. ${esc(issue.action)}</p>`).join("")}
+        <p>${esc(expression.note)}</p>
+      </details>` : ""}
       ${policy ? `<div class="rv4-policy"><strong>Rewrite policy:</strong> ${esc(title(policy.policy))}. ${esc(policy.rationale || "")}</div>` : ""}
       ${iterative?.available && !delivered ? `
         <div class="rv4-regularisation ${iterative.blocking ? "badbox" : "goodbox"}">
