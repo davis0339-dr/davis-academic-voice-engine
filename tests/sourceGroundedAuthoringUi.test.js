@@ -116,3 +116,16 @@ test("the evidence map is author-led: nothing enters the draft unless the resear
   assert.match(html, /Optional · AI synthesis — writes new prose with AI/);
   assert.match(html, /does not keep the sources' wording or your own voice/);
 });
+
+test("passages and suggested connections can be chosen in bulk, per section or across all sections", async () => {
+  const ui = await readFile(new URL("public/sourceGroundedAuthoringUI.js", root), "utf8");
+  assert.match(ui, /Use every passage \(all sections\)/);
+  assert.match(ui, /Remove every passage \(all sections\)/);
+  assert.match(ui, /Accept every suggested connection \(all sections\)/);
+  assert.match(ui, /Clear accepted suggestions \(all sections\)/);
+  assert.match(ui, /Use every passage in this section/);
+  assert.match(ui, /Accept every suggested connection in this section/);
+  // Bulk accept fills only empty boxes; bulk clear removes only accepted suggestions.
+  assert.match(ui, /if \(accept && !block\.text\?\.trim\(\)\)/);
+  assert.match(ui, /else if \(!accept && block\.accepted_suggestion\)/);
+});
