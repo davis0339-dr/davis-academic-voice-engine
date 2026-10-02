@@ -28,6 +28,7 @@ import { buildLengthContract, lengthContractSatisfied, manuscriptWordCount } fro
 import { classifyPreservationRelease } from "./preservationRelease.js";
 import { detectorFeedbackPromptBlock } from "./detectorFeedback.js";
 import { assessAuthorialAnchor, authorialAnchorPromptBlock } from "./authorialAnchor.js";
+import { applyExpansionAdditions, expansionParagraphs } from "./expansionAdditions.js";
 
 const NATURALISATION_LEVELS = new Set(["off", "faithful", "aggressive"]);
 const SUBSTANTIVE_PLAN_LEVELS = new Set([
@@ -125,8 +126,8 @@ function validateShape(parsed) {
   return errors;
 }
 
-export function modelOutputTokenBudget(sourceText, revisionPurpose = "fidelity") {
-  const wordCount = String(sourceText || "").trim().split(/\s+/).filter(Boolean).length;
+export function modelOutputTokenBudget(sourceText, revisionPurpose = "fidelity", lengthContract = null) {
+  const wordCount = Math.max(manuscriptWordCount(sourceText), lengthContract?.mode === "expand" ? lengthContract.maximum_candidate_words : 0);
   const metadataAllowance = normalizeRevisionPurpose(revisionPurpose) === "collaborative" ? 3200 : 1800;
   const estimatedNeed = Math.ceil(wordCount * 2.75 + metadataAllowance);
   const roundedNeed = Math.ceil(estimatedNeed / 1024) * 1024;
@@ -197,17 +198,17 @@ export function buildExpansionCompletionPrompt(contract) {
   return [
     "You are completing an academic EXPAND revision that did not meet its binding development contract.",
     `The original source contains ${contract.source_words} words. The completed revision MUST contain at least ${contract.minimum_candidate_words} words and should ordinarily fall between ${contract.target_candidate_words} and ${contract.maximum_candidate_words} words.`,
-    "Work from the CURRENT CANDIDATE rather than reverting to the source. Preserve its useful reconstruction while adding the missing intellectual development across several appropriate paragraphs.",
+    "The CURRENT CANDIDATE is locked. Return only NEW passages to insert after its numbered paragraphs. Do not return revised_text or rewrite, remove, replace or reorder any existing prose.",
     "Use the ORIGINAL SOURCE as the sole authority for facts, citations, numbers, variables, methods, study stage, scope, modality, causality and argumentative meaning.",
     "Develop reasoning already present or directly entailed by the source: unpack conceptual relationships, creditor or managerial logic already stated, boundary conditions, evidential relevance, methodological implications, distinctions between measures, and transitions between argumentative levels.",
     "Do not invent empirical evidence, citations, statistics, findings, named examples or causal mechanisms absent from the source. Do not repeat sentences, add generic significance claims, inflate synonyms, or append filler merely to reach the count.",
     "Distribute the added development; do not place the entire deficit in one paragraph. Retain headings and the source's section purposes.",
-    "A response below the mandatory minimum is invalid.",
-    "Return one JSON object only: {\"revised_text\":\"the complete expanded manuscript\",\"edit_summary\":{\"kept\":0,\"micro_edits\":0,\"sentence_restructures\":0,\"split_or_merge\":0,\"paragraph_reorders\":0,\"flags_for_author\":[]},\"additional_inputs\":[]}",
+    "The payload gives the measured word deficit. Your additions together must exceed that deficit, aiming for the target, without repeated claims or padding. Do not insert development after a heading, quotation or reference-list paragraph.",
+    "Return one JSON object only: {\"additions\":[{\"after_paragraph\":1,\"text\":\"new source-supported explanation\"}]}. Paragraph identifiers are integers from the CURRENT CANDIDATE catalog, not source paragraph numbers.",
   ].join("\n");
 }
 
-async function completeExpansionContract({ sourceText, candidate, contract, maxTokens }) {
+async function completeExpansionContract({ sourceText, candidate, contract }) {
   let selected = candidate;
   const attempts = [];
   for (let attempt = 1; attempt <= 1 && !lengthContractSatisfied(selected.revised_text, contract); attempt += 1) {
@@ -217,29 +218,60 @@ async function completeExpansionContract({ sourceText, candidate, contract, maxT
       `CURRENT WORD COUNT: ${currentWords}`,
       `MANDATORY MINIMUM WORD COUNT: ${contract.minimum_candidate_words}`,
       `CURRENT DEFICIT: ${deficit} words`,
+      `TARGET ADDITION: ${Math.max(deficit, contract.target_candidate_words - currentWords)} words`,
       "",
       "ORIGINAL SOURCE (factual and argumentative authority):",
       sourceText,
       "",
       "CURRENT CANDIDATE (develop this version):",
-      selected.revised_text,
+      JSON.stringify(expansionParagraphs(selected.revised_text).map(({ id, text }) => ({ id, text }))),
     ].join("\n");
-    const recovered = await runModelPass({
-      systemPrompt: buildExpansionCompletionPrompt(contract),
-      sourceText: payload,
-      maxTokens,
-    });
-    const recoveredPreservation = auditPreservation(sourceText, recovered.revised_text, extractProtectedSpans(sourceText), { lengthPreference: "expand" });
-    const recoveredWords = manuscriptWordCount(recovered.revised_text);
-    const hardFailure = classifyPreservationRelease(recoveredPreservation).hard_failure;
-    const improved = !hardFailure && recoveredWords > currentWords;
-    attempts.push({ attempt, current_words: currentWords, recovered_words: recoveredWords, preservation_hard_failure: hardFailure, selected: improved });
-    if (improved) selected = recovered;
+    try {
+      const response = await llmProvider.callAnthropic({
+        system: buildExpansionCompletionPrompt(contract),
+        messages: [{ role: "user", content: payload }],
+        maxTokens: Math.min(8192, Math.max(2048, Math.ceil((deficit + 200) * 3))),
+        timeoutOverrideMs: 150000,
+      });
+      const parsed = parseStructuredResponseText(response.text);
+      if (response.raw?.stop_reason === "max_tokens" || !parsed.ok || !Array.isArray(parsed.parsed?.additions)) {
+        const error = new Error("Expansion additions were incomplete or invalid; the existing draft was retained.");
+        error.code = "INVALID_EXPANSION_ADDITIONS";
+        throw error;
+      }
+      const recovered = applyExpansionAdditions({
+        sourceText,
+        candidateText: selected.revised_text,
+        additions: parsed.parsed.additions.map((addition) => ({ ...addition, text: typeof addition?.text === "string" ? sanitiseProse(addition.text) : addition?.text })),
+      });
+      const improved = recovered.added_words > 0;
+      attempts.push({ attempt, current_words: currentWords, recovered_words: manuscriptWordCount(recovered.revised_text), selected: improved, ...recovered, revised_text: undefined });
+      if (improved) selected = { ...selected, revised_text: recovered.revised_text };
+    } catch (error) {
+      attempts.push({ attempt, current_words: currentWords, selected: false, error: { code: error.code || error.healthState || "EXPANSION_RECOVERY_FAILED", message: error.message } });
+    }
   }
   return {
     candidate: selected,
     attempts,
     satisfied: lengthContractSatisfied(selected.revised_text, contract),
+  };
+}
+
+export async function recoverExpansionResult({ sourceText, result, contract = result?.length_contract } = {}) {
+  if (contract?.mode !== "expand" || lengthContractSatisfied(result.revised_text, contract)) return result;
+  const preservation = auditPreservation(sourceText, result.revised_text, extractProtectedSpans(sourceText), { lengthPreference: "expand" });
+  if (classifyPreservationRelease(preservation).hard_failure) {
+    return { ...result, length_contract: { ...contract, satisfied: false, recovery: { required: true, attempted: false, completed: false, blocked_reason: "preservation_repair_required" } } };
+  }
+  const completed = await completeExpansionContract({ sourceText, candidate: result, contract });
+  return {
+    ...completed.candidate,
+    length_contract: {
+      ...contract,
+      satisfied: completed.satisfied,
+      recovery: { required: true, attempted: true, attempts: completed.attempts, completed: completed.satisfied, additive_only: true, best_complete_candidate_retained: true, exhausted_without_empty_result: !completed.satisfied },
+    },
   };
 }
 
@@ -359,13 +391,14 @@ export async function rewrite({
   minimumExpansionWords,
   detectorFeedback,
   authorialAnchor,
+  deferExpansionRecovery = false,
 }) {
   const naturalisationLevel = NATURALISATION_LEVELS.has(naturalisation) ? naturalisation : "faithful";
   const effectiveRevisionPurpose = normalizeRevisionPurpose(revisionPurpose);
-  const outputTokenBudget = modelOutputTokenBudget(sourceText, effectiveRevisionPurpose);
   const lineage = normaliseRewriteLineage(rewriteLineage, sourceText);
   const rootAnchorText = lineage.chained_from_prior_revision ? lineage.root_source_text : sourceText;
   const rootLengthContract = buildLengthContract({ sourceText: rootAnchorText, preference: lengthPreference, minimumExpansionWords });
+  const outputTokenBudget = modelOutputTokenBudget(sourceText, effectiveRevisionPurpose, rootLengthContract);
   const analysis = analyse({
     sourceText,
     styleFilters,
@@ -461,14 +494,13 @@ export async function rewrite({
     }
   }
 
-  if (rootLengthContract.mode === "expand" && !lengthContractSatisfied(parsed.revised_text, rootLengthContract)) {
-    const completed = await completeExpansionContract({
+  if (!deferExpansionRecovery && rootLengthContract.mode === "expand" && !lengthContractSatisfied(parsed.revised_text, rootLengthContract)) {
+    const completed = await recoverExpansionResult({
       sourceText: rootAnchorText,
-      candidate: parsed,
+      result: parsed,
       contract: rootLengthContract,
-      maxTokens: outputTokenBudget,
     });
-    parsed = completed.candidate;
+    parsed = completed;
     transformationQuality = assessTransformationQuality(sourceText, parsed.revised_text, naturalisationLevel, qOptions);
     iterativeQuality = assessIterativeRegularisation({
       sourceText,
@@ -477,15 +509,7 @@ export async function rewrite({
     });
     responseRepairUsed = responseRepairUsed || Boolean(parsed.__response_repair_used);
     responseEnvelopeRecovered = responseEnvelopeRecovered || Boolean(parsed.__response_envelope_recovered);
-    expansionRecovery = {
-      required: true,
-      attempted: true,
-      attempts: completed.attempts,
-      contract: rootLengthContract,
-      completed: completed.satisfied,
-      best_complete_candidate_retained: true,
-      exhausted_without_empty_result: !completed.satisfied,
-    };
+    expansionRecovery = completed.length_contract.recovery;
   }
 
   if (
@@ -640,7 +664,7 @@ export async function rewrite({
       texture_exemplar: naturalisationLevel === "aggressive",
       aggressive_keep_override: false,
       diagnosis_scoped_naturalisation: true,
-      expand_is_development_permission_not_quota: true,
+      expand_requires_source_supported_minimum_development: true,
       transformation_quality_gate: qualityGateEnforced,
       academic_register_gate: qualityGateEnforced,
       protected_span_adjusted_overlap: qualityGateEnforced,

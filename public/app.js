@@ -512,17 +512,6 @@ async function runAnalyseAndRevise(options = {}) {
     renderPreservation(data.preservation || rejectedPreservation || {}, data.preservation_release, data.preservation_chain);
     renderChangesWithEditSummary({ items: [], summary: data.intervention_plan_summary }, data.edit_summary, data.naturalisation_applied, data.build, data.human_discourse_evidence);
     renderAdditionalInputs(data.additional_inputs, data.revision_purpose);
-    const acceptanceReasons = data.output_acceptance?.reasons || [];
-    const lengthContractMissed = acceptanceReasons.includes("expand_length_contract_missed") || acceptanceReasons.includes("deep_auto_developmental_compression");
-    const sourceWords = data.output_acceptance?.dimensions?.source_word_count;
-    const candidateWords = data.output_acceptance?.dimensions?.candidate_word_count;
-    const lengthEvidence = Number.isFinite(sourceWords) && Number.isFinite(candidateWords)
-      ? ` Source ${formatNumber(sourceWords)} words → candidate ${formatNumber(candidateWords)} words.`
-      : "";
-    const expandContract = data.length_contract?.mode === "expand" ? data.length_contract : null;
-    const expandEvidence = expandContract?.satisfied
-      ? ` Expand contract met: +${formatNumber(Math.max(0, Number(candidateWords || 0) - Number(sourceWords || 0)))} words (minimum +${formatNumber(expandContract.minimum_addition_words)}).`
-      : "";
     const refinementPrefix = refinement
       ? automaticRefinement
         ? "Saved detector evidence was automatically applied to the exact tested candidate. "
@@ -534,11 +523,7 @@ async function runAnalyseAndRevise(options = {}) {
         ? ` Opening reconstruction passed: ${Math.round((1 - Number(openingAudit.near_verbatim_source_sentence_share || 0)) * 100)}% of the tested opening-sentence material was materially repackaged.`
         : ` Opening reconstruction remains insufficient: ${Math.round(Number(openingAudit.near_verbatim_source_sentence_share || 0) * 100)}% of source sentences in the first two prose paragraphs remained near-verbatim.`
       : "";
-    const outcome = lengthContractMissed && data.candidate_verdict?.final_status !== "accepted"
-        ? `Best complete preservation-safe revision returned.${lengthEvidence} Expand requested at least +${formatNumber(expandContract?.minimum_addition_words || 200)} words; the achieved increase is shown for honest researcher review. No additional paid full-document retry was launched.`
-        : data.candidate_verdict?.final_status === "accepted"
-         ? `Revision completed and internally cleared.${expandEvidence}`
-        : `Complete candidate returned for researcher review; it has not been labelled as an internally cleared final revision.${lengthEvidence}`;
+    const outcome = window.VoiceEngineRevisionLength.revisionLengthOutcome(data, formatNumber);
     setBusy(false, `${refinementPrefix}${outcome}${openingEvidence} Request ${data.requestId}${data.build?.commitShort ? ` · build ${data.build.commitShort}` : ""}${formatProviderUsage(data.provider_usage)}`);
     statusMessage.className = data.candidate_verdict?.final_status !== "accepted"
       ? "status-message error"

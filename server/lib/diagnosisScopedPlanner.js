@@ -416,7 +416,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
     "Deep + Aggressive/Authorial authorises paragraph-level reconstruction where paragraph/discourse diagnosis or machine-pattern regularity supports it, even if individual sentences are grammatically clean.",
     "CAN_CHANGE and SHOULD_CHANGE are separate decisions. Deep authority never creates a requirement to rewrite every clean unit.",
     "A Deep/Authorial request must not be silently collapsed into local synonym polishing where genuine reconstruction has been diagnosed.",
-    "Expand develops diagnosed reasoning, evidence, qualification, context, measurement or gap work; it is not a word-growth quota.",
+    "Expand must meet the authoritative minimum net addition through source-supported reasoning, evidence interpretation, qualification, context, measurement or gap work. Do not satisfy that minimum with repetition, padding or invented claims.",
     "Keep decisions remain legitimate in every mode for headings, quotations, equations, technical labels, evidence, formal research artefacts, and genuinely author-specific passages that do not warrant intervention.",
     ...(plan.externalFeedbackExecution ? ["Candidate-linked external test evidence is now execution evidence for the exact failed candidate. Reconstruct its diagnosed machine-shaped information packaging; do not merely acknowledge the score or repeat the same candidate with synonyms."] : []),
     ...(authorialAuthority ? DEEP_AUTHORIAL_PROTOCOL : []),
@@ -444,7 +444,7 @@ export function buildDiagnosisScopedPlan(diagnostics, options = {}) {
         ? "Aggressive expression is permitted at the sentence/flow level. Paragraphs explicitly diagnosed as REBUILD_DISCOURSE may receive bounded local redevelopment, but the Moderate ceiling still blocks paragraph resequencing, undiagnosed paragraph reconstruction and wholesale document redevelopment."
         : null,
       requestedLength === "expand"
-        ? "Expand is permission to develop diagnosed intellectual work from available content/evidence; no global word-growth quota is created."
+        ? "Expand requires the authoritative minimum net addition through substantive development from available content/evidence; a shorter or unchanged candidate does not complete this request."
         : null,
     ].filter(Boolean),
   };

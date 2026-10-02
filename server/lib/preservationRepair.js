@@ -64,7 +64,7 @@ export async function repairPreservationCandidate({ sourceText, candidateResult,
   const response = await llmProvider.callAnthropic({
     system: repairPrompt(lengthContract),
     messages: [{ role: "user", content: repairPayload(source, candidateResult, protectedSpans) }],
-    maxTokens: modelOutputTokenBudget(source, revisionPurpose),
+    maxTokens: modelOutputTokenBudget(source, revisionPurpose, lengthContract),
   });
 
   if (response.raw?.stop_reason === "max_tokens") {

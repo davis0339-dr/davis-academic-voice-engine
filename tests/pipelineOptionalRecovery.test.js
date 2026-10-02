@@ -108,13 +108,12 @@ test("Expand completes a preservation-safe source-plus-200 contract before retur
   let calls = 0;
   llmProvider.callAnthropic = async () => {
     calls += 1;
-    const revisedText = calls === 1 ? expansionSource : expanded;
     return {
-      text: JSON.stringify({
-        revised_text: revisedText,
+      text: JSON.stringify(calls === 1 ? {
+        revised_text: expansionSource,
         edit_summary: { kept: 0, micro_edits: 0, sentence_restructures: 2, split_or_merge: 0, paragraph_reorders: 0, flags_for_author: [] },
         additional_inputs: [],
-      }),
+      } : { additions: [{ after_paragraph: 1, text: expanded.slice(expansionSource.length).trim() }] }),
       raw: { stop_reason: "end_turn" },
       usage: { input_tokens: 100, output_tokens: 100 },
     };

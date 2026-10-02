@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
-import { rewrite } from "../lib/pipeline.js";
+import { rewrite, recoverExpansionResult } from "../lib/pipeline.js";
 import { assessExecutionCompliance } from "../lib/executionCompliance.js";
 import { selectiveResidualRework } from "../lib/residualRework.js";
 import { auditOutputAcceptance } from "../lib/outputAcceptance.js";
@@ -46,6 +46,7 @@ function refreshTransformationQuality(sourceText, result, revisedText, naturalis
     { protectedSpans: extractProtectedSpans(sourceText) }
   );
   return {
+    ...previous,
     ...refreshed,
     corrective_retry_used: Boolean(previous.corrective_retry_used),
     rescue_retry_used: Boolean(previous.rescue_retry_used),
@@ -153,6 +154,7 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
     minimumExpansionWords,
     detectorFeedback: detectorFeedbackProfile,
     authorialAnchor,
+    deferExpansionRecovery: true,
   });
 
   function applyDualAnchorPreservation(result) {
@@ -283,6 +285,21 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
         }
       }
 
+      // Expand after preservation repair, not before it: otherwise the repair
+      // could replace a successful expansion with a shorter complete draft.
+      // This replaces the pipeline's recovery, so it does not add another call.
+      const expandedResult = await recoverExpansionResult({ sourceText: auditAnchorText, result });
+      if (expandedResult.revised_text !== result.revised_text) {
+        result = applyDualAnchorPreservation({
+          ...expandedResult,
+          transformation_quality: refreshTransformationQuality(text, result, expandedResult.revised_text, modePolicy.effective_naturalisation),
+          iterative_rewrite_quality: refreshIterativeQuality(text, result, expandedResult.revised_text, rewriteLineage),
+        });
+        executionCompliance = assessExecutionCompliance(result);
+      } else {
+        result = expandedResult;
+      }
+
       // Preservation governs clearance, not visibility. Concrete or semantic-
       // force defects receive one bounded repair above. If that repair cannot
       // clear every issue, retain the complete candidate with an explicit review
@@ -310,7 +327,8 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
       let residualStageBlockedReason = null;
       const optionalProviderFailure = Boolean(
         result.transformation_quality?.corrective_retry_error ||
-        result.transformation_quality?.rescue_retry_error
+        result.transformation_quality?.rescue_retry_error ||
+        result.length_contract?.recovery?.attempts?.some((attempt) => attempt.error)
       );
       residualStageEligible = Boolean(
         !sourceRetainedForSafety &&
@@ -432,10 +450,10 @@ rewriteRouter.post("/rewrite", llmProvider.usageMiddleware, async (req, res) => 
           ...result.length_contract,
           actual_addition_words: actualAddition,
           satisfied: actualAddition >= minimumExpansionWords,
-          effective_outcome: actualAddition >= minimumExpansionWords ? "expand_completed" : "maintain_fallback",
+          effective_outcome: actualAddition >= minimumExpansionWords ? "expand_completed" : "expand_incomplete",
           outcome_note: actualAddition >= minimumExpansionWords
             ? `Expand completed with ${actualAddition} net additional words.`
-            : `The bounded Expand attempt could not add ${minimumExpansionWords} words without losing preservation or completed-output quality. This complete draft is returned as an explicit Maintain fallback, not mislabelled as Expand.`,
+            : `Expand was not completed: the candidate has ${actualAddition} net additional words and needs ${Math.max(0, minimumExpansionWords - actualAddition)} more to meet the requested minimum. The draft remains available for review; no switch to Maintain was made.`,
         };
       }
       result.candidate_history = {
